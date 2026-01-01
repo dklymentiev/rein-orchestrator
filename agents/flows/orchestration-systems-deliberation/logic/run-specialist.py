@@ -46,14 +46,21 @@ def get_block_config(workflow_config: dict, block_name: str) -> dict:
     return {}
 
 
-def substitute_placeholders(prompt: str, workflow_dir: Path) -> str:
-    """Replace {{ file.json }} with actual file contents"""
+def substitute_placeholders(prompt: str, outputs_dir: Path, workflow_dir: Path = None) -> str:
+    """Replace {{ file.json }} with actual file contents
+
+    REFACTOR: First looks in outputs_dir (task outputs), then fallback to workflow_dir
+    """
     import re
     pattern = r'\{\{\s*(\w+\.json)\s*\}\}'
 
     def replacer(match):
         filename = match.group(1)
-        filepath = workflow_dir / filename
+        # Try outputs_dir first (REFACTOR: task outputs)
+        filepath = outputs_dir / filename
+        if not filepath.exists() and workflow_dir:
+            filepath = workflow_dir / filename
+
         if filepath.exists():
             try:
                 with open(filepath) as f:
@@ -66,29 +73,46 @@ def substitute_placeholders(prompt: str, workflow_dir: Path) -> str:
     return re.sub(pattern, replacer, prompt)
 
 
-async def run_specialist(output_file: str):
-    """Run specialist using claude-wrapper with real file access"""
+async def run_specialist(output_file: str, workflow_dir: str = None, outputs_dir: str = None, task_id: str = None):
+    """Run specialist using claude-wrapper with real file access
+
+    REFACTOR: Now accepts task context for proper output directory handling
+    """
 
     output_path = Path(output_file)
-    workflow_dir = output_path.parent
+
+    # REFACTOR: Use provided directories or fall back to inferring from output_path
+    if outputs_dir:
+        outputs_path = Path(outputs_dir)
+    else:
+        outputs_path = output_path.parent
+
+    if workflow_dir:
+        wf_dir = Path(workflow_dir)
+    else:
+        wf_dir = output_path.parent
+
     block_name = output_path.stem  # e.g., "prompt_engineer_initial"
 
     print(f"[INFO] Block: {block_name}")
-    print(f"[INFO] Workflow dir: {workflow_dir}")
+    print(f"[INFO] Workflow dir: {wf_dir}")
+    print(f"[INFO] Outputs dir: {outputs_path}")
+    if task_id:
+        print(f"[INFO] Task ID: {task_id}")
 
     # Load workflow config
-    workflow_config = load_workflow_config(workflow_dir)
+    workflow_config = load_workflow_config(wf_dir)
     if not workflow_config:
-        raise Exception(f"No workflow YAML found in {workflow_dir}")
+        raise Exception(f"No workflow YAML found in {wf_dir}")
 
     # Get block config
     block = get_block_config(workflow_config, block_name)
     if not block:
         raise Exception(f"Block {block_name} not found in workflow")
 
-    # Get prompt and substitute placeholders
+    # Get prompt and substitute placeholders (REFACTOR: use outputs_dir for dependencies)
     prompt_template = block.get('prompt', 'Analyze the systems')
-    prompt = substitute_placeholders(prompt_template, workflow_dir)
+    prompt = substitute_placeholders(prompt_template, outputs_path, wf_dir)
 
     # Build full prompt with file access instructions
     full_prompt = f"""You are a specialist analyzing orchestration systems.
@@ -155,17 +179,40 @@ Return your analysis as valid JSON matching the requested format.
 
 
 def main():
-    # Read output file path from stdin (dog.py passes it this way)
-    output_file = sys.stdin.read().strip()
+    # REFACTOR: Read JSON context from stdin (dog.py passes task context)
+    # Backward compatible: also works with plain file path
+    stdin_data = sys.stdin.read().strip()
+
+    if not stdin_data:
+        print("[ERROR] No input provided via stdin")
+        sys.exit(1)
+
+    # Try to parse as JSON context
+    output_file = None
+    workflow_dir = None
+    outputs_dir = None
+    task_id = None
+
+    try:
+        context = json.loads(stdin_data)
+        output_file = context.get('output_file')
+        workflow_dir = context.get('workflow_dir')
+        outputs_dir = context.get('outputs_dir')
+        task_id = context.get('task_id')
+        print("[INFO] Received JSON context from dog.py")
+    except json.JSONDecodeError:
+        # Backward compatibility: plain file path
+        output_file = stdin_data
+        print("[INFO] Received plain file path (legacy mode)")
 
     if not output_file:
-        print("[ERROR] No output file path provided via stdin")
+        print("[ERROR] No output file path in context")
         sys.exit(1)
 
     print(f"[START] run-specialist.py")
     print(f"[INFO] Output file: {output_file}")
 
-    success = asyncio.run(run_specialist(output_file))
+    success = asyncio.run(run_specialist(output_file, workflow_dir, outputs_dir, task_id))
     sys.exit(0 if success else 1)
 
 

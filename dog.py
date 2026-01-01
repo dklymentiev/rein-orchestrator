@@ -121,7 +121,9 @@ class DogState:
 
 class ProcessManager:
     """Manages process execution with semaphore and dependencies"""
-    def __init__(self, max_parallel: int = 3, resume_run_id: Optional[str] = None):
+    def __init__(self, max_parallel: int = 3, resume_run_id: Optional[str] = None,
+                 task_id: Optional[str] = None, flow_name: Optional[str] = None,
+                 task_input: Optional[dict] = None):
         self.max_parallel = max_parallel
         self.guid = None  # Will be set to run_id after directory setup
         self.semaphore = threading.Semaphore(max_parallel)
@@ -141,12 +143,23 @@ class ProcessManager:
         self.stop_workflow = False
         self.stop_reason = None
 
+        # Task system (REFACTOR: separate tasks from flows)
+        self.tasks_root = os.path.join(os.path.dirname(__file__), "tasks")
+        self.task_id = task_id
+        self.task_dir = None
+        self.task_input = task_input or {}
+        self.flow_name = flow_name
+
         # Setup run directory with timestamp
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-        # If resuming, use existing run directory; otherwise create new one
-        if resume_run_id:
+        # If task_id provided, use task directory; otherwise use /tmp/dog-runs/
+        if task_id:
+            self.task_dir = os.path.join(self.tasks_root, task_id)
+            self.run_dir = self.task_dir
+            self.guid = task_id
+        elif resume_run_id:
             self.run_dir = f"/tmp/dog-runs/run-{resume_run_id}"
             self.guid = resume_run_id
         else:
@@ -191,6 +204,45 @@ class ProcessManager:
                 f.flush()
         except Exception as e:
             print(f"[Dog Log Error] {e}", flush=True)
+
+    def create_task(self, flow_name: str, input_params: dict = None) -> str:
+        """Create a new task directory and return task_id (REFACTOR: tasks separation)"""
+        task_id = f"task-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        task_dir = os.path.join(self.tasks_root, task_id)
+
+        # Create task directory structure
+        os.makedirs(task_dir, exist_ok=True)
+        os.makedirs(os.path.join(task_dir, "outputs"), exist_ok=True)
+        os.makedirs(os.path.join(task_dir, "logs"), exist_ok=True)
+
+        # Write task.json metadata
+        task_json = {
+            "id": task_id,
+            "flow": flow_name,
+            "input": input_params or {},
+            "created": datetime.now().isoformat(),
+            "status": "pending"
+        }
+
+        with open(os.path.join(task_dir, "task.json"), "w") as f:
+            json.dump(task_json, f, indent=2, ensure_ascii=False)
+
+        # Write initial status file
+        with open(os.path.join(task_dir, "status"), "w") as f:
+            f.write("pending\n")
+
+        self._write_dog_log(f"TASK CREATED | {task_id} | flow={flow_name} | dir={task_dir}")
+        return task_id
+
+    def _get_output_dir(self) -> str:
+        """Get the directory for saving block outputs (REFACTOR: tasks separation)"""
+        if self.task_dir:
+            outputs_dir = os.path.join(self.task_dir, "outputs")
+            os.makedirs(outputs_dir, exist_ok=True)
+            return outputs_dir
+        else:
+            # Fallback to workflow_dir for backward compatibility
+            return self.workflow_dir
 
     def load_config(self, config: dict, workflow_file: str = None):
         """Load block configuration"""
@@ -326,10 +378,20 @@ class ProcessManager:
                 full_placeholder = match.group(0)  # e.g., "{{ filename.json }}"
                 filename = match.group(1).strip()  # e.g., "filename.json"
 
-                # Try to load from workflow directory
-                file_path = os.path.join(self.workflow_dir, filename)
+                # REFACTOR: Try task outputs first, then workflow directory
+                file_path = None
+                if self.task_dir:
+                    task_output_path = os.path.join(self.task_dir, "outputs", filename)
+                    if os.path.exists(task_output_path):
+                        file_path = task_output_path
 
-                if os.path.exists(file_path):
+                # Fallback to workflow directory
+                if not file_path:
+                    workflow_path = os.path.join(self.workflow_dir, filename)
+                    if os.path.exists(workflow_path):
+                        file_path = workflow_path
+
+                if file_path:
                     try:
                         with open(file_path) as f:
                             data = json.load(f)
@@ -343,11 +405,11 @@ class ProcessManager:
                                     pass
                             # Use the FULL placeholder text (with spaces preserved)
                             prompt = prompt.replace(full_placeholder, json.dumps(data, ensure_ascii=False))
-                            self._write_dog_log(f"FILE SUBSTITUTED | {filename} | size={len(json.dumps(data))}")
+                            self._write_dog_log(f"FILE SUBSTITUTED | {filename} | from={file_path} | size={len(json.dumps(data))}")
                     except Exception as e:
                         self._write_dog_log(f"FILE SUBSTITUTE ERROR | {file_path} | {str(e)}")
                 else:
-                    self._write_dog_log(f"FILE NOT FOUND | {file_path} (looking for {filename})")
+                    self._write_dog_log(f"FILE NOT FOUND | {filename} (checked task outputs and workflow dir)")
 
             # Build final prompt
             full_prompt = f"""{team_tone}
@@ -419,7 +481,7 @@ class ProcessManager:
         return result
 
     def _run_logic(self, script_path: str, data_file: str, workflow_dir: str) -> bool:
-        """Run logic script (Python or Shell) - PHASE 2.5 LOGIC PHASES"""
+        """Run logic script (Python or Shell) - PHASE 2.5 LOGIC PHASES with task context"""
         try:
             # Resolve relative path
             full_path = os.path.join(workflow_dir, script_path)
@@ -428,14 +490,25 @@ class ProcessManager:
                 self._write_dog_log(f"LOGIC ERROR | script not found: {full_path}")
                 return False
 
-            self._write_dog_log(f"LOGIC RUN | {script_path} | input={data_file}")
+            # REFACTOR: Build task context for logic scripts (Phase 2/3)
+            context = {
+                "output_file": data_file,
+                "workflow_dir": workflow_dir,
+                "task_dir": self.task_dir,
+                "task_id": self.task_id,
+                "task_input": self.task_input,
+                "outputs_dir": self._get_output_dir()
+            }
+            context_json = json.dumps(context)
+
+            self._write_dog_log(f"LOGIC RUN | {script_path} | output={data_file} | task={self.task_id}")
 
             # Run script based on type
-            # File path is passed via stdin, not as argument
+            # Context is passed via stdin as JSON (backward compatible: scripts can read as plain path or parse JSON)
             if script_path.endswith('.py'):
                 result = subprocess.run(
                     ['python3', full_path],
-                    input=data_file,
+                    input=context_json,
                     capture_output=True,
                     text=True,
                     timeout=300
@@ -443,7 +516,7 @@ class ProcessManager:
             elif script_path.endswith('.sh'):
                 result = subprocess.run(
                     ['bash', full_path],
-                    input=data_file,
+                    input=context_json,
                     capture_output=True,
                     text=True,
                     timeout=300
@@ -650,10 +723,11 @@ class ProcessManager:
             # Get logic configuration
             logic_config = block.get('logic', {})
 
-            # Save file path (save to workflow directory)
+            # Save file path (REFACTOR: save to task outputs directory if available)
             save_filename = block.get('save_as', f"{name}.json")
-            save_file = os.path.join(workflow_dir, save_filename)
-            os.makedirs(os.path.dirname(save_file) if os.path.dirname(save_file) else '.', exist_ok=True)
+            output_dir = self._get_output_dir()
+            save_file = os.path.join(output_dir, save_filename)
+            os.makedirs(os.path.dirname(save_file) if os.path.dirname(save_file) else output_dir, exist_ok=True)
 
             # PRE-PHASE: Run pre-processing logic (before Claude)
             if logic_config.get('pre'):
@@ -952,6 +1026,26 @@ class ProcessManager:
 
             # Log completion
             self._write_dog_log(f"DOG FINISHED | completed={completed} | failed={failed} | total={len(self.processes)}")
+
+            # REFACTOR: Update task status file and task.json
+            if self.task_dir:
+                status = "completed" if failed == 0 else "failed"
+                # Update status file
+                with open(os.path.join(self.task_dir, "status"), "w") as f:
+                    f.write(f"{status}\n")
+                # Update task.json
+                task_json_path = os.path.join(self.task_dir, "task.json")
+                if os.path.exists(task_json_path):
+                    with open(task_json_path) as f:
+                        task_data = json.load(f)
+                    task_data["status"] = status
+                    task_data["completed"] = datetime.now().isoformat()
+                    task_data["blocks_completed"] = completed
+                    task_data["blocks_failed"] = failed
+                    task_data["blocks_total"] = len(self.processes)
+                    with open(task_json_path, "w") as f:
+                        json.dump(task_data, f, indent=2, ensure_ascii=False)
+                self._write_dog_log(f"TASK STATUS | {self.task_id} | status={status}")
 
             # Handle task output (copy results to task output_dir)
             output_dir = self.all_blocks[0].get('output_dir') if hasattr(self, 'all_blocks') and self.all_blocks else None
@@ -1574,15 +1668,111 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description='Dog - Process Manager with htop-like UI')
-    parser.add_argument('config', nargs='?', help='Path to YAML configuration file (or use --task)')
+    parser.add_argument('config', nargs='?', help='Path to YAML configuration file (or use --flow/--task)')
+    parser.add_argument('--flow', metavar='FLOW_NAME', help='Flow name (creates new task automatically)')
+    parser.add_argument('--input', metavar='JSON', help='Input parameters as JSON (used with --flow)')
     parser.add_argument('--task', metavar='TASK_DIR', help='Task directory (e.g., /path/to/tasks/task-001)')
+    parser.add_argument('--status', metavar='TASK_ID', help='Show task status')
     parser.add_argument('--pause', action='store_true', help='Start workflow in paused state')
     parser.add_argument('--resume', metavar='RUN_ID', help='Resume from previous run (RUN_ID like 20251230-142345)')
 
     args = parser.parse_args()
 
+    # Handle --status command
+    if args.status:
+        tasks_root = os.path.join(os.path.dirname(__file__), "tasks")
+        task_dir = os.path.join(tasks_root, args.status)
+        task_json_path = os.path.join(task_dir, "task.json")
+        status_path = os.path.join(task_dir, "status")
+
+        if not os.path.exists(task_dir):
+            print(f"[ERROR] Task not found: {args.status}")
+            sys.exit(1)
+
+        # Read task.json
+        if os.path.exists(task_json_path):
+            with open(task_json_path) as f:
+                task_data = json.load(f)
+            print(f"\n[TASK] ID: {task_data.get('id')}")
+            print(f"[TASK] Flow: {task_data.get('flow')}")
+            print(f"[TASK] Created: {task_data.get('created')}")
+            print(f"[TASK] Status: {task_data.get('status')}")
+            if task_data.get('input'):
+                print(f"[TASK] Input: {json.dumps(task_data.get('input'), ensure_ascii=False)}")
+
+        # Read status file
+        if os.path.exists(status_path):
+            with open(status_path) as f:
+                print(f"[STATUS] {f.read().strip()}")
+
+        # List outputs
+        outputs_dir = os.path.join(task_dir, "outputs")
+        if os.path.exists(outputs_dir):
+            outputs = os.listdir(outputs_dir)
+            if outputs:
+                print(f"\n[OUTPUTS] {len(outputs)} files:")
+                for f in sorted(outputs):
+                    fpath = os.path.join(outputs_dir, f)
+                    size = os.path.getsize(fpath)
+                    print(f"  - {f} ({size} bytes)")
+        print()
+        sys.exit(0)
+
+    # Handle --flow mode (REFACTOR: create task and run flow)
+    flow_path = None
+    task_id = None
+    task_input = None
+
+    if args.flow:
+        flow_name = args.flow
+        flow_path = os.path.join(os.path.dirname(__file__), 'agents', 'flows', flow_name, f'{flow_name}.yaml')
+
+        if not os.path.exists(flow_path):
+            print(f"[ERROR] Flow not found: {flow_path}")
+            sys.exit(1)
+
+        # Parse input JSON if provided
+        if args.input:
+            try:
+                task_input = json.loads(args.input)
+            except json.JSONDecodeError as e:
+                print(f"[ERROR] Invalid JSON input: {e}")
+                sys.exit(1)
+        else:
+            task_input = {}
+
+        # Create task directory (will be done in ProcessManager)
+        config = load_config(flow_path)
+
+        # Create manager with task creation
+        manager = ProcessManager(
+            max_parallel=config.get('semaphore', 3),
+            flow_name=flow_name,
+            task_input=task_input
+        )
+
+        # Create task
+        task_id = manager.create_task(flow_name, task_input)
+        manager.task_id = task_id
+        manager.task_dir = os.path.join(manager.tasks_root, task_id)
+        manager.run_dir = manager.task_dir
+        manager.log_dir = os.path.join(manager.task_dir, "logs")
+        manager.dog_log_file = os.path.join(manager.task_dir, "dog.log")
+        manager.db_path = os.path.join(manager.task_dir, "dog.db")
+        os.makedirs(manager.log_dir, exist_ok=True)
+        manager.state = DogState(manager.db_path, resume=False)
+
+        # Load workflow config
+        manager.load_config(config, workflow_file=flow_path)
+
+        print(f"\n[TASK] Created: {task_id}")
+        print(f"[TASK] Flow: {flow_name}")
+        print(f"[TASK] Directory: {manager.task_dir}")
+        if task_input:
+            print(f"[TASK] Input: {json.dumps(task_input, ensure_ascii=False)}")
+
     # Handle task mode (load flow from task.yaml)
-    if args.task:
+    elif args.task:
         task_dir = args.task.rstrip('/')
         task_yaml_path = os.path.join(task_dir, 'task.yaml')
         status_path = os.path.join(task_dir, 'status.json')
@@ -1620,25 +1810,35 @@ def main():
         # Update status to "running"
         _update_task_status(status_path, 'running')
 
+        # Create manager for --task mode
+        manager = ProcessManager(
+            max_parallel=config.get('semaphore', 3),
+            task_id=os.path.basename(task_dir),
+            flow_name=flow_name,
+            task_input=task_config.get('input', {})
+        )
+        manager.task_dir = task_dir
+        manager.run_dir = task_dir
+        manager.load_config(config, workflow_file=flow_path)
+
         print(f"\n[TASK] ID: {task_config.get('id')}")
         print(f"[TASK] Flow: {flow_name}")
         print(f"[TASK] Output: {output_dir}\n")
 
     elif args.config:
         config = load_config(args.config)
+
+        # Create manager for config mode
+        manager = ProcessManager(
+            max_parallel=config.get('semaphore', 3),
+            resume_run_id=args.resume
+        )
+        manager.load_config(config, workflow_file=args.config)
+
     else:
-        print("[ERROR] Either provide config file or use --task")
+        print("[ERROR] Provide config file, --flow, or --task")
         parser.print_help()
         sys.exit(1)
-
-    # Create manager - GUID will be auto-generated from timestamp or resume_run_id
-    manager = ProcessManager(
-        max_parallel=config.get('semaphore', 3),
-        resume_run_id=args.resume
-    )
-    # Use flow_path for task mode, args.config for normal mode
-    workflow_file = flow_path if args.task else args.config
-    manager.load_config(config, workflow_file=workflow_file)
 
     # Pause workflow if --pause flag provided
     if args.pause:
