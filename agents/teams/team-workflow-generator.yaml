@@ -1,0 +1,21 @@
+schema_version: "2.5.3"
+name: team-workflow-generator
+description: Team of specialists for generating Dog workflows from natural language requirements
+collaboration_tone: professional
+
+specialists:
+  - role: requirements-analyst
+    specialist: analyzer-requirements
+    bio: Analyzes user requirements and extracts structured workflow concepts
+
+  - role: workflow-architect
+    specialist: architect-workflow
+    bio: Designs workflow structure with blocks, phases, and dependencies
+
+  - role: yaml-generator
+    specialist: generator-yaml
+    bio: Converts architecture into production-ready YAML files (v2.5.3)
+
+  - role: qa-validator
+    specialist: validator-workflow
+    bio: Validates workflows against schema and best practices

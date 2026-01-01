@@ -1,0 +1,24 @@
+name: parallel-search
+description: 3 parallel searches with different times + summarize
+semaphore: 3
+
+blocks:
+  - name: "search-google"
+    command: "python3 /server/scripts/agent-pm2-dog/mock_agent.py search-google 5"
+    duration: 5
+
+  - name: "search-bing"
+    command: "python3 /server/scripts/agent-pm2-dog/mock_agent.py search-bing 3"
+    duration: 3
+
+  - name: "search-reddit"
+    command: "python3 /server/scripts/agent-pm2-dog/mock_agent.py search-reddit 7"
+    duration: 7
+
+  - name: "summarize"
+    command: "python3 /server/scripts/agent-pm2-dog/mock_agent.py summarize 2"
+    duration: 2
+    depends_on:
+      - "search-google"
+      - "search-bing"
+      - "search-reddit"

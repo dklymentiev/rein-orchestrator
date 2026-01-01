@@ -1,0 +1,16 @@
+# Dog configuration - process manager
+name: test-workflow
+semaphore: 3  # Max 3 parallel processes
+
+blocks:
+  - name: "web-research"
+    command: "for i in {1..10}; do echo 'web-research: $i'; sleep 2; done"
+  
+  - name: "social-media"
+    command: "for i in {1..8}; do echo 'social-media: $i'; sleep 2; done"
+  
+  - name: "competitors"
+    command: "for i in {1..6}; do echo 'competitors: $i'; sleep 2; done"
+  
+  - name: "regulations"
+    command: "for i in {1..4}; do echo 'regulations: $i'; sleep 2; done"

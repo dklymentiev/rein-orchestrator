@@ -1,0 +1,25 @@
+id: task-20260101-002
+name: "Create poetry - with memory callback"
+description: "Generate poetry and save result to memory"
+
+flow: create-poem
+
+params:
+  team: team-poetry
+  max_parallel: 3
+
+output_dir: ./outputs
+
+created_at: "2026-01-01T00:50:00Z"
+created_by: claude-code
+
+# Save result to memory after completion
+callback:
+  save_to_memory: true
+  memory_config:
+    guid: afc9f8a3
+    tags:
+      - type:artifact
+      - stage:completed
+      - source:task-system
+      - date:2026-01-01

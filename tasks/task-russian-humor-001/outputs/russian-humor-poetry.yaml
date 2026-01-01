@@ -1,0 +1,187 @@
+name: russian-humor-poetry
+team: team-russian-humor
+description: Русская юмористическая поэзия - полный workflow с жюри
+
+blocks:
+  # STAGE 1: Ideation - Создание тем
+  - stage: ideation
+    agents: [ideator-humor-ru]
+    prompt: |
+      Придумай 3 разных темы для юмористических стихотворений.
+      Каждая тема должна иметь:
+      - Название (оригинальное и смешное)
+      - Описание (полное с деталями)
+      - Стиль (рифмованный четырёхстопный ямб, свободный стих, и т.д.)
+      - Настроение и тон
+
+      Буди креативным и смешным! Русский язык.
+
+      Выведи в JSON формате с полем "themes" содержащим массив объектов.
+    save_as: ideation.json
+    logic:
+      validate: logic/validate-themes.py
+    parallel: false
+    continue_if_failed: false  # КРИТИЧНО - без тем нет процесса
+
+  # STAGE 2: Selection - Выбор одной темы
+  - stage: selection
+    agents: [ideator-humor-ru]
+    prompt: |
+      Из 3 предложенных тем выбери ОДНУ лучшую для написания стихотворений.
+
+      Темы:
+      {{ ideation.json }}
+
+      Обоснуй свой выбор кратко.
+
+      Выведи JSON с полями:
+      {
+        "selected_title": "название выбранной темы",
+        "selected_description": "описание",
+        "selected_style": "стиль",
+        "reasoning": "почему выбрал"
+      }
+    depends_on: [ideation]
+    save_as: selection.json
+    logic:
+      post: logic/select-theme.py
+    parallel: false
+    continue_if_failed: true   # ОПЦИОНАЛЬНО - poets пишут несмотря на ошибку выбора
+
+  # STAGE 3: Creation - 3 поэта пишут параллельно
+  - stage: creation_1
+    agents: [poet-humor-ru]
+    prompt: |
+      Напиши 8 строк юмористического стихотворения на эту тему:
+
+      Тема: {{ selection.json }}
+
+      Точно 8 строк! Смешно и креативно!
+
+      JSON: {"theme": "...", "style": "...", "poem": "строка1\nстрока2\n...", "explanation": "объяснение юмора"}
+    depends_on: [selection]
+    save_as: creation_1.json
+    parallel: true
+    skip_if_previous_failed: true  # Игнорируй selection failure
+    continue_if_failed: true       # Одна ошибка не блокирует других поэтов
+
+  - stage: creation_2
+    agents: [poet-humor-ru]
+    prompt: |
+      Напиши 8 строк юмористического стихотворения на эту тему:
+
+      Тема: {{ selection.json }}
+
+      Другой подход, чем поэт 1! Смешно и оригинально!
+
+      JSON: {"theme": "...", "style": "...", "poem": "строка1\nстрока2\n...", "explanation": "объяснение юмора"}
+    depends_on: [selection]
+    save_as: creation_2.json
+    parallel: true
+    skip_if_previous_failed: true  # Игнорируй selection failure
+    continue_if_failed: true       # Одна ошибка не блокирует других поэтов
+
+  - stage: creation_3
+    agents: [poet-humor-ru]
+    prompt: |
+      Напиши 8 строк юмористического стихотворения на эту тему:
+
+      Тема: {{ selection.json }}
+
+      Третий уникальный подход! Смешно, креативно и неожиданно!
+
+      JSON: {"theme": "...", "style": "...", "poem": "строка1\nстрока2\n...", "explanation": "объяснение юмора"}
+    depends_on: [selection]
+    save_as: creation_3.json
+    parallel: true
+    skip_if_previous_failed: true  # Игнорируй selection failure
+    continue_if_failed: true       # Одна ошибка не блокирует других поэтов
+
+  # STAGE 4: Jury Prep - Подготовка данных для жюри
+  - stage: jury_prep
+    agents: []
+    prompt: ""
+    depends_on: [creation_1, creation_2, creation_3]
+    save_as: jury_prep.json
+    logic:
+      custom: logic/prepare-for-jury.py
+    parallel: false
+    continue_if_failed: false  # КРИТИЧНО - жюри не может работать без данных
+
+  # STAGE 5: Jury - 2 жюри оценивают параллельно
+  - stage: jury_1
+    agents: [jury-humor-ru]
+    prompt: |
+      Оцени 3 стихотворения. Выбери лучшее!
+
+      Три стихотворения:
+      {{ jury_prep.json }}
+
+      Оценивай по критериям: юмор, мастерство, оригинальность, язык.
+      Каждый критерий 1-10 баллов.
+
+      JSON с полем "winner_number": 1/2/3 и объяснением почему.
+    depends_on: [jury_prep]
+    save_as: jury_1.json
+    parallel: true
+    continue_if_failed: true   # ОПЦИОНАЛЬНО - один судья fail не критичен
+
+  - stage: jury_2
+    agents: [jury-humor-ru]
+    prompt: |
+      Оцени 3 стихотворения. Выбери лучшее!
+
+      Три стихотворения:
+      {{ jury_prep.json }}
+
+      Оценивай по критериям: юмор, мастерство, оригинальность, язык.
+      Каждый критерий 1-10 баллов.
+
+      JSON с полем "winner_number": 1/2/3 и объяснением почему.
+    depends_on: [jury_prep]
+    save_as: jury_2.json
+    parallel: true
+    continue_if_failed: true   # ОПЦИОНАЛЬНО - один судья fail не критичен
+
+  # STAGE 6: Final Prep - Подготовка для финального судьи
+  - stage: final_prep
+    agents: []
+    prompt: ""
+    depends_on: [jury_1, jury_2]
+    save_as: final_prep.json
+    logic:
+      custom: logic/prepare-for-final.py
+    parallel: false
+    continue_if_failed: false  # КРИТИЧНО - финал требует данных от жюри
+
+  # STAGE 7: Final Judge - Финальный выбор
+  - stage: final_judge
+    agents: [final-judge-humor-ru]
+    prompt: |
+      Ты финальный судья в этом поэтическом состязании!
+
+      Вот все необходимые данные для принятия решения:
+
+      {{ final_prep.json }}
+
+      ТВОЯ ЗАДАЧА:
+
+      1. Внимательно прочитай все три стихотворения
+      2. Проанализируй оценки жюри (их выборы и рассуждения)
+      3. Сравни точки зрения двух судей
+      4. Выбери ОКОНЧАТЕЛЬНОГО победителя
+      5. Объясни свой выбор подробно
+
+      РЕЗУЛЬТАТ должен быть JSON с:
+      - poem_1, poem_2, poem_3: полный текст каждого стиха + твоя оценка
+      - jury_1_choice и jury_1_reasoning: что выбрало и почему
+      - jury_2_choice и jury_2_reasoning: что выбрало и почему
+      - final_winner_number: 1, 2 или 3 (твой выбор)
+      - final_winner_evaluation: ПОДРОБНОЕ объяснение почему ЭТО стихотворение лучшее
+      - championship_verdict: забавный финальный вердикт
+
+      Будь справедлив, объективен и остроумен!
+    depends_on: [final_prep]
+    save_as: final_judge.json
+    parallel: false
+    continue_if_failed: false  # КРИТИЧНО - финал должен завершиться

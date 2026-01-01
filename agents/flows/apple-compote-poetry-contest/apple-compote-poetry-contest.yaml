@@ -1,0 +1,98 @@
+schema_version: "2.5.3"
+name: apple-compote-poetry-contest
+team: team-apple-compote
+description: Poetry competition with three poets creating humorous poems about apple compote in different styles
+max_parallel: 3
+
+blocks:
+  - name: iambic_poem_creation
+    phase: 1
+    specialist: classical-poet
+    prompt: |
+      Create a humorous poem about apple compote using iambic tetrameter.
+      Requirements:
+      - Strict iambic tetrameter rhythm (8 syllables per line, alternating unstressed/stressed)
+      - Clear rhyme scheme (ABAB or AABB)
+      - Length: 16-24 lines
+      - Topic: Apple compote preparation or enjoyment
+      - Tone: Witty and playful
+      - Include at least one clever culinary metaphor
+      Format output as plain text poem.
+    depends_on: []
+    parallel: true
+
+  - name: free_verse_creation
+    phase: 1
+    specialist: modern-poet
+    prompt: |
+      Compose a modern free verse poem about apple compote.
+      Requirements:
+      - Use contemporary poetic techniques
+      - Length: 14-20 lines
+      - Include vivid imagery and metaphors
+      - Theme: The transformation of apples into compote
+      - Tone: Humorous but thoughtful
+      - Experiment with line breaks and spacing
+      Format output as plain text poem.
+    depends_on: []
+    parallel: true
+
+  - name: folk_song_creation
+    phase: 1
+    specialist: folk-poet
+    prompt: |
+      Create a folk-style song/poem about apple compote.
+      Requirements:
+      - Use traditional folk rhythm patterns
+      - Include a repeating chorus or refrain
+      - Length: 3-4 verses plus chorus
+      - Theme: Celebrating apple compote making as tradition
+      - Tone: Light-hearted and communal
+      - Should be singable
+      Format output as plain text with verses and chorus clearly marked.
+    depends_on: []
+    parallel: true
+
+  - name: poetry_evaluation
+    phase: 2
+    specialist: poetry-judge
+    prompt: |
+      Evaluate the three submitted poems about apple compote.
+      Criteria:
+      1. Originality and creativity (0-10)
+      2. Humor effectiveness (0-10)
+      3. Technical execution (0-10)
+      4. Theme development (0-10)
+      
+      Compare the poems based on these criteria and select a winner.
+      Output as JSON:
+      {
+        "evaluations": [
+          {"poem": "iambic", "scores": {...}, "comments": "..."},
+          {"poem": "free_verse", "scores": {...}, "comments": "..."},
+          {"poem": "folk", "scores": {...}, "comments": "..."}
+        ],
+        "winner": "poem_type",
+        "reasoning": "detailed explanation"
+      }
+    depends_on: ["iambic_poem_creation", "free_verse_creation", "folk_song_creation"]
+    parallel: false
+    skip_if_previous_failed: true
+
+  - name: winner_announcement
+    phase: 3
+    specialist: poetry-judge
+    prompt: |
+      Using the evaluation results from {{ poetry_evaluation.json }},
+      create a formal announcement of the winning poem.
+      Include:
+      1. Introduction of the competition
+      2. Brief description of each entry
+      3. Announcement of winner with scores
+      4. Detailed explanation of why this poem won
+      5. Honorable mentions if applicable
+      
+      Format as a structured announcement text with clear sections.
+    depends_on: ["poetry_evaluation"]
+    parallel: false
+

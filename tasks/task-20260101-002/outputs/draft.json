@@ -1,0 +1,13 @@
+{
+  "theme": "The Winter Garden",
+  "poem": "Beneath the snow's white manuscript,\nSeeds parse their ancient grammar;\nWhile we who wait above have kept\nOur faith in summer's clamor.\n",
+  "form": "A quatrain in iambic tetrameter with alternating rhyme (ABAB). The poem draws on the Russian tradition of using natural imagery as metaphysical metaphor, particularly reminiscent of Tyutchev's winter poems. The metaphor of seeds as linguistic elements ('manuscript,' 'grammar') creates a connection between natural processes and human meaning-making. The first two lines focus on what's hidden, while the final two lines shift to the human perspective of waiting and believing in renewal.",
+  "technical_notes": "Meter: Iambic tetrameter throughout\nRhyme scheme: ABAB (manuscript/kept, grammar/clamor)\nNotable sound patterns: Alliteration of 's' sounds in 'snow's' and 'seeds' reinforces the hushed winter atmosphere",
+  "interpretation": "The poem explores the theme of faith in natural cycles and hidden growth. The comparison of snow to a manuscript suggests that winter itself is a text we must learn to read, while the seeds 'parsing grammar' implies that nature's processes follow their own sophisticated language. The shift to 'we who wait' in the third line introduces the human element, acknowledging our role as both observers and participants in cycles of dormancy and renewal.",
+  "metadata": {
+    "enhanced_at": "2026-01-01T00:52:35.237813",
+    "line_count": 5,
+    "word_count": 22,
+    "char_count": 136
+  }
+}

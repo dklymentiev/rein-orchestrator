@@ -1,0 +1,17 @@
+semaphore: 3
+timeout: 180
+
+blocks:
+  - name: processor-1
+    command: "python3 agent.py processor-1 40"
+
+  - name: processor-2
+    command: "python3 agent.py processor-2 40"
+
+  - name: analyzer
+    command: "python3 agent.py analyzer 30"
+    depends_on: [processor-1]
+
+  - name: reporter
+    command: "python3 agent.py reporter 25"
+    depends_on: [processor-2]

@@ -1,0 +1,45 @@
+schema_version: "2.5.3"
+name: simple-test-workflow
+team: team-test
+description: Simple test workflow for validation
+max_parallel: 2
+
+blocks:
+  - name: step_one
+    phase: 1
+    specialist: thinker-test
+    prompt: Think about this problem and provide initial thoughts.
+    parallel: false
+    skip_if_previous_failed: false
+    continue_if_failed: false
+
+  - name: step_two
+    phase: 2
+    specialist: analyzer-test
+    prompt: Analyze the previous step and provide deeper insights.
+    depends_on:
+      - step_one
+    parallel: false
+    skip_if_previous_failed: false
+    continue_if_failed: false
+
+  - name: step_three_alt
+    phase: 2
+    specialist: evaluator-test
+    prompt: Evaluate from a different perspective.
+    depends_on:
+      - step_one
+    parallel: true
+    skip_if_previous_failed: false
+    continue_if_failed: true
+
+  - name: final_step
+    phase: 3
+    specialist: synthesizer-test
+    prompt: Synthesize all insights into a final recommendation.
+    depends_on:
+      - step_two
+      - step_three_alt
+    parallel: false
+    skip_if_previous_failed: false
+    continue_if_failed: false

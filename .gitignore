@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+
+# IDE
+.claude/
+
+# Temporary outputs (should be in tasks/)
+*.json
+!schemas/*.json
+!tasks/**/outputs/*.json
+!agents/flows/workflow-generation/test-input.json
+
+# Logs
+*.log
+
+# SQLite
+*.db

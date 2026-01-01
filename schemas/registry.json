@@ -1,0 +1,105 @@
+{
+  "current_version": "2.5.3",
+  "description": "Schema version registry and compatibility matrix",
+  "versions": {
+    "2.5.3": {
+      "released": "2026-01-01",
+      "description": "Workflow Generator support, flow control parameters, pre-flight validation",
+      "features": [
+        "JSON Schema validation",
+        "Pydantic models with business logic",
+        "Pre-flight validation pipeline",
+        "Circular dependency detection",
+        "Schema versioning with compatibility matrix",
+        "Flow control: skip_if_previous_failed, continue_if_failed"
+      ],
+      "backwards_compatible_with": ["2.5.2"],
+      "migration_required": false,
+      "breaking_changes": []
+    },
+    "2.5.2": {
+      "released": "2025-12-30",
+      "description": "Base version with flow control parameters",
+      "features": [
+        "skip_if_previous_failed block parameter",
+        "continue_if_failed block parameter",
+        "Parallel block execution with semaphores",
+        "Data substitution via {{ file.json }} placeholders"
+      ],
+      "backwards_compatible_with": ["2.5.1"],
+      "migration_required": false,
+      "breaking_changes": []
+    },
+    "2.5.1": {
+      "released": "2025-12-25",
+      "description": "Parallel execution and data flow",
+      "features": [
+        "Parallel block execution",
+        "Data substitution in prompts",
+        "Envelope pattern for responses"
+      ],
+      "breaking_changes": []
+    }
+  },
+  "compatibility_matrix": {
+    "2.5.3": {
+      "can_upgrade_from": ["2.5.2", "2.5.1"],
+      "can_downgrade_to": [],
+      "migration_script": null
+    },
+    "2.5.2": {
+      "can_upgrade_from": ["2.5.1"],
+      "can_downgrade_to": ["2.5.1"],
+      "migration_script": null
+    },
+    "2.5.1": {
+      "can_upgrade_from": [],
+      "can_downgrade_to": [],
+      "migration_script": null
+    }
+  },
+  "migration_scripts": {
+    "2.5.1_to_2.5.2": {
+      "path": "migrations/2.5.1_to_2.5.2.py",
+      "description": "Add flow control parameters to existing workflows"
+    },
+    "2.5.2_to_2.5.3": {
+      "path": "migrations/2.5.2_to_2.5.3.py",
+      "description": "Add schema_version field and validate with new schemas"
+    }
+  },
+  "deprecation_notices": {
+    "2.5.1": {
+      "deprecated_in": "2.5.2",
+      "removal_in": "3.0.0",
+      "message": "Version 2.5.1 is deprecated. Please upgrade to 2.5.3 for schema validation support."
+    }
+  },
+  "model_aliases": {
+    "anthropic/claude-3.5-sonnet": {
+      "full_name": "anthropic/claude-3.5-sonnet",
+      "provider": "OpenRouter",
+      "default": true
+    },
+    "anthropic/claude-3-opus": {
+      "full_name": "anthropic/claude-3-opus",
+      "provider": "OpenRouter"
+    },
+    "anthropic/claude-3-haiku": {
+      "full_name": "anthropic/claude-3-haiku",
+      "provider": "OpenRouter"
+    },
+    "openai/gpt-4-turbo": {
+      "full_name": "openai/gpt-4-turbo",
+      "provider": "OpenRouter"
+    },
+    "openai/gpt-3.5-turbo": {
+      "full_name": "openai/gpt-3.5-turbo",
+      "provider": "OpenRouter"
+    },
+    "google/gemini-pro": {
+      "full_name": "google/gemini-pro",
+      "provider": "OpenRouter"
+    }
+  }
+}

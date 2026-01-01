@@ -1,0 +1,12 @@
+{
+  "task_id": "task-20260101-002",
+  "status": "failed",
+  "created_at": "2026-01-01T00:50:00Z",
+  "started_at": "2026-01-01T00:52:12.009347",
+  "completed_at": "2026-01-01T00:53:01.723564",
+  "progress": 100,
+  "blocks_completed": 4,
+  "blocks_total": 5,
+  "error": null,
+  "output_dir": "./outputs"
+}

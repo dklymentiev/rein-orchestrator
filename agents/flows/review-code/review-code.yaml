@@ -1,0 +1,83 @@
+name: review-code
+team: team-code-review
+description: Code review workflow with architecture, implementation, and testing assessment
+
+blocks:
+  - stage: architecture-review
+    agents: [architect-specialist]
+    prompt: |
+      Review the code and architecture.
+      Evaluate:
+      1. Overall design and structure
+      2. Component separation and modularity
+      3. Technology choices and rationale
+      4. Scalability considerations
+      5. Potential issues or anti-patterns
+
+      Provide recommendations for improvement.
+      Output as JSON with structure: {design_assessment: "...", technology_fit: "...", scalability: "...", recommendations: [...]}
+    parallel: false
+    save_as: architecture_review.json
+    logic:
+      post: logic/format-architecture.py
+
+  - stage: implementation-review
+    agents: [developer-specialist]
+    prompt: |
+      Review the code implementation quality.
+      Evaluate:
+      1. Code clarity and readability
+      2. Adherence to coding standards
+      3. Error handling and edge cases
+      4. Performance and efficiency
+      5. Documentation and comments
+
+      Suggest improvements to code quality.
+      Output as JSON with structure: {code_quality: "...", strengths: [...], improvements: [...], severity_issues: [...]}
+    parallel: true
+    save_as: implementation_review.json
+    logic:
+      validate: logic/validate-code-quality.sh
+
+  - stage: testing-review
+    agents: [tester-specialist]
+    prompt: |
+      Review testing approach and coverage.
+      Evaluate:
+      1. Test strategy and scenarios
+      2. Unit test coverage
+      3. Integration test adequacy
+      4. Edge case handling
+      5. Performance testing needs
+
+      Recommend testing improvements.
+      Output as JSON with structure: {test_coverage: "...", test_quality: "...", gaps: [...], recommendations: [...]}
+    parallel: true
+    save_as: testing_review.json
+
+  - stage: synthesis
+    agents: [integrator-specialist]
+    prompt: |
+      Synthesize the three reviews:
+
+      Architecture Review:
+      {{ architecture_review.json }}
+
+      Implementation Review:
+      {{ implementation_review.json }}
+
+      Testing Review:
+      {{ testing_review.json }}
+
+      Provide integrated assessment:
+      1. Overall code quality rating (1-10)
+      2. Top 3 strengths
+      3. Top 3 issues to address
+      4. Priority-ranked improvement roadmap
+      5. Approval recommendation
+
+      Output as JSON with structure: {overall_rating: X/10, approval: true/false, critical_issues: [...], improvement_plan: [...]}
+    depends_on: [implementation_review, testing_review, architecture_review]
+    save_as: review_synthesis.json
+    logic:
+      post: logic/generate-report.py

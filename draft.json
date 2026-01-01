@@ -1,0 +1,22 @@
+{
+  "theme": "The fleeting nature of time and memory",
+  "poem": "Like autumn leaves caught in December frost,\nOur memories crystallize, then fade and fall—\nEach precious moment already is lost\nThe instant that we try to hold it all.",
+  "form": "Quatrain in iambic pentameter with ABAB rhyme scheme, drawing inspiration from Tyutchev's nature imagery and philosophical themes",
+  "technical_notes": {
+    "meter": "Iambic pentameter throughout",
+    "rhyme_scheme": "ABAB (frost/fall/lost/all)",
+    "devices": [
+      "Simile comparing memories to frozen leaves",
+      "Natural imagery as metaphor for human experience",
+      "Present tense for immediacy",
+      "Paradox in final line"
+    ]
+  },
+  "interpretation": "The poem explores the impossibility of truly capturing moments as they pass. The winter imagery suggests both preservation (frost) and decay (falling leaves). The paradox in the final line - that trying to hold memories hastens their loss - reflects a key theme in Russian philosophical poetry about the nature of time and human consciousness.",
+  "metadata": {
+    "enhanced_at": "2026-01-01T00:29:44.427049",
+    "line_count": 4,
+    "word_count": 29,
+    "char_count": 167
+  }
+}

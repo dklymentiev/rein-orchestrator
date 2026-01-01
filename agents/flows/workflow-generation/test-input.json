@@ -1,0 +1,3 @@
+{
+  "user_requirement": "Создай deliberation workflow для анализа двух систем оркестрации (Dog vs Conductor). Структура: 3 специалиста (prompt-engineer-specialist, workflow-architect, quality-assurance-specialist) независимо анализируют обе системы в round-1 параллельно по критериям архитектура, функциональность, надёжность, управление. Во round-2 каждый видит мнения других двух и дает перекрестный отзыв based on их perspectives. В round-3 каждый создает синтезированную оценку. В round-4 создается финальная консолидированная рекомендация с action items."
+}

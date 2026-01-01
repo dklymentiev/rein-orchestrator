@@ -1,0 +1,211 @@
+schema_version: "2.5.3"
+name: workflow-generation
+team: team-workflow-generator
+description: Multi-stage workflow generation from user requirements with validation and schema compliance
+max_parallel: 2
+
+blocks:
+  # PHASE 1: Analyze user requirements
+  - name: analyze_requirements
+    phase: 1
+    specialist: analyzer-requirements
+    prompt: |
+      Analyze the following user requirement for a workflow and extract structured information.
+
+      User Requirement:
+      {{ test-input.json }}
+
+      Your task:
+      1. Understand the overall goal
+      2. Identify key stages and their purposes
+      3. Determine what types of specialists are needed
+      4. Map data flow between stages
+      5. Identify dependencies
+      6. Note any special requirements (parallel execution, error handling, etc.)
+
+      Return VALID JSON matching this structure:
+      {
+        "workflow_name": "name-in-kebab-case",
+        "workflow_title": "Human readable title",
+        "description": "What this workflow does",
+        "analysis": {
+          "concept": "Core concept",
+          "complexity": "simple|moderate|complex",
+          "estimated_blocks": number
+        },
+        "stages": [...],
+        "specialists_needed": [...],
+        "data_flow": [...],
+        "dependencies": [...],
+        "special_requirements": {...}
+      }
+
+      Focus on clarity and correctness. Return ONLY valid JSON, no markdown.
+    depends_on: []
+    parallel: false
+    skip_if_previous_failed: false
+    continue_if_failed: false
+    logic:
+      validate: logic/validate-analysis.py
+
+  # PHASE 2: Architect the workflow
+  - name: architect_workflow
+    phase: 2
+    specialist: architect-workflow
+    prompt: |
+      Based on the analyzed requirements, design a detailed workflow architecture.
+
+      Requirements Analysis:
+      {{ analyze_requirements.json }}
+
+      Your task:
+      1. Design block structure with names, purposes, and specialist roles
+      2. Plan execution phases for optimal parallelization
+      3. Define dependencies between blocks
+      4. Decide flow control strategy (which blocks are critical, which are resilient)
+      5. Write high-level prompt summaries for each block
+
+      Return VALID JSON with:
+      {
+        "workflow_name": "...",
+        "team_name": "team-...",
+        "blocks_design": [...],
+        "team_composition": [...],
+        "execution_plan": {...},
+        "flow_control_strategy": {...},
+        "notes": "Design rationale"
+      }
+
+      Ensure:
+      - Maximum 15 blocks for complex workflows
+      - Phases 1-3 for simple, 1-5 for complex
+      - Clear dependencies that enable parallelization
+      - Return ONLY valid JSON, no markdown
+    depends_on:
+      - analyze_requirements
+    parallel: false
+    skip_if_previous_failed: false
+    continue_if_failed: false
+    logic:
+      validate: logic/validate-architecture.py
+
+  # PHASE 3: Generate YAML files
+  - name: generate_yaml
+    phase: 3
+    specialist: generator-yaml
+    prompt: |
+      Convert the workflow architecture into production-ready YAML files.
+
+      Architecture:
+      {{ architect_workflow.json }}
+
+      Your task:
+      1. Generate workflow.yaml with all blocks, prompts, phases, dependencies
+      2. Generate team.yaml with all specialists and collaboration tone
+      3. List specialist files that need to be created
+      4. Ensure schema_version: "2.5.3" in all files
+      5. Write clear, actionable prompts for each block
+
+      Return VALID JSON with:
+      {
+        "workflow_name": "...",
+        "files": {
+          "workflow.yaml": "full YAML content as string",
+          "team.yaml": "full YAML content as string"
+        },
+        "specialists_to_create": [...],
+        "notes": "Generation notes"
+      }
+
+      Validation checklist before returning:
+      - schema_version: "2.5.3" present
+      - All names match required patterns
+      - All block names in dependencies exist
+      - All specialists referenced in blocks exist in team.yaml
+      - Return ONLY valid JSON, no markdown
+    depends_on:
+      - architect_workflow
+    parallel: false
+    skip_if_previous_failed: false
+    continue_if_failed: false
+    logic:
+      validate: logic/validate-yaml-structure.py
+
+  # PHASE 4: Validate against schema
+  - name: validate_schema
+    phase: 4
+    specialist: validator-workflow
+    prompt: |
+      Validate the generated workflow and team YAML files.
+
+      Workflow YAML:
+      {{ generate_yaml.json }}
+
+      Your task:
+      1. Check schema compliance (structure, field types, patterns)
+      2. Verify no circular dependencies
+      3. Check all references are resolvable
+      4. Validate flow control decisions
+      5. Suggest improvements if needed
+
+      Return VALID JSON with:
+      {
+        "workflow_name": "...",
+        "is_valid": true|false,
+        "errors": [...],
+        "warnings": [...],
+        "analysis": {...},
+        "recommendations": [...]
+      }
+
+      If errors found, describe them clearly so they can be fixed.
+      Return ONLY valid JSON, no markdown.
+    depends_on:
+      - generate_yaml
+    parallel: false
+    skip_if_previous_failed: false
+    continue_if_failed: true
+    logic:
+      validate: logic/validate-workflow.py
+
+  # PHASE 5: Save files to disk
+  - name: save_workflow
+    phase: 5
+    specialist: generator-yaml
+    prompt: |
+      You will receive validated workflow files and save them to disk.
+
+      Validation Report:
+      {{ validate_schema.json }}
+
+      YAML Files:
+      {{ generate_yaml.json }}
+
+      If validation passed (is_valid: true):
+      1. Save workflow.yaml to agents/flows/{workflow_name}/
+      2. Save team.yaml to agents/teams/
+      3. Create specialist stub files in agents/specialists/
+      4. Return summary of files created
+
+      If validation failed:
+      1. Report the errors clearly
+      2. Do NOT save files
+      3. Suggest fixes
+
+      Return JSON with:
+      {
+        "status": "saved|failed",
+        "workflow_name": "...",
+        "files_created": [...],
+        "files_location": {...},
+        "errors": []
+      }
+
+      Return ONLY valid JSON.
+    depends_on:
+      - validate_schema
+    parallel: false
+    skip_if_previous_failed: false
+    continue_if_failed: false
+    logic:
+      custom: logic/save-workflow-files.py

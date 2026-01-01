@@ -1,0 +1,29 @@
+id: task-russian-humor-001
+name: "Русская юмористическая поэзия - с жюри"
+description: "Сложный workflow: идеатор → 3 поэта (параллельно) → 2 жюри (параллельно) → финальный судья"
+
+# Какой flow использовать
+flow: russian-humor-poetry
+
+# Параметры flow
+params:
+  team: team-russian-humor
+  max_parallel: 5  # Allow parallel blocks
+
+# Куда сохранить результаты
+output_dir: ./outputs
+
+# Метаданные
+created_at: "2026-01-01T01:00:00Z"
+created_by: claude-code
+
+# Сохранить результат в память
+callback:
+  save_to_memory: true
+  memory_config:
+    guid: afc9f8a3
+    tags:
+      - type:artifact
+      - stage:completed
+      - project:russian-poetry
+      - date:2026-01-01

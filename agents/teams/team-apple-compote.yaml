@@ -1,0 +1,18 @@
+schema_version: "2.5.3"
+name: team-apple-compote
+description: Team of specialized poets and judge for apple compote poetry competition
+collaboration_tone: professional
+
+specialists:
+  - role: classical_poet
+    specialist: classical-poet
+    bio: Expert in traditional poetic forms and iambic tetrameter
+  - role: modern_poet
+    specialist: modern-poet
+    bio: Specialist in contemporary free verse poetry
+  - role: folk_poet
+    specialist: folk-poet
+    bio: Expert in folk songs and traditional verse forms
+  - role: poetry_judge
+    specialist: poetry-judge
+    bio: Experienced poetry critic with focus on humor and creativity

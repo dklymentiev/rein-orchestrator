@@ -1,0 +1,15 @@
+schema_version: "2.5.3"
+name: team-orchestration-analysis
+description: Team of specialists for orchestration systems analysis
+collaboration_tone: professional
+
+specialists:
+  - role: prompt-engineer
+    specialist: prompt-engineer-specialist
+    bio: Expert in prompt engineering and LLM interaction patterns
+  - role: architect
+    specialist: workflow-architect
+    bio: Specialist in workflow architecture and system design
+  - role: qa-specialist
+    specialist: quality-assurance-specialist
+    bio: Expert in quality assurance and system reliability
