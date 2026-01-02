@@ -248,39 +248,76 @@ class ProcessManager:
         """Save human-readable MD version of block output"""
         try:
             md_file = json_file.replace('.json', '.md')
+            lines = [f"# {block_name}", "", f"*{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*", ""]
 
-            # Extract readable content from result
-            content = result
+            # Try to extract JSON from markdown code blocks
+            import re
+            json_match = re.search(r'```json\s*\n(.*?)\n```', result, re.DOTALL)
 
-            # Try to parse if result is JSON string and extract meaningful content
-            try:
-                parsed = json.loads(result)
-                if isinstance(parsed, dict):
-                    # Format dict as readable markdown
-                    lines = [f"# {block_name}", "", f"*{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*", ""]
-                    for key, value in parsed.items():
-                        lines.append(f"## {key.replace('_', ' ').title()}")
-                        if isinstance(value, list):
-                            for item in value:
-                                lines.append(f"- {item}")
-                        elif isinstance(value, dict):
-                            lines.append(f"```json\n{json.dumps(value, indent=2, ensure_ascii=False)}\n```")
-                        else:
-                            lines.append(str(value))
-                        lines.append("")
-                    content = "\n".join(lines)
-                else:
-                    content = f"# {block_name}\n\n{result}"
-            except (json.JSONDecodeError, TypeError):
-                # Plain text result - just add header
-                content = f"# {block_name}\n\n*{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n{result}"
+            if json_match:
+                # Has text + JSON block
+                text_before = result[:json_match.start()].strip()
+                json_str = json_match.group(1)
+                text_after = result[json_match.end():].strip()
+
+                if text_before:
+                    lines.append(text_before)
+                    lines.append("")
+
+                # Parse and format JSON
+                try:
+                    parsed = json.loads(json_str)
+                    lines.extend(self._format_json_as_md(parsed))
+                except:
+                    lines.append(f"```json\n{json_str}\n```")
+
+                if text_after:
+                    lines.append("")
+                    lines.append(text_after)
+            else:
+                # Try parsing as pure JSON
+                try:
+                    parsed = json.loads(result)
+                    lines.extend(self._format_json_as_md(parsed))
+                except:
+                    # Plain text - just add it
+                    lines.append(result)
 
             with open(md_file, 'w') as f:
-                f.write(content)
+                f.write("\n".join(lines))
 
             self._write_dog_log(f"READABLE OUTPUT | {block_name} | saved={md_file}")
         except Exception as e:
             self._write_dog_log(f"READABLE OUTPUT ERROR | {block_name} | {str(e)}")
+
+    def _format_json_as_md(self, data: dict) -> list:
+        """Format JSON dict as readable markdown sections"""
+        lines = []
+        if not isinstance(data, dict):
+            lines.append(str(data))
+            return lines
+
+        for key, value in data.items():
+            title = key.replace('_', ' ').title()
+            lines.append(f"## {title}")
+            lines.append("")
+
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str) and len(item) > 100:
+                        lines.append(f"- {item}")
+                    else:
+                        lines.append(f"- {item}")
+            elif isinstance(value, dict):
+                for k, v in value.items():
+                    lines.append(f"**{k}:** {v}")
+            elif isinstance(value, (int, float)):
+                lines.append(str(value))
+            else:
+                lines.append(str(value))
+            lines.append("")
+
+        return lines
 
     def load_config(self, config: dict, workflow_file: str = None):
         """Load block configuration"""
