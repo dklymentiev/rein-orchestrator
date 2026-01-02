@@ -244,6 +244,44 @@ class ProcessManager:
             # Fallback to workflow_dir for backward compatibility
             return self.workflow_dir
 
+    def _save_readable_output(self, json_file: str, block_name: str, result: str):
+        """Save human-readable MD version of block output"""
+        try:
+            md_file = json_file.replace('.json', '.md')
+
+            # Extract readable content from result
+            content = result
+
+            # Try to parse if result is JSON string and extract meaningful content
+            try:
+                parsed = json.loads(result)
+                if isinstance(parsed, dict):
+                    # Format dict as readable markdown
+                    lines = [f"# {block_name}", "", f"*{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*", ""]
+                    for key, value in parsed.items():
+                        lines.append(f"## {key.replace('_', ' ').title()}")
+                        if isinstance(value, list):
+                            for item in value:
+                                lines.append(f"- {item}")
+                        elif isinstance(value, dict):
+                            lines.append(f"```json\n{json.dumps(value, indent=2, ensure_ascii=False)}\n```")
+                        else:
+                            lines.append(str(value))
+                        lines.append("")
+                    content = "\n".join(lines)
+                else:
+                    content = f"# {block_name}\n\n{result}"
+            except (json.JSONDecodeError, TypeError):
+                # Plain text result - just add header
+                content = f"# {block_name}\n\n*{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n{result}"
+
+            with open(md_file, 'w') as f:
+                f.write(content)
+
+            self._write_dog_log(f"READABLE OUTPUT | {block_name} | saved={md_file}")
+        except Exception as e:
+            self._write_dog_log(f"READABLE OUTPUT ERROR | {block_name} | {str(e)}")
+
     def load_config(self, config: dict, workflow_file: str = None):
         """Load block configuration"""
         self.config = config  # Save full config for task mode
@@ -368,9 +406,24 @@ class ProcessManager:
             # Get block prompt
             prompt = block.get('prompt', '')
 
+            # REFACTOR: Substitute task.input.* placeholders first
+            import re
+            if self.task_input:
+                # Find {{ task.input.fieldname }} placeholders
+                task_input_pattern = r'\{\{\s*task\.input\.(\w+)\s*\}\}'
+                for match in re.finditer(task_input_pattern, prompt):
+                    full_placeholder = match.group(0)
+                    field_name = match.group(1)
+                    if field_name in self.task_input:
+                        value = self.task_input[field_name]
+                        # If value is dict/list, convert to JSON string
+                        if isinstance(value, (dict, list)):
+                            value = json.dumps(value, ensure_ascii=False)
+                        prompt = prompt.replace(full_placeholder, str(value))
+                        self._write_dog_log(f"TASK INPUT SUBSTITUTED | {field_name} | value_len={len(str(value))}")
+
             # Substitute input files ({{ file.json }})
             # Parse prompt to find all {{ file.json }} placeholders (including spaces)
-            import re
             # Find placeholders WITH spaces preserved
             placeholder_matches = re.finditer(r'\{\{([^}]+)\}\}', prompt)
 
@@ -795,6 +848,16 @@ class ProcessManager:
             process.status = "done"
             process.exit_code = 0
             self.state.save_process(process)
+
+            # Generate readable MD after block completes (works for both custom and regular blocks)
+            if self.config.get('readable_outputs', False) and os.path.exists(save_file):
+                try:
+                    with open(save_file) as f:
+                        data = json.load(f)
+                    result_content = data.get('result', '')
+                    self._save_readable_output(save_file, name, result_content)
+                except Exception as e:
+                    self._write_dog_log(f"READABLE OUTPUT ERROR | {name} | {str(e)}")
 
             self._write_dog_log(f"BLOCK COMPLETED | {name}[{uid}] | saved={save_file}")
             self.completed.add(name)

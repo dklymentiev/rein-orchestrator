@@ -73,6 +73,7 @@ class WorkflowConfig(BaseModel):
     metadata: Optional[Dict] = None
     timeout: Optional[int] = Field(None, ge=30, le=86400)
     max_parallel: int = Field(default=3, ge=1, le=10)
+    readable_outputs: bool = Field(default=False, description="Generate human-readable .md files alongside .json outputs")
     blocks: List[BlockConfig] = Field(..., min_items=1, max_items=100)
 
     class Config:

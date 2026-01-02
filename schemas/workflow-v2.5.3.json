@@ -59,6 +59,11 @@
       "default": 3,
       "description": "Maximum number of parallel blocks to run simultaneously"
     },
+    "readable_outputs": {
+      "type": "boolean",
+      "default": false,
+      "description": "Generate human-readable .md files alongside .json outputs"
+    },
     "blocks": {
       "type": "array",
       "minItems": 1,
