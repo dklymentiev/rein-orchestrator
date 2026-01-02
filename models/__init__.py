@@ -1,10 +1,11 @@
 """
-Dog v2.5.3 Models Package
+Dog v2.5.4 Models Package
 
 Provides:
 - Pydantic models for workflow and team validation
 - ValidationEngine for multi-layer validation
 - Data classes for validation results
+- State machine flow control (next field)
 """
 
 from .workflow import (
@@ -13,6 +14,7 @@ from .workflow import (
     TeamConfig,
     SpecialistMapping,
     LogicConfig,
+    NextCondition,
     ValidationResult,
     ValidationError,
 )
@@ -29,6 +31,7 @@ __all__ = [
     "TeamConfig",
     "SpecialistMapping",
     "LogicConfig",
+    "NextCondition",
     "ValidationResult",
     "ValidationError",
     "ValidationEngine",
@@ -36,4 +39,4 @@ __all__ = [
     "validate_team_file",
 ]
 
-__version__ = "2.5.3"
+__version__ = "2.5.4"

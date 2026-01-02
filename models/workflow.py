@@ -1,6 +1,7 @@
 """
-Pydantic models for Dog v2.5.3 workflow definitions.
+Pydantic models for Dog v2.5.4 workflow definitions.
 Includes business logic validation for circular dependencies, timeouts, and data flow.
+Supports state machine flow control with `next` field.
 """
 
 from typing import List, Dict, Optional, Set, Tuple, Union
@@ -15,6 +16,17 @@ class LogicConfig(BaseModel):
     post: Optional[str] = None
     validate_script: Optional[str] = Field(None, alias="validate")
     custom: Optional[Union[bool, str]] = None  # True = skip Claude API, str = custom script path
+
+    class Config:
+        extra = "forbid"
+        populate_by_name = True
+
+
+class NextCondition(BaseModel):
+    """Conditional transition for state machine flow"""
+    if_condition: Optional[str] = Field(None, alias="if", pattern=r'^\{\{.*\}\}$')
+    else_target: Optional[str] = Field(None, alias="else", pattern=r'^[a-z0-9_]+$')
+    goto: Optional[str] = Field(None, pattern=r'^[a-z0-9_]+$')
 
     class Config:
         extra = "forbid"
@@ -38,6 +50,9 @@ class BlockConfig(BaseModel):
     )
     save_as: Optional[str] = Field(None, pattern=r'^[a-z0-9_.-]+\.json$')
     logic: Optional[LogicConfig] = None
+    # State machine flow control (v2.5.4)
+    next: Optional[Union[str, List[NextCondition]]] = None
+    max_runs: int = Field(default=1, ge=1, le=10)
 
     class Config:
         extra = "forbid"

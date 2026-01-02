@@ -1,7 +1,21 @@
 {
-  "current_version": "2.5.3",
+  "current_version": "2.5.4",
   "description": "Schema version registry and compatibility matrix",
   "versions": {
+    "2.5.4": {
+      "released": "2026-01-01",
+      "description": "State machine flow control with next field and revision loops",
+      "features": [
+        "next field for state machine transitions",
+        "Conditional transitions with if/else",
+        "max_runs for loop protection",
+        "Run count tracking per block",
+        "Backwards compatible with 2.5.3 workflows"
+      ],
+      "backwards_compatible_with": ["2.5.3"],
+      "migration_required": false,
+      "breaking_changes": []
+    },
     "2.5.3": {
       "released": "2026-01-01",
       "description": "Workflow Generator support, flow control parameters, pre-flight validation",
@@ -42,6 +56,11 @@
     }
   },
   "compatibility_matrix": {
+    "2.5.4": {
+      "can_upgrade_from": ["2.5.3", "2.5.2", "2.5.1"],
+      "can_downgrade_to": ["2.5.3"],
+      "migration_script": null
+    },
     "2.5.3": {
       "can_upgrade_from": ["2.5.2", "2.5.1"],
       "can_downgrade_to": [],
@@ -66,6 +85,10 @@
     "2.5.2_to_2.5.3": {
       "path": "migrations/2.5.2_to_2.5.3.py",
       "description": "Add schema_version field and validate with new schemas"
+    },
+    "2.5.3_to_2.5.4": {
+      "path": "migrations/2.5.3_to_2.5.4.py",
+      "description": "No migration needed - next and max_runs are optional fields"
     }
   },
   "deprecation_notices": {

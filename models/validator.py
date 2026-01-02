@@ -1,5 +1,5 @@
 """
-ValidationEngine for Dog v2.5.3 workflows.
+ValidationEngine for Dog v2.5.4 workflows.
 Orchestrates JSON Schema validation, Pydantic model validation, and cross-reference checks.
 """
 
@@ -53,7 +53,7 @@ class ValidationEngine:
     def _load_schemas(self):
         """Load all JSON schemas from schemas directory"""
         schema_files = {
-            "workflow": "workflow-v2.5.3.json",
+            "workflow": "workflow-v2.5.4.json",
             "team": "team-v2.5.3.json"
         }
 

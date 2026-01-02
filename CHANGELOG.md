@@ -1,5 +1,89 @@
 # Dog v2 Changelog
 
+## [2.5.4] - 2026-01-01
+
+### Added - State Machine Flow Control (`next` field)
+
+**Major Feature: Conditional transitions and revision loops**
+
+New block-level fields for state machine style flow:
+
+- `next` - Specify next block to execute after completion
+  - Simple string: `next: "publish"` - always go to publish
+  - Conditional list with `if`/`else`:
+    ```yaml
+    next:
+      - if: "{{ result.approved }}"
+        goto: publish
+      - else:
+        goto: revision
+    ```
+
+- `max_runs` (default: 1) - Maximum times a block can run (loop protection)
+
+### Condition Syntax
+
+Conditions support `{{ result.field }}` placeholders with comparison operators:
+
+- Truthy check: `{{ result.approved }}`
+- Equality: `{{ result.status == 'approved' }}`
+- Comparison: `{{ result.score > 0.8 }}`
+
+### Usage Example: Approval Loop
+
+```yaml
+blocks:
+  - name: writer
+    specialist: content-writer
+    prompt: "Write article about {{ task.input.topic }}"
+    next: censor
+
+  - name: censor
+    specialist: content-censor
+    prompt: "Review article from {{ writer.json }}"
+    next:
+      - if: "{{ result.approved }}"
+        goto: publish
+      - else:
+        goto: revision
+
+  - name: revision
+    specialist: content-editor
+    prompt: "Revise based on feedback: {{ censor.json }}"
+    max_runs: 2
+    next: censor
+
+  - name: publish
+    specialist: publisher
+    prompt: "Publish final article"
+```
+
+### Implementation Details
+
+New fields in Process dataclass:
+- `next_spec` - stores next block specification
+- `max_runs` - maximum run count
+- `run_count` - current run count
+
+New structures in ProcessManager:
+- `next_queue` - queue of blocks triggered by `next`
+- `run_counts` - tracks how many times each block has run
+- `block_configs` - stores block configs for re-running
+
+New methods:
+- `_evaluate_next_block()` - evaluates `next` spec and returns target block
+- `_evaluate_condition()` - parses and evaluates `{{ }}` conditions
+- `_resolve_path()` - resolves dot paths like `result.approved`
+
+### Other Additions
+- `--question FILE` - Simple question file support (no task directory needed)
+- Auto-detect `context/` subdirectory for file access
+- Questions directory: `/server/agents/questions/`
+
+### Fixed
+- ClaudeWrapper file access: added `--tools` and `--add-dir` CLI flags
+- run-specialist.py: auto-extracts directories from task.md paths
+
 ## [2.5.3] - 2026-01-01
 
 ### Added - Flow Control Parameters

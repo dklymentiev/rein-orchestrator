@@ -50,6 +50,10 @@ class Process:
     phase: int = 0  # execution phase number
     blocking_pause: bool = True  # if True, pausing this blocks dependents
     agent: str = ""  # Agent or team executing this process
+    # STATE MACHINE: next block specification (Phase 2.5.4)
+    next_spec: Optional[any] = None  # str or List[dict] with conditions
+    max_runs: int = 1  # Maximum runs for loop protection
+    run_count: int = 0  # How many times this block has run
 
 class DogState:
     """State management with SQLite"""
@@ -123,7 +127,7 @@ class ProcessManager:
     """Manages process execution with semaphore and dependencies"""
     def __init__(self, max_parallel: int = 3, resume_run_id: Optional[str] = None,
                  task_id: Optional[str] = None, flow_name: Optional[str] = None,
-                 task_input: Optional[dict] = None):
+                 task_input: Optional[dict] = None, agents_dir: Optional[str] = None):
         self.max_parallel = max_parallel
         self.guid = None  # Will be set to run_id after directory setup
         self.semaphore = threading.Semaphore(max_parallel)
@@ -134,6 +138,11 @@ class ProcessManager:
         self.lock = threading.Lock()
         self.workflow_dir = os.getcwd()  # PHASE 2.5: workflow directory for relative logic paths
 
+        # STATE MACHINE: next queue and run counts (Phase 2.5.4)
+        self.next_queue: List[tuple] = []  # [(block_name, trigger_data), ...] blocks to run next
+        self.run_counts: Dict[str, int] = {}  # Track run counts per block name
+        self.block_configs: Dict[str, dict] = {}  # Store block configs by name for re-running
+
         # Workflow pause state
         self.workflow_paused = False
         self.workflow_paused_at: Optional[float] = None
@@ -143,8 +152,11 @@ class ProcessManager:
         self.stop_workflow = False
         self.stop_reason = None
 
+        # Agents directory (specialists, teams, flows, tasks)
+        self.agents_dir = agents_dir or "/server/agents"
+
         # Task system (REFACTOR: separate tasks from flows)
-        self.tasks_root = os.path.join(os.path.dirname(__file__), "tasks")
+        self.tasks_root = os.path.join(self.agents_dir, "tasks")
         self.task_id = task_id
         self.task_dir = None
         self.task_input = task_input or {}
@@ -403,7 +415,7 @@ class ProcessManager:
     def load_team(self, team_name: str) -> str:
         """Load team configuration and return tone (PHASE 2.5)"""
         try:
-            team_file = f"agents/teams/{team_name}.yaml"
+            team_file = os.path.join(self.agents_dir, "teams", f"{team_name}.yaml")
             with open(team_file) as f:
                 team_data = yaml.safe_load(f)
             # Support both old 'tone' and new 'collaboration_tone' field names
@@ -417,7 +429,7 @@ class ProcessManager:
     def load_specialist(self, specialist_name: str) -> str:
         """Load specialist instructions from MD file (PHASE 2.5)"""
         try:
-            spec_file = f"agents/specialists/{specialist_name}.md"
+            spec_file = os.path.join(self.agents_dir, "specialists", f"{specialist_name}.md")
             with open(spec_file) as f:
                 content = f.read()
             return content
@@ -601,7 +613,7 @@ class ProcessManager:
                     input=context_json,
                     capture_output=True,
                     text=True,
-                    timeout=300
+                    timeout=480  # 8 minutes for complex tasks
                 )
             elif script_path.endswith('.sh'):
                 result = subprocess.run(
@@ -609,7 +621,7 @@ class ProcessManager:
                     input=context_json,
                     capture_output=True,
                     text=True,
-                    timeout=300
+                    timeout=480  # 8 minutes for complex tasks
                 )
             else:
                 self._write_dog_log(f"LOGIC ERROR | unknown script type: {script_path}")
@@ -689,6 +701,10 @@ class ProcessManager:
             agent = block.get('agent', '')  # Get agent name from config
             uid = str(uuid.uuid4())[:8]  # Short UUID (8 chars)
 
+            # STATE MACHINE: read next and max_runs from config (Phase 2.5.4)
+            next_spec = block.get('next')
+            max_runs = block.get('max_runs', 1)
+
             process = Process(
                 pid=None,
                 name=name,
@@ -700,11 +716,15 @@ class ProcessManager:
                 progress=0,
                 phase=phase,
                 blocking_pause=blocking_pause,
-                agent=agent  # Add agent
+                agent=agent,  # Add agent
+                next_spec=next_spec,  # STATE MACHINE
+                max_runs=max_runs  # STATE MACHINE
             )
 
             with self.lock:
                 self.processes[uid] = process  # Use UID as key
+                # Store block config for re-running (STATE MACHINE)
+                self.block_configs[name] = block
             self.state.save_process(process)
 
     def _find_process_by_name(self, name: str) -> Optional[tuple]:
@@ -741,6 +761,126 @@ class ProcessManager:
 
         continue_if_failed = block.get('continue_if_failed', True)
         return continue_if_failed
+
+    def _evaluate_next_block(self, block: dict, result_data: dict) -> Optional[str]:
+        """Evaluate next block specification and return next block name (STATE MACHINE Phase 2.5.4)
+
+        Supports:
+        - Simple string: next: "publish" -> always go to publish
+        - Conditional list:
+            next:
+              - if: "{{ result.approved }}"
+                goto: publish
+              - else:
+                goto: revision
+
+        Args:
+            block: Block configuration dict
+            result_data: Result from block execution (parsed JSON or raw)
+
+        Returns:
+            Name of next block to trigger, or None if no next specified
+        """
+        next_spec = block.get('next')
+        if not next_spec:
+            return None
+
+        name = block.get('name') or block.get('stage', 'unknown')
+
+        # Simple string case
+        if isinstance(next_spec, str):
+            self._write_dog_log(f"NEXT SIMPLE | {name} -> {next_spec}")
+            return next_spec
+
+        # Conditional list case
+        if isinstance(next_spec, list):
+            for condition in next_spec:
+                if 'else' in condition:
+                    # Default/else branch - always matches if reached
+                    goto = condition.get('goto') or condition.get('else')
+                    self._write_dog_log(f"NEXT ELSE | {name} -> {goto}")
+                    return goto
+
+                if 'if' in condition:
+                    condition_expr = condition['if']
+                    goto = condition.get('goto')
+
+                    # Evaluate condition - supports {{ result.field }} syntax
+                    if self._evaluate_condition(condition_expr, result_data):
+                        self._write_dog_log(f"NEXT IF | {name} | condition={condition_expr} -> {goto}")
+                        return goto
+
+        return None
+
+    def _evaluate_condition(self, expr: str, result_data: dict) -> bool:
+        """Evaluate a condition expression against result data
+
+        Supports:
+        - {{ result.approved }} - checks if result.approved is truthy
+        - {{ result.status == 'approved' }} - equality check
+        - {{ result.score > 0.8 }} - comparison
+        """
+        try:
+            # Extract expression from {{ }}
+            match = re.match(r'\{\{\s*(.+?)\s*\}\}', expr.strip())
+            if not match:
+                self._write_dog_log(f"CONDITION PARSE ERROR | no match: {expr}")
+                return False
+
+            inner_expr = match.group(1).strip()
+
+            # Handle comparison operators
+            for op in ['==', '!=', '>=', '<=', '>', '<']:
+                if op in inner_expr:
+                    parts = inner_expr.split(op, 1)
+                    if len(parts) == 2:
+                        left = self._resolve_path(parts[0].strip(), result_data)
+                        right_str = parts[1].strip().strip("'\"")
+
+                        # Try to convert right side to same type as left
+                        if isinstance(left, bool):
+                            right = right_str.lower() in ('true', '1', 'yes')
+                        elif isinstance(left, (int, float)):
+                            try:
+                                right = float(right_str)
+                            except:
+                                right = right_str
+                        else:
+                            right = right_str
+
+                        if op == '==':
+                            return left == right
+                        elif op == '!=':
+                            return left != right
+                        elif op == '>':
+                            return left > right
+                        elif op == '<':
+                            return left < right
+                        elif op == '>=':
+                            return left >= right
+                        elif op == '<=':
+                            return left <= right
+
+            # Simple truthy check: {{ result.approved }}
+            value = self._resolve_path(inner_expr, result_data)
+            return bool(value)
+
+        except Exception as e:
+            self._write_dog_log(f"CONDITION EVAL ERROR | {expr} | {str(e)}")
+            return False
+
+    def _resolve_path(self, path: str, data: dict) -> any:
+        """Resolve a dot-separated path like 'result.approved' in data dict"""
+        parts = path.split('.')
+        current = data
+
+        for part in parts:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return None
+
+        return current
 
     def spawn_process(self, block: dict, team_tone: str = "") -> Optional[Process]:
         """Spawn a new block execution (PHASE 2.5: Claude API instead of subprocess)"""
@@ -824,8 +964,16 @@ class ProcessManager:
                 if not self._run_logic(logic_config['pre'], save_file, workflow_dir):
                     raise Exception(f"Pre-phase logic failed: {logic_config['pre']}")
 
-            # CLAUDE-PHASE: Call Claude API (unless custom-only mode)
-            if not logic_config.get('custom'):  # Skip Claude if custom-only
+            # CLAUDE-PHASE: Call Claude API or run custom script
+            custom_script = logic_config.get('custom')
+            if custom_script:
+                # CUSTOM MODE: Run custom script instead of Claude
+                # The script should handle everything (call Claude CLI, process data, etc.)
+                self._write_dog_log(f"CUSTOM SCRIPT | {name} | script={custom_script}")
+                if not self._run_logic(custom_script, save_file, workflow_dir):
+                    raise Exception(f"Custom logic failed: {custom_script}")
+                process.progress = 75
+            else:
                 # Check if this is a PHASE 2.5 block (has agents/specialist + prompt) or old block (has command)
                 has_agents_or_specialist = 'agents' in block or 'specialist' in block
                 has_prompt = 'prompt' in block
@@ -863,7 +1011,7 @@ class ProcessManager:
 
                     process.progress = 75
 
-                # Save result from Claude
+                # Save result from Claude (only if not custom - custom script saves its own result)
                 with open(save_file, 'w') as f:
                     json.dump({
                         "stage": name,
@@ -898,6 +1046,55 @@ class ProcessManager:
 
             self._write_dog_log(f"BLOCK COMPLETED | {name}[{uid}] | saved={save_file}")
             self.completed.add(name)
+
+            # STATE MACHINE: Evaluate and trigger next block (Phase 2.5.4)
+            if block.get('next'):
+                try:
+                    # Parse result data for condition evaluation
+                    result_data = {}
+                    if os.path.exists(save_file):
+                        with open(save_file) as f:
+                            saved_data = json.load(f)
+                            # Try to parse inner result as JSON
+                            result_str = saved_data.get('result', '')
+                            try:
+                                result_data = json.loads(result_str)
+                            except:
+                                result_data = {'raw': result_str}
+                            result_data['_stage'] = name
+                            result_data['_saved'] = saved_data
+
+                    next_block_name = self._evaluate_next_block(block, result_data)
+
+                    if next_block_name:
+                        # Check max_runs for loop protection
+                        current_runs = self.run_counts.get(next_block_name, 0)
+                        next_block_config = self.block_configs.get(next_block_name)
+                        max_runs = next_block_config.get('max_runs', 1) if next_block_config else 1
+
+                        if current_runs >= max_runs:
+                            self._write_dog_log(f"NEXT BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs}")
+                        else:
+                            # Increment run count and add to next queue
+                            self.run_counts[next_block_name] = current_runs + 1
+
+                            with self.lock:
+                                # Remove from completed to allow re-run
+                                self.completed.discard(next_block_name)
+                                # Reset process status to waiting
+                                for proc_uid, proc in self.processes.items():
+                                    if proc.name == next_block_name:
+                                        proc.status = "waiting"
+                                        proc.progress = 0
+                                        proc.run_count = self.run_counts[next_block_name]
+                                        self.state.save_process(proc)
+                                        break
+                                # Add to next queue
+                                self.next_queue.append((next_block_name, result_data))
+
+                            self._write_dog_log(f"NEXT QUEUED | {name} -> {next_block_name} | run={self.run_counts[next_block_name]}/{max_runs}")
+                except Exception as e:
+                    self._write_dog_log(f"NEXT EVAL ERROR | {name} | {str(e)}")
 
         except Exception as e:
             self._write_dog_log(f"BLOCK FAILED | {name}[{uid}] | {str(e)}")
@@ -1032,7 +1229,7 @@ class ProcessManager:
         if self.team_name:
             team_tone = self.load_team(self.team_name)
 
-        while pending or self.processes:
+        while pending or self.processes or self.next_queue:
             loop_count += 1
 
             # Check if workflow should stop due to critical failure (FLOW CONTROL)
@@ -1084,11 +1281,45 @@ class ProcessManager:
                     # Failed to spawn, might be semaphore issue or dependencies
                     pass
 
+            # STATE MACHINE: Process next_queue for triggered blocks (Phase 2.5.4)
+            while self.next_queue and not self.workflow_paused:
+                with self.lock:
+                    if not self.next_queue:
+                        break
+                    next_block_name, trigger_data = self.next_queue.pop(0)
+
+                # Get block config
+                block_config = self.block_configs.get(next_block_name)
+                if not block_config:
+                    self._write_dog_log(f"NEXT ERROR | block not found: {next_block_name}")
+                    continue
+
+                # Check timeout before spawning
+                if self.timeout and start_time:
+                    elapsed = time.time() - start_time
+                    if elapsed > self.timeout * 0.95:
+                        self._write_dog_log(f"NEXT TIMEOUT | stopping new spawns at {elapsed:.1f}s")
+                        break
+
+                # Spawn the next block
+                self._write_dog_log(f"NEXT SPAWN | {next_block_name} | triggered by state machine")
+                result = self.spawn_process(block_config, team_tone)
+                if result and result != "skipped":
+                    # Block was spawned successfully
+                    pass
+                elif result == "skipped":
+                    self._write_dog_log(f"NEXT SKIPPED | {next_block_name}")
+                else:
+                    # Failed to spawn - put back in queue for retry
+                    with self.lock:
+                        self.next_queue.insert(0, (next_block_name, trigger_data))
+                    break  # Exit next_queue loop to wait for semaphore
+
             # Wait a bit for processes to complete
             time.sleep(0.5)
 
-            # Check if all done (all pending spawned and all processes completed)
-            if not pending and self.all_completed():
+            # Check if all done (all pending spawned, all processes completed, and next_queue empty)
+            if not pending and self.all_completed() and not self.next_queue:
                 break
 
         # Workflow finished - save summary and stop the UI
@@ -1771,16 +2002,21 @@ def main():
     parser.add_argument('config', nargs='?', help='Path to YAML configuration file (or use --flow/--task)')
     parser.add_argument('--flow', metavar='FLOW_NAME', help='Flow name (creates new task automatically)')
     parser.add_argument('--input', metavar='JSON', help='Input parameters as JSON (used with --flow)')
+    parser.add_argument('--task-dir', metavar='DIR', help='Task directory with task.md (used with --flow)')
+    parser.add_argument('--question', metavar='FILE', help='Question file path (simple question without task dir)')
     parser.add_argument('--task', metavar='TASK_DIR', help='Task directory (e.g., /path/to/tasks/task-001)')
     parser.add_argument('--status', metavar='TASK_ID', help='Show task status')
     parser.add_argument('--pause', action='store_true', help='Start workflow in paused state')
     parser.add_argument('--resume', metavar='RUN_ID', help='Resume from previous run (RUN_ID like 20251230-142345)')
+    parser.add_argument('--agents-dir', metavar='PATH', default='/server/agents',
+                        help='Agents directory (specialists, teams, flows, tasks). Default: /server/agents')
 
     args = parser.parse_args()
 
     # Handle --status command
     if args.status:
-        tasks_root = os.path.join(os.path.dirname(__file__), "tasks")
+        agents_dir = getattr(args, 'agents_dir', '/server/agents')
+        tasks_root = os.path.join(agents_dir, "tasks")
         task_dir = os.path.join(tasks_root, args.status)
         task_json_path = os.path.join(task_dir, "task.json")
         status_path = os.path.join(task_dir, "status")
@@ -1825,14 +2061,42 @@ def main():
 
     if args.flow:
         flow_name = args.flow
-        flow_path = os.path.join(os.path.dirname(__file__), 'agents', 'flows', flow_name, f'{flow_name}.yaml')
+        agents_dir = getattr(args, 'agents_dir', '/server/agents')
+        flow_path = os.path.join(agents_dir, 'flows', flow_name, f'{flow_name}.yaml')
 
         if not os.path.exists(flow_path):
             print(f"[ERROR] Flow not found: {flow_path}")
             sys.exit(1)
 
-        # Parse input JSON if provided
-        if args.input:
+        # Parse input: --question, --task-dir or --input
+        question_file = getattr(args, 'question', None)
+        task_dir_provided = getattr(args, 'task_dir', None)
+
+        if question_file:
+            # Simple question file - read and use as task
+            if not os.path.exists(question_file):
+                print(f"[ERROR] Question file not found: {question_file}")
+                sys.exit(1)
+            with open(question_file, 'r') as f:
+                task_content = f.read()
+            task_input = {"task": task_content}
+            # Extract directories from question file location for context
+            question_dir = os.path.dirname(os.path.abspath(question_file))
+            context_dir = os.path.join(question_dir, 'context')
+            if os.path.isdir(context_dir):
+                # If context/ subdirectory exists, include it
+                task_content += f"\n\nContext files available in: {context_dir}"
+                task_input = {"task": task_content}
+        elif task_dir_provided:
+            # Read task.md from directory
+            task_md_path = os.path.join(task_dir_provided, 'task.md')
+            if not os.path.exists(task_md_path):
+                print(f"[ERROR] task.md not found in: {task_dir_provided}")
+                sys.exit(1)
+            with open(task_md_path, 'r') as f:
+                task_content = f.read()
+            task_input = {"task": task_content}
+        elif args.input:
             try:
                 task_input = json.loads(args.input)
             except json.JSONDecodeError as e:
@@ -1848,13 +2112,22 @@ def main():
         manager = ProcessManager(
             max_parallel=config.get('semaphore', 3),
             flow_name=flow_name,
-            task_input=task_input
+            task_input=task_input,
+            agents_dir=agents_dir
         )
 
-        # Create task
-        task_id = manager.create_task(flow_name, task_input)
-        manager.task_id = task_id
-        manager.task_dir = os.path.join(manager.tasks_root, task_id)
+        # Use provided task-dir or create new
+        if task_dir_provided:
+            task_dir_provided = task_dir_provided.rstrip('/')
+            task_id = os.path.basename(task_dir_provided)
+            manager.task_id = task_id
+            manager.task_dir = task_dir_provided
+            os.makedirs(os.path.join(task_dir_provided, "outputs"), exist_ok=True)
+        else:
+            task_id = manager.create_task(flow_name, task_input)
+            manager.task_id = task_id
+            manager.task_dir = os.path.join(manager.tasks_root, task_id)
+
         manager.run_dir = manager.task_dir
         manager.log_dir = os.path.join(manager.task_dir, "logs")
         manager.dog_log_file = os.path.join(manager.task_dir, "dog.log")
@@ -1865,11 +2138,13 @@ def main():
         # Load workflow config
         manager.load_config(config, workflow_file=flow_path)
 
-        print(f"\n[TASK] Created: {task_id}")
+        print(f"\n[TASK] ID: {task_id}")
         print(f"[TASK] Flow: {flow_name}")
         print(f"[TASK] Directory: {manager.task_dir}")
-        if task_input:
-            print(f"[TASK] Input: {json.dumps(task_input, ensure_ascii=False)}")
+        if task_input and task_input.get('task'):
+            # Truncate long task content for display
+            task_preview = task_input['task'][:100] + "..." if len(task_input.get('task', '')) > 100 else task_input.get('task', '')
+            print(f"[TASK] Input: {task_preview}")
 
     # Handle task mode (load flow from task.yaml)
     elif args.task:
@@ -1892,7 +2167,8 @@ def main():
             sys.exit(1)
 
         # Find flow in agents/flows/
-        flow_path = os.path.join(os.path.dirname(__file__), 'agents', 'flows', flow_name, f'{flow_name}.yaml')
+        agents_dir = getattr(args, 'agents_dir', '/server/agents')
+        flow_path = os.path.join(agents_dir, 'flows', flow_name, f'{flow_name}.yaml')
         if not os.path.exists(flow_path):
             print(f"[ERROR] Flow not found: {flow_path}")
             sys.exit(1)
@@ -1915,7 +2191,8 @@ def main():
             max_parallel=config.get('semaphore', 3),
             task_id=os.path.basename(task_dir),
             flow_name=flow_name,
-            task_input=task_config.get('input', {})
+            task_input=task_config.get('input', {}),
+            agents_dir=agents_dir
         )
         manager.task_dir = task_dir
         manager.run_dir = task_dir
@@ -1927,11 +2204,23 @@ def main():
 
     elif args.config:
         config = load_config(args.config)
+        agents_dir = getattr(args, 'agents_dir', '/server/agents')
+
+        # Parse --input for config mode too
+        task_input = {}
+        if args.input:
+            try:
+                task_input = json.loads(args.input)
+            except json.JSONDecodeError as e:
+                print(f"[ERROR] Invalid JSON input: {e}")
+                sys.exit(1)
 
         # Create manager for config mode
         manager = ProcessManager(
             max_parallel=config.get('semaphore', 3),
-            resume_run_id=args.resume
+            resume_run_id=args.resume,
+            agents_dir=agents_dir,
+            task_input=task_input
         )
         manager.load_config(config, workflow_file=args.config)
 
