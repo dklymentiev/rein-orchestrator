@@ -1964,6 +1964,24 @@ class ReinUI:
         else:
             return f"[TIME] {elapsed_str}"
 
+    def _get_task_summary(self, max_len: int = 80) -> str:
+        """Get truncated task description for UI header"""
+        task_text = ""
+        # Try task_input.topic first, then task_input.task
+        if self.manager.task_input:
+            task_text = self.manager.task_input.get('topic', '')
+            if not task_text:
+                task_text = self.manager.task_input.get('task', '')
+        # Truncate and clean
+        if task_text:
+            # Take first line, strip markdown headers
+            first_line = task_text.split('\n')[0].strip()
+            first_line = first_line.lstrip('#').strip()
+            if len(first_line) > max_len:
+                first_line = first_line[:max_len-3] + "..."
+            return first_line
+        return ""
+
     def render_table(self) -> Table:
         """Render process table with overall progress"""
         completed, total, percent = self.calculate_overall_progress()
@@ -1978,8 +1996,12 @@ class ReinUI:
         # Add workflow paused indicator if applicable
         workflow_status = " | [red][WORKFLOW PAUSED][/red]" if self.manager.workflow_paused else ""
 
+        # Get task summary for header
+        task_summary = self._get_task_summary()
+        task_line = f"\n[bold white]{task_summary}[/bold white]" if task_summary else ""
+
         # Create main table with time info and legend
-        title = f"Rein - Workflow Monitor - Overall: {progress_str} | {time_info}{workflow_status}\n[dim]Flags: P=parallel D=deps L=logic N=next S=skip C=continue R=max_runs[/dim]"
+        title = f"Rein - Workflow Monitor - Overall: {progress_str} | {time_info}{workflow_status}{task_line}\n[dim]Flags: P=parallel D=deps L=logic N=next S=skip C=continue R=max_runs[/dim]"
         table = Table(title=title, show_header=True)
         table.add_column("Name", style="magenta", width=16)
         table.add_column("Status", style="green", width=8)
