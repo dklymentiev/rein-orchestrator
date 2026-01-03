@@ -1964,22 +1964,23 @@ class ReinUI:
         else:
             return f"[TIME] {elapsed_str}"
 
-    def _get_task_summary(self, max_len: int = 80) -> str:
-        """Get truncated task description for UI header"""
+    def _get_task_summary(self, max_len: int = 500) -> str:
+        """Get task description for UI header"""
         task_text = ""
         # Try task_input.topic first, then task_input.task
         if self.manager.task_input:
             task_text = self.manager.task_input.get('topic', '')
             if not task_text:
                 task_text = self.manager.task_input.get('task', '')
-        # Truncate and clean
+        # Clean and truncate if needed
         if task_text:
-            # Take first line, strip markdown headers
-            first_line = task_text.split('\n')[0].strip()
-            first_line = first_line.lstrip('#').strip()
-            if len(first_line) > max_len:
-                first_line = first_line[:max_len-3] + "..."
-            return first_line
+            # Strip markdown headers, normalize whitespace
+            text = task_text.strip().lstrip('#').strip()
+            # Replace newlines with spaces for single-line display
+            text = ' '.join(text.split())
+            if len(text) > max_len:
+                text = text[:max_len-3] + "..."
+            return text
         return ""
 
     def render_table(self) -> Table:
