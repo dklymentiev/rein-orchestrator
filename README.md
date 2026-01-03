@@ -1,132 +1,308 @@
-# Dog - Process Manager with Real-time Control
+# Rein
 
-## Quick Start (30 seconds)
+Workflow orchestrator for multi-agent AI - like PM2 but for Claude specialists.
 
-```bash
-# 1. Create YAML config
-cat > workflow.yaml << EOFYAML
-semaphore: 2
-timeout: 60
-blocks:
-  - name: task-1
-    command: "echo 'Task 1' && sleep 5"
-    agent: agent-1
-  - name: task-2
-    command: "echo 'Task 2' && sleep 3"
-    agent: agent-2
-EOFYAML
+**Status:** Production (2026-01-02) | **Version:** 3.1.0
 
-# 2. Run workflow
-python3 dog.py workflow.yaml
+## Problem Solved
 
-# 3. In another terminal, control it
-./dog-cmd.sh status           # Current status
-./dog-cmd.sh list             # All processes
-./dog-cmd.sh pause task-1     # Pause by name
-./dog-cmd.sh resume task-1    # Resume
-./dog-cmd.sh cancel task-1    # Kill task
+December 2025. Running multiple Claude agents in parallel. No coordination - agents stepping on each other, API rate limits hit randomly, no way to track what finished or failed. Needed something like PM2 or htop but for AI workflows.
+
+## Core Concept
+
+**Declarative + Runtime Architecture:**
+- **Declarations (text files):** Specialists (.md), Teams (.yaml), Workflows (.yaml)
+- **Runtime (system process):** Rein reads declarations, executes workflows, accepts commands via Unix socket
+
+Edit YAML -> Rein picks it up. No compilation. No restart. Text in, AI orchestration out.
+
+## Architecture
+
+```
+TEXT DECLARATIONS                    RUNTIME PROCESS
+-----------------                    ---------------
+Specialists (.md)  -+
+Teams (.yaml)      -+-->  Rein Process  <-->  Unix Socket (/tmp/rein-{guid}.sock)
+Workflows (.yaml)  -+         |                    ^
+Logic scripts (.py)           v              rein-cmd.sh (CLI client)
+                     Claude API + SQLite
 ```
 
-## Commands Reference
+## Directory Structure (v3.0)
 
-### Workflow Status
-```bash
-# List all active workflows
-./dog-workflows.sh
-
-# Show details for specific workflow
-./dog-workflows.sh 20251230-165505
-
-# Auto-detect single workflow
-./dog-cmd.sh status
-./dog-cmd.sh list
-
-# Specify workflow GUID explicitly
-./dog-cmd.sh 20251230-165505 status
-./dog-cmd.sh 20251230-165505 list
+```
+/server/agents/
+|-- flows/                      # Workflow templates (no data)
+|   +-- blog-publication/
+|       |-- blog-publication.yaml
+|       |-- .env                # Per-flow API config
+|       +-- logic/
+|           |-- search-memory.py
+|           +-- publish-article.py
+|
+|-- specialists/                # Reusable agent prompts
+|   |-- blog-researcher.md
+|   |-- blog-writer.md
+|   +-- blog-censor.md
+|
+|-- teams/                      # Team configurations
+|   +-- team-blog.yaml
+|
++-- tasks/                      # Workflow executions (data)
+    +-- task-20260102-183805/
+        |-- input/
+        |   +-- task.json       # Input parameters
+        |-- state/
+        |   |-- status          # completed/running/failed
+        |   |-- rein.log        # Execution log
+        |   +-- rein.db         # SQLite state
+        +-- research/           # Block directories (v3.0)
+        |   |-- inputs/
+        |   |-- outputs/
+        |   |   +-- result.json
+        |   +-- logs/
+        +-- draft/
+            |-- inputs/
+            |-- outputs/
+            |   +-- result.json
+            +-- logs/
 ```
 
-### Process Control
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Semaphore Control** | Limit concurrent API calls (don't burn rate limits) |
+| **Dependency Graph** | Blocks wait for dependencies, auto-parallel when possible |
+| **Specialist System** | Reusable agent prompts in .md files, teams set tone |
+| **State Machine** | Conditional transitions (if/else/goto), revision loops with max_runs |
+| **Block Isolation** | Each block gets own directory with inputs/outputs/logs (v3.0) |
+| **Logic Scripts** | Python scripts for phases: pre, post, validate, custom |
+| **Visual Monitoring** | htop-like terminal UI with FLAGS and IN/OUT columns |
+| **Runtime Control** | Pause/resume/cancel blocks or entire workflow |
+| **Socket API** | Unix domain socket for external integrations |
+| **SQLite State** | Crash recovery, resume from last checkpoint |
+| **Schema Validation** | JSON Schema + Pydantic validation before execution |
+
+## Quick Start
+
 ```bash
-# Pause single process by name
-./dog-cmd.sh pause task-1
-./dog-cmd.sh 20251230-165505 pause agent-1-step-2
+# Run a workflow
+./rein.py --flow blog-publication --input '{"topic": "semantic search"}'
 
-# Resume paused process
-./dog-cmd.sh resume task-1
+# Run deliberation (multi-agent discussion)
+./rein.py --flow deliberation --input '{"topic": "Should we use Redis or PostgreSQL?"}'
 
-# Cancel (kill) process
-./dog-cmd.sh cancel task-1
-./dog-cmd.sh kill task-1
-
-# Get status of specific process
-./dog-cmd.sh status task-1
+# Run with task directory
+./rein.py --flow arithmetic-test --input '{"initial_value": 10}'
 ```
 
-### Monitoring
+## Workflow Example
 
-```bash
-# Real-time monitoring (updates every 2 sec)
-watch -n 2 './dog-workflows.sh'
-
-# Or check logs directly
-tail -f /tmp/dog-runs/run-20251230-165505/dog.log
-
-# Count completions
-grep "PROCESS COMPLETED" /tmp/dog-runs/run-20251230-165505/dog.log | wc -l
-
-# Count failures
-grep "PROCESS FAILED" /tmp/dog-runs/run-20251230-165505/dog.log | wc -l
-```
-
-## YAML Configuration
-
-### Minimal Example
 ```yaml
-semaphore: 1
-timeout: 60
+schema_version: "3.0.0"
+name: blog-publication
+team: team-blog
+max_parallel: 2
 
 blocks:
-  - name: my-task
-    command: "bash script.sh"
+  - name: research
+    specialist: blog-researcher
+    prompt: "Research topic: {{ task.input.topic }}"
+    logic:
+      pre: logic/search-memory.py
+
+  - name: draft
+    specialist: blog-writer
+    depends_on: [research]
+    prompt: "Write article based on: {{ research.json }}"
+
+  - name: censor
+    specialist: blog-censor
+    depends_on: [draft]
+    prompt: "Review article: {{ draft.json }}"
+    next:
+      - if: "{{ result.approved }}"
+        goto: publish
+      - else: revision
+
+  - name: revision
+    specialist: blog-editor
+    depends_on: [censor]
+    max_runs: 2                    # Loop protection
+    next: censor                   # Back to censor
+
+  - name: publish
+    specialist: blog-publisher
+    depends_on: [censor]
+    logic:
+      post: logic/publish-article.py
 ```
 
-### Complete Example
+## Logic Scripts
+
+Scripts receive JSON context via stdin:
+
+```json
+{
+  "output_file": "/path/to/block/outputs/result.json",
+  "block_dir": "/path/to/task/block/",
+  "block_config": { "name": "...", "prompt": "..." },
+  "outputs_dir": "/path/to/task/block/outputs/",
+  "task_input": { "topic": "..." },
+  "task_id": "task-20260102-183805",
+  "workflow_dir": "/path/to/flow/"
+}
+```
+
+**Example script (aggregate.py):**
+
+```python
+#!/usr/bin/env python3
+import json, sys, os
+from pathlib import Path
+
+context = json.loads(sys.stdin.read())
+task_dir = Path(context['block_dir']).parent
+
+# Read dependencies by name (v3.0 structure)
+dep_result = task_dir / "research" / "outputs" / "result.json"
+data = json.load(open(dep_result))
+
+result = {"stage": "aggregate", "result": {"total": data['result']['value']}}
+
+with open(context['output_file'], 'w') as f:
+    json.dump(result, f, indent=2)
+
+print(f"[OK] Aggregated")
+```
+
+**Logic phases:**
+
 ```yaml
-semaphore: 3                    # Max 3 parallel processes
-timeout: 300                    # 5 min total timeout
+logic:
+  pre: logic/fetch-data.py       # Before Claude: prepare data
+  post: logic/save-result.py     # After Claude: process output
+  validate: logic/check.py       # Gate: return exit code 0/1
+  custom: true                   # Skip Claude, pre script does everything
+  custom: logic/run-llm.py       # Replace Claude with custom script
+```
 
+## State Machine Flow
+
+**Conditional transitions:**
+
+```yaml
+next:
+  - if: "{{ result.approved }}"
+    goto: publish
+  - if: "{{ result.score > 0.8 }}"
+    goto: fast_track
+  - else: revision
+```
+
+**Condition syntax:**
+- Truthy: `{{ result.approved }}`
+- Equality: `{{ result.status == 'done' }}`
+- Comparison: `{{ result.score > 0.8 }}`
+- Nested: `{{ result.data.count >= 10 }}`
+
+**Loop protection:**
+
+```yaml
+- name: revision
+  max_runs: 3          # Max 3 revision cycles
+  next: review         # Then back to review
+```
+
+## Runtime Control
+
+```bash
+# While workflow is running:
+./rein-cmd.sh status              # Current state
+./rein-cmd.sh list                # All processes with UIDs
+./rein-cmd.sh pause block-1       # Pause specific block
+./rein-cmd.sh resume block-1      # Resume block
+./rein-cmd.sh cancel block-1      # Kill block
+./rein-cmd.sh pause-workflow      # Pause everything
+./rein-cmd.sh resume-workflow     # Resume everything
+
+# Monitoring
+./rein-workflows.sh               # List active workflows
+./rein-status.sh                  # Detailed status
+watch -n 2 './rein-workflows.sh'  # Real-time updates
+```
+
+## UI Columns
+
+The terminal UI shows:
+- **Name:** Block name (16 chars)
+- **Status:** running/done/failed/waiting
+- **Flags:** P=parallel D=deps L=logic N=next S=skip C=continue R=max_runs
+- **IN/OUT:** Input/output data sizes (e.g., "1.2K/0.8K")
+- **Progress:** Progress bar
+- **Time:** Elapsed time
+
+## Flow Control Parameters
+
+```yaml
 blocks:
-  - name: phase-1-task-1
-    command: "python3 process.py input.txt"
-    agent: agent-1              # Optional: agent name for logging
+  - name: critical_step
+    continue_if_failed: false    # Stop workflow if this fails
 
-  - name: phase-1-task-2
-    command: "python3 process.py input.txt"
-    agent: agent-1
-
-  - name: phase-2-aggregator
-    command: "python3 aggregate.py output.txt"
-    agent: aggregator
-    depends_on: [phase-1-task-1, phase-1-task-2]
+  - name: optional_step
+    continue_if_failed: true     # Continue even if fails (default)
+    skip_if_previous_failed: true  # Run even if earlier blocks failed
 ```
 
-## Common Issues
+## Schema Validation
 
-### "dog-cmd.sh list" returns empty
-The list command shows in Dog's log, not stdout. Check log instead:
+Workflows are validated before execution:
+
 ```bash
-tail /tmp/dog-runs/run-20251230-165505/dog.log | grep "PROCESS"
+# Validate workflow
+python3 -c "
+from models.validator import ValidationEngine
+v = ValidationEngine()
+result = v.validate_workflow('agents/flows/my-flow/my-flow.yaml')
+print(result)
+"
 ```
 
-### Multiple workflows detected
-Specify GUID explicitly:
-```bash
-./dog-cmd.sh 20251230-165505 status
-```
+**Schema files:**
+- `schemas/workflow-v3.0.0.json` - Workflow structure
+- `schemas/team-v2.5.3.json` - Team structure
+- `schemas/registry.json` - Version compatibility matrix
 
-## Performance
+## Tech Stack
 
-- Tested: 111 tasks in 59 seconds (1.88 tasks/sec)
-- Max parallelism: 10 concurrent processes
-- Memory: ~30MB base + 5-10MB per 100 tasks
+- Python 3.10+ (~2400 lines)
+- Rich (terminal UI)
+- SQLite (state persistence)
+- Unix domain sockets (runtime control)
+- Anthropic SDK / OpenRouter (Claude API)
+- Pydantic + JSON Schema (validation)
+
+## Metrics
+
+- 50-block workflow: ~3 minutes (parallel arithmetic test)
+- 10-block deliberation: ~15 minutes (4 Claude API calls per block)
+- ~30MB base memory + 5-10MB per 100 tasks
+- 2400 lines Python (vs 50k+ for alternatives)
+
+## Limitations
+
+- Single machine only (not distributed)
+- Tested up to 50 blocks (need to test 500+)
+
+## Planned: v3.2+
+
+- **Retry logic:** `retry: 3` with exponential backoff
+- **Resource pools:** `max_concurrent: 5` per resource type
+- **Notifications:** Telegram alerts on events
+- **Heartbeat:** Watchdog for hung processes
+- **Checkpointing:** Resume long operations
+
+---
+
+See CHANGELOG.md for version history.

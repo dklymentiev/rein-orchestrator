@@ -37,7 +37,7 @@ class BlockConfig(BaseModel):
     """Individual workflow block configuration"""
     name: str = Field(..., pattern=r'^[a-z0-9_]+$', min_length=1, max_length=50)
     phase: Optional[int] = Field(None, ge=1, le=10)
-    specialist: str = Field(..., pattern=r'^[a-z0-9-]+$')
+    specialist: Optional[str] = Field(None, pattern=r'^[a-z0-9-]+$')  # Optional for pure logic blocks
     prompt: Optional[str] = Field(default="", min_length=0)
     depends_on: List[str] = Field(default_factory=list)
     parallel: bool = False

@@ -3,7 +3,7 @@
 echo "[Summarizer] Waiting for search results..."
 
 # Wait for all JSON files
-while [ ! -f /tmp/dog-results/google.json ] || [ ! -f /tmp/dog-results/bing.json ] || [ ! -f /tmp/dog-results/reddit.json ]; do
+while [ ! -f /tmp/rein-results/google.json ] || [ ! -f /tmp/rein-results/bing.json ] || [ ! -f /tmp/rein-results/reddit.json ]; do
   echo "[Summarizer] Waiting for results from all sources..."
   sleep 1
 done
@@ -12,7 +12,7 @@ echo "[Summarizer] All results received! Processing..."
 sleep 2
 
 # Aggregate results
-cat > /tmp/dog-results/summary.json << 'JSON'
+cat > /tmp/rein-results/summary.json << 'JSON'
 {
   "task": "alcohol distribution market research",
   "total_sources": 3,
@@ -47,4 +47,4 @@ JSON
 
 echo "[Summarizer] Summary created!"
 echo "[Summarizer] Results: 8 sources from 3 websites"
-echo "[Summarizer] File: /tmp/dog-results/summary.json"
+echo "[Summarizer] File: /tmp/rein-results/summary.json"

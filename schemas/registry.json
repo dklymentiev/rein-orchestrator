@@ -1,7 +1,20 @@
 {
-  "current_version": "2.5.4",
+  "current_version": "2.5.5",
   "description": "Schema version registry and compatibility matrix",
   "versions": {
+    "2.5.5": {
+      "released": "2026-01-02",
+      "description": "Input directory architecture for dependency data flow",
+      "features": [
+        "inputs/<block>/ directory with symlinks to depends_on outputs",
+        "input_dir field in logic script context",
+        "block_config field in logic script context",
+        "Logic scripts no longer need to parse workflow YAML"
+      ],
+      "backwards_compatible_with": ["2.5.4", "2.5.3"],
+      "migration_required": false,
+      "breaking_changes": []
+    },
     "2.5.4": {
       "released": "2026-01-01",
       "description": "State machine flow control with next field and revision loops",

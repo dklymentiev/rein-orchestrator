@@ -8,8 +8,8 @@ echo "[Bing Search] Found result 2: https://bing.example.com/page2"
 sleep 1
 
 # Save results
-mkdir -p /tmp/dog-results
-cat > /tmp/dog-results/bing.json << 'JSON'
+mkdir -p /tmp/rein-results
+cat > /tmp/rein-results/bing.json << 'JSON'
 {
   "source": "Bing",
   "results": [

@@ -1,20 +1,20 @@
 # Memory
 
-guid: agent-pm2-dog-001
+guid: rein-001
 created: 2025-12-30
-updated: 2025-12-31
+updated: 2026-01-02
 
-Project memory marker for Agent-PM2 ("Dog") - Multi-Agent Specialist Orchestrator.
+Project memory marker for Rein - Workflow Orchestrator for Multi-Agent AI.
 
-## PHASE 2.5: SPECIALIST ARCHITECTURE FOCUS
+## v3.1: REBRAND DOG -> REIN
 
-**MAIN CONCEPT:** Transform Dog from shell-command executor → specialist-driven orchestrator
+**Renamed:** Dog -> Rein (узда/reins - harness control metaphor)
 
 **4-Layer Architecture:**
 1. **Specialists** (MD files) - Reusable AI agent instructions
 2. **Teams** (YAML) - Groups of specialists + shared tone
 3. **Workflows** (YAML) - Process logic, stages, dependencies, data flow
-4. **Dog** (Python) - Orchestrator that executes everything
+4. **Rein** (Python) - Orchestrator that executes everything
 
 **Read First:**
 - **PHASE_2_5_PLAN.md** ← START HERE (this file explains everything)

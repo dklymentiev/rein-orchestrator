@@ -9,8 +9,8 @@ sleep 2
 echo "[Google Search] Found result 3: https://example.com/article3"
 
 # Save results
-mkdir -p /tmp/dog-results
-cat > /tmp/dog-results/google.json << 'JSON'
+mkdir -p /tmp/rein-results
+cat > /tmp/rein-results/google.json << 'JSON'
 {
   "source": "Google",
   "results": [

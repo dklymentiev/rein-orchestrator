@@ -10,8 +10,8 @@ echo "[Reddit Search] Found discussion 3: https://reddit.com/r/business/post3"
 sleep 1
 
 # Save results
-mkdir -p /tmp/dog-results
-cat > /tmp/dog-results/reddit.json << 'JSON'
+mkdir -p /tmp/rein-results
+cat > /tmp/rein-results/reddit.json << 'JSON'
 {
   "source": "Reddit",
   "results": [

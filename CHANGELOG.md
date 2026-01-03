@@ -1,4 +1,116 @@
-# Dog v2 Changelog
+# Rein Changelog
+
+## [3.1.0] - 2026-01-02
+
+### Changed - Rebrand: Dog -> Rein
+
+**Product renamed from "Dog" to "Rein"**
+
+- Renamed all internal references: DogState -> ReinState, DogUI -> ReinUI
+- Updated log prefixes: DOG STARTED -> REIN STARTED, etc.
+- Changed temp directories: /tmp/dog-runs/ -> /tmp/rein-runs/
+- Changed socket paths: /tmp/dog.sock -> /tmp/rein.sock
+- Updated environment variable: DOG_LOG_DIR -> REIN_LOG_DIR
+- Main script: dog.py -> rein.py
+
+Rein = reins/узда (harness control metaphor for workflow orchestration)
+
+## [3.0.0] - 2026-01-02
+
+### Added - v3.0 Directory Structure
+
+**Major change: Block isolation architecture**
+
+- Each block gets own directory: task/block/{inputs,outputs,logs}/
+- Removed symlinks - direct reads via task_dir/dep/outputs/result.json
+- Standard output naming: all blocks write to result.json
+- New UI columns: FLAGS (P/D/L/N/S/C/R) and IN/OUT (data sizes)
+- Automatic task_dir creation
+
+## [2.5.5] - 2026-01-02
+
+### Added - Input Directory Architecture + Custom Logic Fix
+
+### Fixed - Custom Logic Boolean Handling
+
+When `custom: true` (boolean), Dog now correctly skips Claude call (pre script already handled it).
+When `custom: "script.py"` (string), Dog runs that script.
+
+Previously, `custom: true` caused error: `join() argument must be str, not 'bool'`
+
+### Added - Input Directory Architecture
+
+**Major Feature: Dependency data flow via filesystem**
+
+Logic scripts no longer need to reverse-engineer workflow YAML to find dependencies.
+Dog now creates `inputs/<block>/` directory with symlinks to dependency outputs before running each block.
+
+**New directory structure per task:**
+
+```
+task-xxx/
+├── outputs/                    # Final results (existing)
+│   ├── prepare.json
+│   ├── write.json
+│   └── review.json
+└── inputs/                     # NEW: symlinks to depends_on outputs
+    ├── prepare/                # empty (no depends_on)
+    ├── write/
+    │   └── prepare.json        # symlink -> ../outputs/prepare.json
+    └── review/
+        ├── prepare.json        # symlink
+        └── write.json          # symlink
+```
+
+**New context fields passed to logic scripts:**
+
+```json
+{
+  "output_file": "path/to/block.json",
+  "outputs_dir": "path/to/outputs/",
+  "input_dir": "path/to/inputs/block/",   // NEW
+  "block_config": { ... },                 // NEW: full block configuration
+  "task_input": { ... },
+  "task_id": "...",
+  "workflow_dir": "..."
+}
+```
+
+**Logic scripts become trivial:**
+
+```python
+import json, sys, os
+
+context = json.load(sys.stdin)
+input_dir = context['input_dir']
+
+# Read ALL dependencies - no need to know names
+for filename in os.listdir(input_dir):
+    data = json.load(open(f"{input_dir}/{filename}"))
+    # process...
+```
+
+### Implementation Details
+
+New method `_prepare_input_dir(block_name, depends_on)`:
+- Creates `inputs/<block>/` directory
+- Clears old symlinks/files
+- Creates symlinks to each dependency output
+- Falls back to copy if symlink fails
+- Logs each link: `INPUT LINK | review <- write.json`
+
+Updated `_run_logic()` signature:
+- Added `input_dir` parameter
+- Added `block_config` parameter
+
+### Benefits
+
+- **Unix-way:** Filesystem as interface between blocks
+- **Debuggable:** `ls inputs/review/` shows what block sees
+- **No duplication:** Symlinks, not copies
+- **Simple scripts:** Just read from input_dir, no YAML parsing
+
+---
 
 ## [2.5.4] - 2026-01-01
 
@@ -372,17 +484,28 @@ agents/
 
 ## Next Planned Releases
 
-### v2.6.0
-- Webhook support for external triggers
-- Conditional blocks based on previous output
-- Multi-agent consensus mechanism
+### v3.0.0 - Production Grade (Major Rewrite)
 
-### v2.7.0
-- RAG integration with knowledge bases
-- Dynamic block generation based on data
-- Distributed execution across multiple nodes
+For 10-hour workflows with 500+ blocks:
 
-### v3.0.0
-- Message queue backend (RabbitMQ/Redis)
-- Advanced retry mechanisms with exponential backoff
-- Metrics collection and dashboards
+**Directory Structure:**
+- `input/` - Workflow-level input data
+- `output/` - Workflow-level final result
+- `blocks/<name>/` - Per-block isolation
+  - `inputs/` with timestamps (run001, run002)
+  - `outputs/` with timestamps
+  - `logs/` per-run
+  - `checkpoint/` for resumable operations
+
+**Reliability:**
+- `retry: 3` with exponential backoff
+- `resource_pool: video` with `max_concurrent: 5`
+- `heartbeat` file for watchdog monitoring
+- Checkpointing for long operations
+
+**Notifications:**
+- `notifications:` section in workflow YAML
+- Events: workflow_started, workflow_completed, block_failed
+- Integration with unified-alert-bot (Telegram)
+
+**See:** `/server/agents/tasks/task-dog-v3-architecture/input/architecture.md`

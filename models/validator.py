@@ -53,7 +53,7 @@ class ValidationEngine:
     def _load_schemas(self):
         """Load all JSON schemas from schemas directory"""
         schema_files = {
-            "workflow": "workflow-v2.5.4.json",
+            "workflow": "workflow-v2.5.5.json",
             "team": "team-v2.5.3.json"
         }
 
@@ -248,19 +248,19 @@ class ValidationEngine:
                     )
 
         # Check logic scripts exist if referenced
-        logic_dir = workflow_dir / "logic"
-        if logic_dir.exists():
-            for block in workflow.blocks:
-                if block.logic:
-                    for phase in ["pre", "post", "validate", "custom"]:
-                        script_path = getattr(block.logic, phase, None)
-                        if script_path:
-                            full_path = logic_dir / script_path
-                            if not full_path.exists():
-                                result.add_warning(
-                                    f"blocks.{block.name}.logic.{phase}",
-                                    f"Logic script not found: {full_path}"
-                                )
+        for block in workflow.blocks:
+            if block.logic:
+                for phase in ["pre", "post", "validate", "custom"]:
+                    script_path = getattr(block.logic, phase, None)
+                    # Skip if script_path is boolean (custom: true) or None
+                    if script_path and isinstance(script_path, str):
+                        # script_path is relative to workflow_dir (e.g., "logic/init.py")
+                        full_path = workflow_dir / script_path
+                        if not full_path.exists():
+                            result.add_warning(
+                                f"blocks.{block.name}.logic.{phase}",
+                                f"Logic script not found: {full_path}"
+                            )
 
     def _validate_team_cross_references(
         self, team: TeamConfig, team_path: Path, result: ValidationResult

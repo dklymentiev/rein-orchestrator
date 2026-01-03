@@ -1,93 +1,69 @@
 # Instructions for Claude
 
-**Project:** Agent-PM2 ("Dog") - Process Manager  
-**Status:** MVP Prototype (Python)  
+**Project:** Rein - Workflow Orchestrator
+**Status:** Production (Python 3.10+)
 **Language:** English (documentation), Russian (conversation)
 
 ## Project Structure
 
 ```
-/server/scripts/agent-pm2-dog/
-├── dog.py              # Main daemon + htop-like UI (single file, ~300 lines)
-├── example.yaml        # Example workflow configuration
-├── requirements.txt    # Python dependencies
-├── README.md          # User documentation
-├── MEMORY.md          # Project marker (guid: agent-pm2-dog-001)
-└── CLAUDE.md          # This file
+/server/scripts/rein/
+|-- rein.py             # Main orchestrator + htop-like UI (~2400 lines)
+|-- rein-cli.sh         # CLI wrapper
+|-- rein-cmd.sh         # Send commands to running workflows
+|-- rein-workflows.sh   # List active workflows
+|-- rein-status.sh      # Quick status
+|-- rein-history.sh     # Run history
+|-- rein-generator/     # Workflow generator (Claude API)
+|-- models/             # Pydantic + JSON Schema validation
+|-- schemas/            # JSON schemas for workflows/teams
+|-- README.md           # User documentation
+|-- MEMORY.md           # Project marker (guid: rein-001)
++-- CLAUDE.md           # This file
 ```
 
 ## Key Components
 
-### dog.py
+### rein.py
 
 **Classes:**
-- `Process` — Data class representing a managed process
-- `DogState` — SQLite state management
-- `ProcessManager` — Semaphore + process spawning + monitoring
-- `DogUI` — Rich terminal UI (htop-like)
+- `Process` - Data class representing a managed block
+- `ReinState` - SQLite state management
+- `ProcessManager` - Semaphore + block spawning + monitoring
+- `ReinUI` - Rich terminal UI (htop-like)
 
 **Main flow:**
-1. Load YAML config
-2. Create ProcessManager with semaphore
-3. Spawn blocks as processes
-4. Monitor in background threads
-5. Display htop-like UI with live updates
+1. Load YAML workflow config
+2. Validate with JSON Schema + Pydantic
+3. Create ProcessManager with semaphore
+4. Spawn blocks as processes
+5. Monitor in background threads
+6. Display htop-like UI with live updates
 
-### Features to Add
+### Key Features
 
-**Phase 1 (DONE):**
-- ✅ Basic process spawning
-- ✅ Semaphore control
-- ✅ SQLite state storage
-- ✅ htop-like UI with Rich
-- ✅ CPU/MEM metrics
-
-**Phase 2 (TODO):**
-- Recursive Dog spawning (child Dogs)
-- Webhook integration
-- Graceful shutdown with signal handling
-- Queue management for overflow tasks
-- Timeout enforcement
-
-**Phase 3 (Production - Team-soft-2):**
-- Go implementation (compiled daemon)
-- systemd integration
-- REST API for remote control
-- Distributed execution
-- Advanced resource quotas
+- Block isolation: each block gets own directory
+- Dependency graph: blocks wait for dependencies
+- State machine: conditional transitions (if/else/goto)
+- Logic scripts: pre/post/validate/custom phases
+- Visual monitoring: FLAGS and IN/OUT columns
+- Runtime control: pause/resume/cancel via socket
 
 ## Testing
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Run a workflow
+./rein.py --flow deliberation --input '{"topic": "test"}'
 
-# Run with example config
-./dog.py example.yaml
+# Quick status
+./rein-workflows.sh
 
-# Create test config
-cat > test.yaml << 'YAML'
-name: test
-semaphore: 2
-blocks:
-  - name: "task1"
-    command: "sleep 5"
-  - name: "task2"
-    command: "sleep 3"
-YAML
-
-./dog.py test.yaml
+# Send command
+./rein-cmd.sh status
 ```
-
-## Integration Points
-
-- **Conductor:** Can execute Dog as block type
-- **mem.ai:** Save workflow results to memory
-- **team-generic:** Analyzed architecture
-- **team-soft-2:** Will design production version
 
 ## Related Documents
 
-- RFC: doc_1614c5b5 (Agent-PM2 architecture)
-- Pilot Use Case: alcohol-distribution-30days
-- Team Generic Synthesis: Integrator recommendation (Phase 1 Shell MVP → Phase 2 Go)
+- Version: 3.1.0
+- See CHANGELOG.md for version history
+- See README.md for full documentation
