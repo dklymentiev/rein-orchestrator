@@ -15,16 +15,17 @@ import re
 import uuid
 import socket
 import select
-from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional, Set
+from dataclasses import asdict
+from typing import List, Dict, Optional, Set, Any
 from datetime import datetime
 from pathlib import Path
 import psutil
-import anthropic
-import requests
 from rich.console import Console
 from rich.table import Table
 from rich.live import Live
+
+# Import refactored modules
+from rein import Process, ClaudeClient, ConfigLoader, LogicRunner
 
 # Import validation engine (Phase 1: Schema validation)
 try:
@@ -32,28 +33,6 @@ try:
     HAS_VALIDATION = True
 except ImportError:
     HAS_VALIDATION = False
-
-@dataclass
-class Process:
-    """Represents a managed process"""
-    pid: Optional[int]
-    name: str
-    status: str  # running, done, failed, waiting, paused
-    start_time: float
-    command: str
-    uid: str = ""  # Unique ID for this process instance (uuid)
-    exit_code: Optional[int] = None
-    cpu_percent: float = 0.0
-    memory_mb: float = 0.0
-    depends_on: List[str] = field(default_factory=list)
-    progress: int = 0  # 0-100
-    phase: int = 0  # execution phase number
-    blocking_pause: bool = True  # if True, pausing this blocks dependents
-    agent: str = ""  # Agent or team executing this process
-    # STATE MACHINE: next block specification (Phase 2.5.4)
-    next_spec: Optional[any] = None  # str or List[dict] with conditions
-    max_runs: int = 1  # Maximum runs for loop protection
-    run_count: int = 0  # How many times this block has run
 
 class ReinState:
     """State management with SQLite"""
