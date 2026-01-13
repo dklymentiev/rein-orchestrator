@@ -168,6 +168,10 @@ class ProcessManager:
         # Initialize state with unique DB for this run (or reuse existing DB if resuming)
         self.state = ReinState(self.db_path, resume=bool(resume_run_id))
 
+        # Initialize refactored components
+        self.claude_client = ClaudeClient(logger=self._write_rein_log)
+        self.config_loader = ConfigLoader(agents_dir=self.agents_dir, logger=self._write_rein_log)
+
         # Write metadata
         if resume_run_id:
             # Resuming from previous run - don't create new start_time
@@ -426,46 +430,16 @@ class ProcessManager:
             print(f"[WARNING] Validation engine error (continuing anyway): {e}\n")
 
     def _load_env_file(self, workflow_dir: str):
-        """Load .env file from flow directory (PHASE 2.5 - Per-flow config)"""
-        try:
-            env_file = os.path.join(workflow_dir, '.env')
-            if os.path.exists(env_file):
-                with open(env_file) as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#'):
-                            key, value = line.split('=', 1)
-                            os.environ[key.strip()] = value.strip()
-                self._write_rein_log(f"ENV LOADED | {env_file}")
-            else:
-                self._write_rein_log(f"ENV NOT FOUND | using system env")
-        except Exception as e:
-            self._write_rein_log(f"ENV LOAD ERROR | {str(e)}")
+        """Load .env file from flow directory (delegates to ConfigLoader)"""
+        self.config_loader.load_env_file(workflow_dir)
 
     def load_team(self, team_name: str) -> str:
-        """Load team configuration and return tone (PHASE 2.5)"""
-        try:
-            team_file = os.path.join(self.agents_dir, "teams", f"{team_name}.yaml")
-            with open(team_file) as f:
-                team_data = yaml.safe_load(f)
-            # Support both old 'tone' and new 'collaboration_tone' field names
-            tone = team_data.get('collaboration_tone') or team_data.get('tone', '')
-            self._write_rein_log(f"TEAM LOADED | {team_name} | tone={tone}")
-            return tone
-        except Exception as e:
-            self._write_rein_log(f"TEAM LOAD ERROR | {team_name} | {str(e)}")
-            return ""
+        """Load team configuration and return tone (delegates to ConfigLoader)"""
+        return self.config_loader.load_team(team_name)
 
     def load_specialist(self, specialist_name: str) -> str:
-        """Load specialist instructions from MD file (PHASE 2.5)"""
-        try:
-            spec_file = os.path.join(self.agents_dir, "specialists", f"{specialist_name}.md")
-            with open(spec_file) as f:
-                content = f.read()
-            return content
-        except Exception as e:
-            self._write_rein_log(f"SPECIALIST LOAD ERROR | {specialist_name} | {str(e)}")
-            return ""
+        """Load specialist instructions from MD file (delegates to ConfigLoader)"""
+        return self.config_loader.load_specialist(specialist_name)
 
     def assemble_prompt(self, block: dict, team_tone: str) -> str:
         """Assemble full prompt from specialists + team tone + block prompt (PHASE 2.5)"""
@@ -559,58 +533,8 @@ class ProcessManager:
             return ""
 
     def call_claude(self, prompt: str, stage: str) -> str:
-        """Call Claude API (supports Anthropic and OpenRouter) - PHASE 2.5"""
-        try:
-            # Check for OpenRouter config first
-            openrouter_key = os.environ.get('OPENROUTER_API_KEY')
-            openrouter_model = os.environ.get('OPENROUTER_MODEL', 'anthropic/claude-3.5-sonnet')
-
-            if openrouter_key:
-                # Use OpenRouter
-                self._write_rein_log(f"OPENROUTER CALL | stage={stage} | model={openrouter_model}")
-                return self._call_openrouter(prompt, stage, openrouter_key, openrouter_model)
-            else:
-                # Use Anthropic directly
-                self._write_rein_log(f"ANTHROPIC CALL | stage={stage}")
-                return self._call_anthropic(prompt, stage)
-        except Exception as e:
-            self._write_rein_log(f"API ERROR | stage={stage} | {str(e)}")
-            return f"ERROR: {str(e)}"
-
-    def _call_anthropic(self, prompt: str, stage: str) -> str:
-        """Call Anthropic Claude API directly"""
-        client = anthropic.Anthropic()
-        message = client.messages.create(
-            model="claude-opus-4.5",
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        result = message.content[0].text
-        self._write_rein_log(f"ANTHROPIC RESPONSE | stage={stage} | length={len(result)}")
-        return result
-
-    def _call_openrouter(self, prompt: str, stage: str, api_key: str, model: str) -> str:
-        """Call OpenRouter API (proxy for Claude and other models)"""
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": int(os.environ.get('MAX_TOKENS', 4096)),
-            "temperature": float(os.environ.get('TEMPERATURE', 0.7))
-        }
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
-        response.raise_for_status()
-        result = response.json()['choices'][0]['message']['content']
-        self._write_rein_log(f"OPENROUTER RESPONSE | stage={stage} | length={len(result)}")
-        return result
+        """Call Claude API (delegates to ClaudeClient)"""
+        return self.claude_client.call(prompt, stage)
 
     def _prepare_input_dir(self, block_name: str, depends_on: list) -> str:
         """Create task/block/inputs/ directory (v3.0: no symlinks, direct reads via task_dir)"""
@@ -630,77 +554,29 @@ class ProcessManager:
 
     def _run_logic(self, script_path: str, data_file: str, workflow_dir: str,
                    input_dir: str = None, block_config: dict = None) -> bool:
-        """Run logic script (Python or Shell) - PHASE 2.5 LOGIC PHASES with task context"""
-        try:
-            # Resolve relative path
-            full_path = os.path.join(workflow_dir, script_path)
+        """Run logic script (delegates to LogicRunner)"""
+        block_name = block_config.get('name') if block_config else None
+        block_dir = self._get_block_dir(block_name) if block_name and self.task_dir else None
+        depends_on = block_config.get('depends_on', []) if block_config else []
 
-            if not os.path.exists(full_path):
-                self._write_rein_log(f"LOGIC ERROR | script not found: {full_path}")
-                return False
+        # Create LogicRunner with current context
+        runner = LogicRunner(
+            task_dir=self.task_dir,
+            workflow_dir=workflow_dir,
+            task_id=self.task_id,
+            task_input=self.task_input,
+            logger=self._write_rein_log
+        )
 
-            # Build task context for logic scripts (v3.0: block-level directories)
-            block_name = block_config.get('name') if block_config else None
-            block_dir = self._get_block_dir(block_name) if block_name and self.task_dir else None
-            depends_on = block_config.get('depends_on', []) if block_config else []
-            context = {
-                "output_file": data_file,
-                "workflow_dir": workflow_dir,
-                "task_dir": self.task_dir,
-                "task_id": self.task_id,
-                "task_input": self.task_input,
-                "block_dir": block_dir,  # v3.0: task/block/
-                "outputs_dir": os.path.join(block_dir, "outputs") if block_dir else self.task_dir,  # v3.0
-                "input_dir": input_dir,
-                "depends_on": depends_on,  # v3.0: list of dependency block names
-                "block_config": block_config
-            }
-            context_json = json.dumps(context)
-
-            self._write_rein_log(f"LOGIC RUN | {script_path} | output={data_file} | task={self.task_id}")
-
-            # Run script based on type
-            # Context is passed via stdin as JSON (backward compatible: scripts can read as plain path or parse JSON)
-            if script_path.endswith('.py'):
-                result = subprocess.run(
-                    ['python3', full_path],
-                    input=context_json,
-                    capture_output=True,
-                    text=True,
-                    timeout=480,  # 8 minutes for complex tasks
-                    cwd=self.task_dir  # v3.1.0: Run in task directory for isolation
-                )
-            elif script_path.endswith('.sh'):
-                result = subprocess.run(
-                    ['bash', full_path],
-                    input=context_json,
-                    capture_output=True,
-                    text=True,
-                    timeout=480,  # 8 minutes for complex tasks
-                    cwd=self.task_dir  # v3.1.0: Run in task directory for isolation
-                )
-            else:
-                self._write_rein_log(f"LOGIC ERROR | unknown script type: {script_path}")
-                return False
-
-            # Log output
-            if result.stdout:
-                for line in result.stdout.strip().split('\n'):
-                    self._write_rein_log(f"LOGIC OUTPUT | {line}")
-
-            if result.returncode != 0:
-                if result.stderr:
-                    for line in result.stderr.strip().split('\n'):
-                        self._write_rein_log(f"LOGIC ERROR | {line}")
-                return False
-
-            return True
-        except subprocess.TimeoutExpired:
-            self._write_rein_log(f"LOGIC ERROR | timeout: {script_path}")
-            return False
-        except Exception as e:
-            self._write_rein_log(f"LOGIC ERROR | {str(e)}")
-            return False
+        return runner.run(
+            script_path=script_path,
+            output_file=data_file,
+            block_name=block_name,
+            block_dir=block_dir,
+            input_dir=input_dir,
+            depends_on=depends_on,
+            block_config=block_config
+        )
 
     def _load_state_from_db(self):
         """Load workflow state from database when resuming"""
