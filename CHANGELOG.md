@@ -1,5 +1,42 @@
 # Rein Changelog
 
+## [3.1.1] - 2026-01-04
+
+### Security - Task Directory Isolation
+
+**CRITICAL FIX: Logic scripts now run in task directory instead of Rein directory**
+
+**Problem:**
+- Logic scripts executed with `cwd=/server/scripts/rein` or `cwd=/server/hq`
+- Claude CLI could access Rein source code and other tasks
+- Product workflows analyzed Rein codebase instead of assigned tasks
+
+**Fix:**
+- Added `cwd=self.task_dir` to subprocess.run() calls (rein.py:662, 671)
+- Added default directory restriction: `add_dirs=[task_dir]` (run-specialist.py:192-195)
+- Logic scripts now isolated to task directory by default
+
+**Impact:**
+- BREAKING: Custom logic scripts assuming `cwd=workflow_dir` will fail
+- Migration: Use `context['workflow_dir']` from stdin instead of `os.getcwd()`
+
+**Security Policy:**
+- Created SECURITY-POLICY.md documenting isolation rules
+- Rule 1: All subprocess calls MUST use `cwd=task_dir`
+- Rule 2: Default file access restricted to task directory only
+
+**Testing:**
+```bash
+# Logic script now sees only task files
+os.getcwd() == '/server/agents/tasks/task-20260104-012158/'
+# NOT '/server/scripts/rein/'
+```
+
+**References:**
+- Issue: Product Team analyzing Rein code instead of wizard flow
+- Report: /server/agents/tasks/saas-wizard-review/REPORT-file-access-issue.md
+- Policy: SECURITY-POLICY.md
+
 ## [3.1.0] - 2026-01-02
 
 ### Changed - Rebrand: Dog -> Rein

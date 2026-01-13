@@ -84,17 +84,116 @@ Logic scripts (.py)           v              rein-cmd.sh (CLI client)
 | **SQLite State** | Crash recovery, resume from last checkpoint |
 | **Schema Validation** | JSON Schema + Pydantic validation before execution |
 
-## Quick Start
+## CLI Reference
+
+### Basic Usage
 
 ```bash
-# Run a workflow
-./rein.py --flow blog-publication --input '{"topic": "semantic search"}'
+# Simplest way - flow name + question text
+python3 rein.py --flow deliberation --question "Should we use Redis or PostgreSQL?"
 
-# Run deliberation (multi-agent discussion)
-./rein.py --flow deliberation --input '{"topic": "Should we use Redis or PostgreSQL?"}'
+# With JSON input (for complex parameters)
+python3 rein.py --flow blog-publication --input '{"topic": "semantic search", "style": "technical"}'
 
-# Run with task directory
-./rein.py --flow arithmetic-test --input '{"initial_value": 10}'
+# Run existing task directory
+python3 rein.py --task /server/agents/tasks/task-20260113-143022
+
+# Check task status
+python3 rein.py --status task-20260113-143022
+```
+
+### All CLI Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--flow NAME` | Flow name from /server/agents/flows/ | `--flow deliberation` |
+| `--question TEXT` | Simple question/topic (auto-creates task) | `--question "How to improve API?"` |
+| `--input JSON` | JSON parameters for task.input | `--input '{"topic": "...", "count": 5}'` |
+| `--task DIR` | Run existing task directory | `--task /server/agents/tasks/task-001` |
+| `--task-dir DIR` | Directory with task.md file | `--task-dir /path/to/my-task` |
+| `--status ID` | Show task status | `--status task-20260113-143022` |
+| `--resume ID` | Resume previous run | `--resume 20260113-143022` |
+| `--pause` | Start in paused state | `--pause` |
+| `--no-ui` | Disable Rich terminal UI | `--no-ui` |
+| `--agents-dir PATH` | Custom agents directory | `--agents-dir /my/agents` |
+| `config` | Direct path to YAML file | `rein.py workflow.yaml` |
+
+### How Task is Created
+
+When you run with `--flow` + `--question` or `--input`:
+
+1. Rein creates task directory:
+```
+/server/agents/tasks/task-20260113-143022/
+├── input/
+│   └── task.json      # {"topic": "your question"}
+├── output/            # Final results
+├── state/
+│   ├── status         # pending -> running -> completed
+│   ├── rein.db        # SQLite state
+│   └── rein.log       # Execution log
+└── {block_name}/      # Directory per block
+    └── outputs/
+        └── result.json
+```
+
+2. Loads flow YAML from `/server/agents/flows/{name}/{name}.yaml`
+3. Replaces `{{ task.input.topic }}` with your question
+4. Executes blocks according to dependencies
+
+### Input Methods
+
+**Simple question (recommended for single-topic flows):**
+```bash
+python3 rein.py --flow deliberation --question "What database should we use?"
+```
+Creates: `{"topic": "What database should we use?"}`
+
+**JSON input (for multiple parameters):**
+```bash
+python3 rein.py --flow blog-publication --input '{"topic": "AI trends", "style": "casual", "max_words": 1000}'
+```
+Creates: `{"topic": "AI trends", "style": "casual", "max_words": 1000}`
+
+**From task directory (pre-created):**
+```bash
+# Create task manually
+mkdir -p /server/agents/tasks/my-task/input
+echo '{"topic": "My question"}' > /server/agents/tasks/my-task/input/task.json
+
+# Run it
+python3 rein.py --task /server/agents/tasks/my-task
+```
+
+### Monitoring Running Task
+
+```bash
+# Check status
+python3 rein.py --status task-20260113-143022
+
+# Watch log
+tail -f /server/agents/tasks/task-20260113-143022/state/rein.log
+
+# Runtime control (while running)
+./rein-cmd.sh status
+./rein-cmd.sh pause block-name
+./rein-cmd.sh resume block-name
+```
+
+### Quick Start Examples
+
+```bash
+# Simple deliberation
+python3 rein.py --flow deliberation --question "Should we use Redis or PostgreSQL?"
+
+# Blog post generation
+python3 rein.py --flow blog-publication --input '{"topic": "semantic search"}'
+
+# Resume failed task
+python3 rein.py --resume 20260113-143022
+
+# Run without terminal UI (for scripts/cron)
+python3 rein.py --flow deliberation --question "Test" --no-ui
 ```
 
 ## Workflow Example
