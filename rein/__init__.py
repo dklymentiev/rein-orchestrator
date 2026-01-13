@@ -6,12 +6,15 @@ Modules:
 - claude: Claude API client (Anthropic, OpenRouter)
 - config: Configuration loader (workflows, teams, specialists)
 - logic: Logic script runner
+- state: SQLite state persistence
+- ui: Rich terminal UI
 """
 
 from .models import Process, BlockConfig
 from .claude import ClaudeClient
 from .config import ConfigLoader
 from .logic import LogicRunner
+from .state import ReinState
 
 __version__ = "3.2.0"
 
@@ -21,4 +24,5 @@ __all__ = [
     "ClaudeClient",
     "ConfigLoader",
     "LogicRunner",
+    "ReinState",
 ]
