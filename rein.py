@@ -323,8 +323,8 @@ class ProcessManager:
         except Exception as e:
             self._write_rein_log(f"READABLE OUTPUT ERROR | {block_name} | {str(e)}")
 
-    def _format_json_as_md(self, data: dict) -> list:
-        """Format JSON dict as readable markdown sections"""
+    def _format_json_as_md(self, data: dict, level: int = 0) -> list:
+        """Format JSON dict as readable markdown sections with recursive handling"""
         lines = []
         if not isinstance(data, dict):
             lines.append(str(data))
@@ -332,23 +332,53 @@ class ProcessManager:
 
         for key, value in data.items():
             title = key.replace('_', ' ').title()
-            lines.append(f"## {title}")
+
+            # Use appropriate header level
+            if level == 0:
+                lines.append(f"## {title}")
+            elif level == 1:
+                lines.append(f"### {title}")
+            else:
+                lines.append(f"**{title}:**")
             lines.append("")
 
             if isinstance(value, list):
-                for item in value:
-                    if isinstance(item, str) and len(item) > 100:
+                for i, item in enumerate(value):
+                    if isinstance(item, dict):
+                        # Format dict items nicely
+                        item_title = item.get('name') or item.get('id') or item.get('gap') or item.get('idea') or f"Item {i+1}"
+                        if isinstance(item_title, int):
+                            item_title = f"#{item_title}"
+                        lines.append(f"### {item_title}")
+                        lines.append("")
+                        for k, v in item.items():
+                            if k in ('name', 'id'):
+                                continue  # Already used as title
+                            k_title = k.replace('_', ' ').title()
+                            if isinstance(v, list):
+                                lines.append(f"**{k_title}:**")
+                                for sub_item in v:
+                                    lines.append(f"- {sub_item}")
+                            elif isinstance(v, str) and len(v) > 100:
+                                lines.append(f"**{k_title}:** {v}")
+                            else:
+                                lines.append(f"**{k_title}:** {v}")
+                        lines.append("")
+                    elif isinstance(item, str) and len(item) > 100:
                         lines.append(f"- {item}")
                     else:
                         lines.append(f"- {item}")
+                lines.append("")
             elif isinstance(value, dict):
-                for k, v in value.items():
-                    lines.append(f"**{k}:** {v}")
+                # Recursively format nested dicts
+                nested = self._format_json_as_md(value, level + 1)
+                lines.extend(nested)
             elif isinstance(value, (int, float)):
                 lines.append(str(value))
+                lines.append("")
             else:
                 lines.append(str(value))
-            lines.append("")
+                lines.append("")
 
         return lines
 
@@ -658,7 +688,8 @@ class ProcessManager:
                     input=context_json,
                     capture_output=True,
                     text=True,
-                    timeout=480  # 8 minutes for complex tasks
+                    timeout=480,  # 8 minutes for complex tasks
+                    cwd=self.task_dir  # v3.1.0: Run in task directory for isolation
                 )
             elif script_path.endswith('.sh'):
                 result = subprocess.run(
@@ -666,7 +697,8 @@ class ProcessManager:
                     input=context_json,
                     capture_output=True,
                     text=True,
-                    timeout=480  # 8 minutes for complex tasks
+                    timeout=480,  # 8 minutes for complex tasks
+                    cwd=self.task_dir  # v3.1.0: Run in task directory for isolation
                 )
             else:
                 self._write_rein_log(f"LOGIC ERROR | unknown script type: {script_path}")
