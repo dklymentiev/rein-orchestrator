@@ -2,7 +2,7 @@
 
 Workflow orchestrator for multi-agent AI - like PM2 but for Claude specialists.
 
-**Status:** Production (2026-01-02) | **Version:** 3.1.0
+**Status:** Production | **Version:** 3.3.0 (2026-01-13)
 
 ## Problem Solved
 
@@ -375,7 +375,7 @@ print(result)
 
 ## Tech Stack
 
-- Python 3.10+ (~2400 lines)
+- Python 3.10+ (~1900 lines in modular package)
 - Rich (terminal UI)
 - SQLite (state persistence)
 - Unix domain sockets (runtime control)
@@ -387,20 +387,21 @@ print(result)
 - 50-block workflow: ~3 minutes (parallel arithmetic test)
 - 10-block deliberation: ~15 minutes (4 Claude API calls per block)
 - ~30MB base memory + 5-10MB per 100 tasks
-- 2400 lines Python (vs 50k+ for alternatives)
+- ~1900 lines Python (vs 50k+ for alternatives)
 
 ## Limitations
 
 - Single machine only (not distributed)
 - Tested up to 50 blocks (need to test 500+)
 
-## Planned: v3.2+
+## Planned: v3.4+
 
 - **Retry logic:** `retry: 3` with exponential backoff
 - **Resource pools:** `max_concurrent: 5` per resource type
 - **Notifications:** Telegram alerts on events
 - **Heartbeat:** Watchdog for hung processes
 - **Checkpointing:** Resume long operations
+- **Together AI:** Additional LLM provider support
 
 ---
 
