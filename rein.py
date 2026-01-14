@@ -25,7 +25,10 @@ from rich.table import Table
 from rich.live import Live
 
 # Import refactored modules
-from rein import Process, ClaudeClient, ConfigLoader, LogicRunner, ReinState
+from rein import (
+    Process, ClaudeClient, ConfigLoader, LogicRunner, ReinState,
+    format_json_as_md, save_readable_output, get_block_dir, get_output_dir
+)
 
 # Import validation engine (Phase 1: Schema validation)
 try:
@@ -167,136 +170,20 @@ class ProcessManager:
         return task_id
 
     def _get_block_dir(self, block_name: str) -> str:
-        """Get/create block directory: task/block/{inputs,outputs,logs}/ (v3.0)"""
-        if self.task_dir:
-            block_dir = os.path.join(self.task_dir, block_name)
-        else:
-            block_dir = os.path.join(self.workflow_dir, block_name)
-
-        # Create block subdirectories
-        os.makedirs(os.path.join(block_dir, "inputs"), exist_ok=True)
-        os.makedirs(os.path.join(block_dir, "outputs"), exist_ok=True)
-        os.makedirs(os.path.join(block_dir, "logs"), exist_ok=True)
-
-        return block_dir
+        """Get/create block directory (delegates to output module)"""
+        return get_block_dir(self.task_dir, self.workflow_dir, block_name)
 
     def _get_output_dir(self, block_name: str = None) -> str:
-        """Get the directory for saving block outputs (v3.0: task/block/outputs/)"""
-        if block_name and self.task_dir:
-            block_dir = self._get_block_dir(block_name)
-            return os.path.join(block_dir, "outputs")
-        elif self.task_dir:
-            # Legacy: return task-level outputs
-            outputs_dir = os.path.join(self.task_dir, "outputs")
-            os.makedirs(outputs_dir, exist_ok=True)
-            return outputs_dir
-        else:
-            return self.workflow_dir
+        """Get output directory (delegates to output module)"""
+        return get_output_dir(self.task_dir, self.workflow_dir, block_name)
 
     def _save_readable_output(self, json_file: str, block_name: str, result: str):
-        """Save human-readable MD version of block output"""
-        try:
-            md_file = json_file.replace('.json', '.md')
-            lines = [f"# {block_name}", "", f"*{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*", ""]
-
-            # Try to extract JSON from markdown code blocks
-            import re
-            json_match = re.search(r'```json\s*\n(.*?)\n```', result, re.DOTALL)
-
-            if json_match:
-                # Has text + JSON block
-                text_before = result[:json_match.start()].strip()
-                json_str = json_match.group(1)
-                text_after = result[json_match.end():].strip()
-
-                if text_before:
-                    lines.append(text_before)
-                    lines.append("")
-
-                # Parse and format JSON
-                try:
-                    parsed = json.loads(json_str)
-                    lines.extend(self._format_json_as_md(parsed))
-                except (json.JSONDecodeError, ValueError):
-                    lines.append(f"```json\n{json_str}\n```")
-
-                if text_after:
-                    lines.append("")
-                    lines.append(text_after)
-            else:
-                # Try parsing as pure JSON
-                try:
-                    parsed = json.loads(result)
-                    lines.extend(self._format_json_as_md(parsed))
-                except (json.JSONDecodeError, ValueError):
-                    # Plain text - just add it
-                    lines.append(result)
-
-            with open(md_file, 'w') as f:
-                f.write("\n".join(lines))
-
-            self._write_rein_log(f"READABLE OUTPUT | {block_name} | saved={md_file}")
-        except Exception as e:
-            self._write_rein_log(f"READABLE OUTPUT ERROR | {block_name} | {str(e)}")
+        """Save readable MD output (delegates to output module)"""
+        save_readable_output(json_file, block_name, result, self._write_rein_log)
 
     def _format_json_as_md(self, data: dict, level: int = 0) -> list:
-        """Format JSON dict as readable markdown sections with recursive handling"""
-        lines = []
-        if not isinstance(data, dict):
-            lines.append(str(data))
-            return lines
-
-        for key, value in data.items():
-            title = key.replace('_', ' ').title()
-
-            # Use appropriate header level
-            if level == 0:
-                lines.append(f"## {title}")
-            elif level == 1:
-                lines.append(f"### {title}")
-            else:
-                lines.append(f"**{title}:**")
-            lines.append("")
-
-            if isinstance(value, list):
-                for i, item in enumerate(value):
-                    if isinstance(item, dict):
-                        # Format dict items nicely
-                        item_title = item.get('name') or item.get('id') or item.get('gap') or item.get('idea') or f"Item {i+1}"
-                        if isinstance(item_title, int):
-                            item_title = f"#{item_title}"
-                        lines.append(f"### {item_title}")
-                        lines.append("")
-                        for k, v in item.items():
-                            if k in ('name', 'id'):
-                                continue  # Already used as title
-                            k_title = k.replace('_', ' ').title()
-                            if isinstance(v, list):
-                                lines.append(f"**{k_title}:**")
-                                for sub_item in v:
-                                    lines.append(f"- {sub_item}")
-                            elif isinstance(v, str) and len(v) > 100:
-                                lines.append(f"**{k_title}:** {v}")
-                            else:
-                                lines.append(f"**{k_title}:** {v}")
-                        lines.append("")
-                    elif isinstance(item, str) and len(item) > 100:
-                        lines.append(f"- {item}")
-                    else:
-                        lines.append(f"- {item}")
-                lines.append("")
-            elif isinstance(value, dict):
-                # Recursively format nested dicts
-                nested = self._format_json_as_md(value, level + 1)
-                lines.extend(nested)
-            elif isinstance(value, (int, float)):
-                lines.append(str(value))
-                lines.append("")
-            else:
-                lines.append(str(value))
-                lines.append("")
-
-        return lines
+        """Format JSON as markdown (delegates to output module)"""
+        return format_json_as_md(data, level)
 
     def load_config(self, config: dict, workflow_file: str = None):
         """Load block configuration"""
