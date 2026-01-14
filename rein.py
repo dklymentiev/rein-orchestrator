@@ -217,7 +217,7 @@ class ProcessManager:
                 try:
                     parsed = json.loads(json_str)
                     lines.extend(self._format_json_as_md(parsed))
-                except:
+                except (json.JSONDecodeError, ValueError):
                     lines.append(f"```json\n{json_str}\n```")
 
                 if text_after:
@@ -228,7 +228,7 @@ class ProcessManager:
                 try:
                     parsed = json.loads(result)
                     lines.extend(self._format_json_as_md(parsed))
-                except:
+                except (json.JSONDecodeError, ValueError):
                     # Plain text - just add it
                     lines.append(result)
 
@@ -440,7 +440,7 @@ class ProcessManager:
                                 try:
                                     inner_data = json.loads(result_str)
                                     data = inner_data
-                                except:
+                                except (json.JSONDecodeError, ValueError, TypeError):
                                     pass
                             # Use the FULL placeholder text (with spaces preserved)
                             prompt = prompt.replace(full_placeholder, json.dumps(data, ensure_ascii=False))
@@ -708,7 +708,7 @@ class ProcessManager:
                         elif isinstance(left, (int, float)):
                             try:
                                 right = float(right_str)
-                            except:
+                            except (ValueError, TypeError):
                                 right = right_str
                         else:
                             right = right_str
@@ -935,7 +935,7 @@ class ProcessManager:
                                 # Try to parse as JSON
                                 try:
                                     parsed_result = json.loads(inner_result)
-                                except:
+                                except (json.JSONDecodeError, ValueError):
                                     parsed_result = {'raw': inner_result}
                             else:
                                 parsed_result = {'value': inner_result}
@@ -1013,9 +1013,9 @@ class ProcessManager:
                                         process.progress = progress
                                         # Also save to database immediately
                                         self.state.save_process(process)
-                            except:
+                            except (json.JSONDecodeError, ValueError, KeyError):
                                 pass
-                except Exception as e:
+                except Exception:
                     pass
 
             output_thread = threading.Thread(target=read_output, daemon=True)
@@ -1027,7 +1027,7 @@ class ProcessManager:
                     if proc.stderr:
                         for line in proc.stderr:
                             pass  # Discard stderr
-                except:
+                except Exception:
                     pass
 
             error_thread = threading.Thread(target=read_errors, daemon=True)
@@ -1038,7 +1038,7 @@ class ProcessManager:
                 try:
                     process.cpu_percent = ps_proc.cpu_percent(interval=0.1)
                     process.memory_mb = ps_proc.memory_info().rss / 1024 / 1024
-                except:
+                except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
                     pass
 
                 self.state.save_process(process)
@@ -1276,7 +1276,7 @@ class ProcessManager:
                                     import shutil
                                     try:
                                         shutil.copy2(src, dst)
-                                    except:
+                                    except (OSError, IOError, shutil.Error):
                                         pass
                     self._write_rein_log(f"OUTPUT SAVED | {output_dir}")
                 except Exception as e:
@@ -1626,19 +1626,19 @@ class ProcessManager:
                                         clients.remove(s)
                                     try:
                                         s.close()
-                                    except:
+                                    except OSError:
                                         pass
                 finally:
                     # Cleanup on shutdown
                     for client in clients:
                         try:
                             client.close()
-                        except:
+                        except OSError:
                             pass
                     sock.close()
                     try:
                         os.unlink(socket_path)
-                    except:
+                    except OSError:
                         pass
                     self._write_rein_log(f"SOCKET SERVER | stopped")
 
@@ -1701,7 +1701,7 @@ def _save_task_to_memory(output_dir, memory_config):
                     try:
                         with open(fpath) as f:
                             result_files[fname] = json.load(f)
-                    except:
+                    except (json.JSONDecodeError, OSError, ValueError):
                         pass
 
         if not result_files:
