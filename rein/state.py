@@ -1,6 +1,7 @@
 """
 Rein State Manager - SQLite-based state persistence for workflow execution
 """
+import os
 import sqlite3
 import time
 from typing import List
@@ -44,6 +45,12 @@ class ReinState:
         """)
         conn.commit()
         conn.close()
+
+        # Make db world-writable so PHP (www-data) can modify it
+        try:
+            os.chmod(self.db_path, 0o666)
+        except OSError:
+            pass  # May fail if not owner, but that's ok
 
     def save_process(self, proc: Process):
         """Save process state"""

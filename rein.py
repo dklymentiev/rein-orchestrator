@@ -1769,7 +1769,13 @@ def run_daemon(agents_dir: str, interval: int = 5, no_ui: bool = True):
                         if exit_code != 0:
                             status_data["error"] = f"Exit code: {exit_code}"
 
-                        print(f"[DAEMON] Task {task_name}: {status_data['status']}", flush=True)
+                        # Count completed blocks
+                        import glob
+                        completed_blocks = glob.glob(os.path.join(task_path, "*/outputs/result.json"))
+                        status_data["blocks_completed"] = len(completed_blocks)
+                        status_data["progress"] = 100 if exit_code == 0 else status_data.get("progress", 0)
+
+                        print(f"[DAEMON] Task {task_name}: {status_data['status']} ({len(completed_blocks)} blocks)", flush=True)
 
                     except Exception as e:
                         status_data["status"] = "failed"
