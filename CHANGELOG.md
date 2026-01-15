@@ -1,5 +1,41 @@
 # Rein Changelog
 
+## [3.1.2] - 2026-01-15
+
+### Fixed - Race Condition in Block Status
+
+**Problem:** PHP UI and rein daemon both wrote to status.json, causing race conditions. After task restart, blocks remained visually highlighted because status.json wasn't properly synchronized.
+
+**Solution:** PHP now reads block completion status from rein.db (SQLite) - single source of truth.
+
+**Changes:**
+
+1. **index.php** - AJAX `task-blocks` endpoint reads from SQLite:
+   ```php
+   $db = new SQLite3($reinDb, SQLITE3_OPEN_READONLY);
+   $result = $db->query("SELECT name FROM processes WHERE status='done'");
+   ```
+
+2. **api-flow.php** - Restart clears rein.db:
+   ```php
+   $db->exec("DELETE FROM processes");
+   ```
+
+3. **state.py** - World-writable permissions on rein.db:
+   ```python
+   os.chmod(self.db_path, 0o666)
+   ```
+
+**Architecture:**
+```
+PHP (UI)  <--- READ ---  rein.db  <--- WRITE ---  rein.py (daemon)
+```
+
+**Impact:**
+- Live updates now correctly show block progress
+- Restart properly resets all block statuses
+- No more race conditions between PHP and daemon
+
 ## [3.1.1] - 2026-01-04
 
 ### Security - Task Directory Isolation
