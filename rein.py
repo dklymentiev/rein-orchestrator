@@ -1624,6 +1624,172 @@ def load_config(config_path: str) -> dict:
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
 
+
+def run_daemon(agents_dir: str, interval: int = 5, no_ui: bool = True):
+    """
+    Run Rein as daemon, watching for pending tasks.
+
+    Monitors {agents_dir}/tasks/ for tasks with status.json containing status="pending".
+    When found, executes the task and updates status to running/completed/failed.
+    """
+    from datetime import datetime
+
+    tasks_dir = os.path.join(agents_dir, "tasks")
+
+    print(f"[REIN DAEMON] Started", flush=True)
+    print(f"[REIN DAEMON] Watching: {tasks_dir}", flush=True)
+    print(f"[REIN DAEMON] Interval: {interval}s", flush=True)
+    print(f"[REIN DAEMON] Press Ctrl+C to stop", flush=True)
+    print(flush=True)
+
+    while True:
+        try:
+            # Find pending tasks
+            if os.path.exists(tasks_dir):
+                for task_name in os.listdir(tasks_dir):
+                    task_path = os.path.join(tasks_dir, task_name)
+                    if not os.path.isdir(task_path):
+                        continue
+
+                    status_file = os.path.join(task_path, "state", "status.json")
+                    if not os.path.exists(status_file):
+                        continue
+
+                    try:
+                        with open(status_file) as f:
+                            status_data = json.load(f)
+                    except:
+                        continue
+
+                    if status_data.get("status") != "pending":
+                        continue
+
+                    # Found pending task!
+                    print(f"[DAEMON] Found pending task: {task_name}", flush=True)
+
+                    flow_name = status_data.get("flow", "")
+                    question = status_data.get("question", "")
+
+                    if not flow_name:
+                        print(f"[DAEMON] ERROR: No flow specified for {task_name}")
+                        status_data["status"] = "failed"
+                        status_data["error"] = "No flow specified"
+                        with open(status_file, "w") as f:
+                            json.dump(status_data, f, indent=2)
+                        continue
+
+                    # Update status to running
+                    status_data["status"] = "running"
+                    status_data["started_at"] = datetime.now().isoformat()
+                    with open(status_file, "w") as f:
+                        json.dump(status_data, f, indent=2)
+
+                    print(f"[DAEMON] Executing: flow={flow_name}", flush=True)
+                    print(f"[DAEMON] Question: {question}", flush=True)
+                    print(f"[DAEMON] Task path: {task_path}", flush=True)
+
+                    # Find flow config
+                    flow_path = os.path.join(agents_dir, "flows", flow_name, f"{flow_name}.yaml")
+                    if not os.path.exists(flow_path):
+                        print(f"[DAEMON] ERROR: Flow not found: {flow_path}")
+                        status_data["status"] = "failed"
+                        status_data["error"] = f"Flow not found: {flow_name}"
+                        status_data["completed_at"] = datetime.now().isoformat()
+                        with open(status_file, "w") as f:
+                            json.dump(status_data, f, indent=2)
+                        continue
+
+                    # Execute task
+                    log_file = os.path.join(task_path, "state", "rein.log")
+                    exit_code_file = os.path.join(task_path, "state", "exit_code")
+
+                    try:
+                        # Run Rein for this task
+                        config = load_config(flow_path)
+
+                        # Setup task input - use question text directly
+                        if question:
+                            task_input = {"task": question}  # "task" key is what ProcessManager expects
+                        else:
+                            # Try to read from input/task.json or input/question.txt
+                            task_json = os.path.join(task_path, "input", "task.json")
+                            question_txt = os.path.join(task_path, "input", "question.txt")
+                            if os.path.exists(task_json):
+                                with open(task_json) as f:
+                                    task_input = json.load(f)
+                            elif os.path.exists(question_txt):
+                                with open(question_txt) as f:
+                                    task_input = {"task": f.read().strip()}
+                            else:
+                                task_input = {}
+
+                        # Create ProcessManager like main() does
+                        manager = ProcessManager(
+                            max_parallel=config.get('semaphore', 3),
+                            flow_name=flow_name,
+                            task_input=task_input,
+                            agents_dir=agents_dir
+                        )
+
+                        # Use existing task directory
+                        manager.task_id = task_name
+                        manager.task_dir = task_path
+                        manager.run_dir = task_path
+                        manager.log_dir = os.path.join(task_path, "state")
+                        manager.rein_log_file = log_file
+                        manager.db_path = os.path.join(task_path, "state", "rein.db")
+                        os.makedirs(manager.log_dir, exist_ok=True)
+                        manager.state = ReinState(manager.db_path, resume=False)
+
+                        # Load workflow config
+                        manager.load_config(config, workflow_file=flow_path)
+
+                        # Redirect stdout to log file
+                        with open(log_file, "w") as lf:
+                            old_stdout = sys.stdout
+                            sys.stdout = lf
+                            try:
+                                manager.run_workflow()
+                                exit_code = 0
+                            except Exception as e:
+                                print(f"[ERROR] {e}")
+                                import traceback
+                                traceback.print_exc()
+                                exit_code = 1
+                            finally:
+                                sys.stdout = old_stdout
+
+                        # Write exit code
+                        with open(exit_code_file, "w") as f:
+                            f.write(str(exit_code))
+
+                        # Update final status
+                        status_data["status"] = "completed" if exit_code == 0 else "failed"
+                        status_data["completed_at"] = datetime.now().isoformat()
+                        if exit_code != 0:
+                            status_data["error"] = f"Exit code: {exit_code}"
+
+                        print(f"[DAEMON] Task {task_name}: {status_data['status']}", flush=True)
+
+                    except Exception as e:
+                        status_data["status"] = "failed"
+                        status_data["error"] = str(e)
+                        status_data["completed_at"] = datetime.now().isoformat()
+                        print(f"[DAEMON] Task {task_name} FAILED: {e}")
+
+                    with open(status_file, "w") as f:
+                        json.dump(status_data, f, indent=2)
+
+            time.sleep(interval)
+
+        except KeyboardInterrupt:
+            print("\n[DAEMON] Shutting down...")
+            break
+        except Exception as e:
+            print(f"[DAEMON] Error in main loop: {e}")
+            time.sleep(interval)
+
+
 def main():
     import argparse
 
@@ -1640,8 +1806,17 @@ def main():
     parser.add_argument('--no-ui', action='store_true', help='Run without Rich UI (for scripts/non-terminals)')
     parser.add_argument('--agents-dir', metavar='PATH', default='/server/agents',
                         help='Agents directory (specialists, teams, flows, tasks). Default: /server/agents')
+    parser.add_argument('--daemon', action='store_true',
+                        help='Run as daemon, watching for pending tasks')
+    parser.add_argument('--daemon-interval', type=int, default=5,
+                        help='Daemon check interval in seconds (default: 5)')
 
     args = parser.parse_args()
+
+    # Handle --daemon mode
+    if args.daemon:
+        run_daemon(args.agents_dir, args.daemon_interval, args.no_ui)
+        sys.exit(0)
 
     # Handle --status command
     if args.status:

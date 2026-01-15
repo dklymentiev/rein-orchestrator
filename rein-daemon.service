@@ -1,0 +1,23 @@
+[Unit]
+Description=Rein Workflow Orchestrator Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/server/scripts/rein
+ExecStart=/usr/bin/python3 /server/scripts/rein/rein.py --daemon --daemon-interval 5
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rein-daemon
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
