@@ -1,5 +1,43 @@
 # Rein Changelog
 
+## [3.1.3] - 2026-01-16
+
+### Fixed - skip_if_previous_failed Logic Bug
+
+**Problem:** Logic was inverted - blocks were SKIPPED when `skip_if_previous_failed=false` (default).
+
+**Root Cause:** Condition `if previous_failed and not skip_if_failed` was backwards.
+
+**Fix:** Changed to `if previous_failed and skip_if_failed` in rein.py:504
+
+**Impact:** Workflows now correctly continue past failed blocks when `skip_if_previous_failed=false`.
+
+### Changed - Brain API Timeout
+
+- Increased timeout from 120s to 300s in claude-api/main.py
+- Prevents timeout errors for complex deliberation tasks
+
+### RFC - Task Input Format (Deliberation Result)
+
+Team deliberation reached consensus on structured task input format:
+
+```yaml
+---
+version: 1
+scope: file | dir | abstract | server
+target: /path/to/target
+boundaries: read-only | read-write
+allowed_tools: [Read, Glob, Grep, Edit, Write]
+read_dirs: [/path/a, /path/b]
+write_dirs: [/path/c]
+---
+
+# Task Title
+Description in markdown...
+```
+
+**Next:** Implement YAML frontmatter parser in rein.py
+
 ## [3.1.2] - 2026-01-15
 
 ### Fixed - Race Condition in Block Status

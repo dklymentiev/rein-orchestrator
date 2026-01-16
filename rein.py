@@ -11,6 +11,7 @@ import subprocess
 import time
 import signal
 import threading
+import asyncio
 import re
 import uuid
 import socket
@@ -497,11 +498,15 @@ class ProcessManager:
         return failed_blocks
 
     def _should_execute_block(self, block: dict, previous_failed: List[str]) -> bool:
-        """Check if block should be executed based on skip_if_previous_failed flag"""
+        """Check if block should be executed based on skip_if_previous_failed flag
+
+        skip_if_previous_failed=True  -> skip this block if any previous block failed
+        skip_if_previous_failed=False -> continue executing even if previous failed (default)
+        """
         skip_if_failed = block.get('skip_if_previous_failed', False)
 
-        if previous_failed and not skip_if_failed:
-            # There were failures and this block doesn't skip-on-failure
+        if previous_failed and skip_if_failed:
+            # There were failures and this block SHOULD skip-on-failure
             return False
 
         return True
@@ -654,7 +659,7 @@ class ProcessManager:
         # Check if block should be skipped due to previous failures (FLOW CONTROL)
         previous_failed = self._get_previous_blocks_status(block)
         if not self._should_execute_block(block, previous_failed):
-            self._write_rein_log(f"BLOCK SKIPPED | {name} | skip_if_previous_failed=false and failures detected")
+            self._write_rein_log(f"BLOCK SKIPPED | {name} | skip_if_previous_failed=true and failures detected")
             return "skipped"  # Return special marker for skipped blocks
 
         self.semaphore.acquire()
@@ -695,6 +700,10 @@ class ProcessManager:
         """Execute block (PHASE 2.5: Call Claude API with Logic Phases)"""
         name = process.name
         block_failed = False
+
+        # Event marker for WebSocket broadcast
+        print(f"[BLOCK_START] task={self.task_id} block={name}", flush=True)
+
         try:
             process.progress = 25
             self.state.save_process(process)
@@ -805,6 +814,9 @@ class ProcessManager:
 
             self._write_rein_log(f"BLOCK COMPLETED | {name}[{uid}] | saved={save_file}")
             self.completed.add(name)
+
+            # Event marker for WebSocket broadcast
+            print(f"[BLOCK_DONE] task={self.task_id} block={name}", flush=True)
 
             # STATE MACHINE: Evaluate and trigger next block (Phase 2.5.4)
             if block.get('next'):
@@ -1625,28 +1637,266 @@ def load_config(config_path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def run_daemon(agents_dir: str, interval: int = 5, no_ui: bool = True):
+def execute_task(task_id: str, agents_dir: str) -> int:
     """
-    Run Rein as daemon, watching for pending tasks.
+    Execute a single task (called as subprocess by daemon).
 
-    Monitors {agents_dir}/tasks/ for tasks with status.json containing status="pending".
-    When found, executes the task and updates status to running/completed/failed.
+    Returns exit code (0 = success, 1 = failure).
     """
     from datetime import datetime
+    import glob as glob_module
 
     tasks_dir = os.path.join(agents_dir, "tasks")
+    task_path = os.path.join(tasks_dir, task_id)
+    status_file = os.path.join(task_path, "state", "status.json")
+    log_file = os.path.join(task_path, "state", "rein.log")
+    exit_code_file = os.path.join(task_path, "state", "exit_code")
 
-    print(f"[REIN DAEMON] Started", flush=True)
-    print(f"[REIN DAEMON] Watching: {tasks_dir}", flush=True)
-    print(f"[REIN DAEMON] Interval: {interval}s", flush=True)
-    print(f"[REIN DAEMON] Press Ctrl+C to stop", flush=True)
+    # Load status
+    try:
+        with open(status_file) as f:
+            status_data = json.load(f)
+    except Exception as e:
+        print(f"[ERROR] Cannot read status.json: {e}", flush=True)
+        return 1
+
+    flow_name = status_data.get("flow", "")
+    question = status_data.get("question", "")
+
+    if not flow_name:
+        status_data["status"] = "failed"
+        status_data["error"] = "No flow specified"
+        status_data["completed_at"] = datetime.now().isoformat()
+        with open(status_file, "w") as f:
+            json.dump(status_data, f, indent=2)
+        return 1
+
+    # Update status to running
+    status_data["status"] = "running"
+    status_data["started_at"] = datetime.now().isoformat()
+    with open(status_file, "w") as f:
+        json.dump(status_data, f, indent=2)
+
+    print(f"[TASK] Executing: {task_id}", flush=True)
+    print(f"[TASK] Flow: {flow_name}", flush=True)
+
+    # Find flow config
+    flow_path = os.path.join(agents_dir, "flows", flow_name, f"{flow_name}.yaml")
+    if not os.path.exists(flow_path):
+        status_data["status"] = "failed"
+        status_data["error"] = f"Flow not found: {flow_name}"
+        status_data["completed_at"] = datetime.now().isoformat()
+        with open(status_file, "w") as f:
+            json.dump(status_data, f, indent=2)
+        return 1
+
+    exit_code = 0
+    try:
+        # Load flow config
+        config = load_config(flow_path)
+
+        # Setup task input
+        if question:
+            task_input = {"topic": question, "task": question}
+        else:
+            # Try multiple input file formats (v3 first, then legacy)
+            task_input_json = os.path.join(task_path, "task.input.json")  # v3 format
+            task_json = os.path.join(task_path, "input", "task.json")  # legacy
+            question_txt = os.path.join(task_path, "input", "question.txt")  # legacy
+            status_json = os.path.join(task_path, "state", "status.json")  # fallback
+
+            if os.path.exists(task_input_json):
+                # v3 format: task.input.json in root
+                with open(task_input_json) as f:
+                    task_input = json.load(f)
+            elif os.path.exists(task_json):
+                with open(task_json) as f:
+                    task_input = json.load(f)
+            elif os.path.exists(question_txt):
+                with open(question_txt) as f:
+                    task_input = {"topic": f.read().strip(), "task": f.read().strip()}
+            elif os.path.exists(status_json):
+                # Fallback: read question from status.json
+                with open(status_json) as f:
+                    status = json.load(f)
+                    q = status.get("question", "")
+                    if q:
+                        task_input = {"topic": q, "task": q}
+                    else:
+                        task_input = {}
+            else:
+                task_input = {}
+
+        # Create ProcessManager
+        manager = ProcessManager(
+            max_parallel=config.get('semaphore', 3),
+            flow_name=flow_name,
+            task_input=task_input,
+            agents_dir=agents_dir
+        )
+
+        # Use existing task directory
+        manager.task_id = task_id
+        manager.task_dir = task_path
+        manager.run_dir = task_path
+        manager.log_dir = os.path.join(task_path, "state")
+        manager.rein_log_file = log_file
+        manager.db_path = os.path.join(task_path, "state", "rein.db")
+        os.makedirs(manager.log_dir, exist_ok=True)
+        manager.state = ReinState(manager.db_path, resume=False)
+
+        # Load workflow config
+        manager.load_config(config, workflow_file=flow_path)
+
+        # Run workflow (stdout goes to process output, captured by daemon if needed)
+        manager.run_workflow()
+        exit_code = 0
+
+    except Exception as e:
+        print(f"[ERROR] {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        exit_code = 1
+
+    # Write exit code
+    with open(exit_code_file, "w") as f:
+        f.write(str(exit_code))
+
+    # Update final status
+    status_data["status"] = "completed" if exit_code == 0 else "failed"
+    status_data["completed_at"] = datetime.now().isoformat()
+    if exit_code != 0:
+        status_data["error"] = f"Exit code: {exit_code}"
+
+    # Count completed blocks
+    completed_blocks = glob_module.glob(os.path.join(task_path, "*/outputs/result.json"))
+    status_data["blocks_completed"] = len(completed_blocks)
+    status_data["progress"] = 100 if exit_code == 0 else status_data.get("progress", 0)
+
+    with open(status_file, "w") as f:
+        json.dump(status_data, f, indent=2)
+
+    # Event marker for WebSocket broadcast
+    print(f"[TASK_DONE] task={task_id} status={status_data['status']} blocks={len(completed_blocks)}", flush=True)
+
+    print(f"[TASK] {task_id}: {status_data['status']} ({len(completed_blocks)} blocks)", flush=True)
+    return exit_code
+
+
+# WebSocket clients set (global for broadcast)
+WS_CLIENTS: Set = set()
+
+
+async def ws_broadcast(event: dict):
+    """Broadcast event to all connected WebSocket clients."""
+    if not WS_CLIENTS:
+        return
+    message = json.dumps(event)
+    disconnected = set()
+    for ws in WS_CLIENTS:
+        try:
+            await ws.send(message)
+        except Exception:
+            disconnected.add(ws)
+    WS_CLIENTS.difference_update(disconnected)
+
+
+async def ws_handler(websocket):
+    """Handle WebSocket connection."""
+    WS_CLIENTS.add(websocket)
+    remote = websocket.remote_address
+    print(f"[WS] Client connected: {remote}", flush=True)
+    try:
+        await websocket.send(json.dumps({"type": "connected", "message": "Rein Daemon"}))
+        async for message in websocket:
+            # Client can send subscribe messages (optional filtering)
+            pass
+    except Exception as e:
+        print(f"[WS] Client error: {e}", flush=True)
+    finally:
+        WS_CLIENTS.discard(websocket)
+        print(f"[WS] Client disconnected: {remote}", flush=True)
+
+
+async def monitor_subprocess(proc: asyncio.subprocess.Process, task_id: str, log_file: str):
+    """Monitor subprocess stdout and broadcast events."""
+    with open(log_file, "w") as lf:
+        while True:
+            line = await proc.stdout.readline()
+            if not line:
+                break
+
+            line_str = line.decode('utf-8', errors='replace')
+            lf.write(line_str)
+            lf.flush()
+
+            # Parse event markers
+            if "[BLOCK_START]" in line_str:
+                # Extract: [BLOCK_START] task=xxx block=yyy
+                parts = line_str.strip().split()
+                event = {"type": "block_start", "task_id": task_id}
+                for p in parts[1:]:
+                    if "=" in p:
+                        k, v = p.split("=", 1)
+                        event[k] = v
+                await ws_broadcast(event)
+
+            elif "[BLOCK_DONE]" in line_str:
+                parts = line_str.strip().split()
+                event = {"type": "block_done", "task_id": task_id}
+                for p in parts[1:]:
+                    if "=" in p:
+                        k, v = p.split("=", 1)
+                        event[k] = v
+                await ws_broadcast(event)
+                print(f"[DAEMON] Block done: {task_id} / {event.get('block', '?')}", flush=True)
+
+            elif "[TASK_DONE]" in line_str:
+                parts = line_str.strip().split()
+                event = {"type": "task_done", "task_id": task_id}
+                for p in parts[1:]:
+                    if "=" in p:
+                        k, v = p.split("=", 1)
+                        event[k] = v
+                await ws_broadcast(event)
+
+
+async def run_daemon_async(agents_dir: str, interval: int, max_workflows: int, ws_port: int):
+    """Async daemon with WebSocket server."""
+    from typing import Dict
+
+    tasks_dir = os.path.join(agents_dir, "tasks")
+    active: Dict[str, asyncio.subprocess.Process] = {}
+    monitors: Dict[str, asyncio.Task] = {}
+
+    print(f"[DAEMON] Started (async)", flush=True)
+    print(f"[DAEMON] Watching: {tasks_dir}", flush=True)
+    print(f"[DAEMON] Interval: {interval}s | Max parallel: {max_workflows}", flush=True)
+    print(f"[DAEMON] WebSocket: ws://0.0.0.0:{ws_port}", flush=True)
     print(flush=True)
 
     while True:
         try:
-            # Find pending tasks
+            # Cleanup completed processes
+            for task_id in list(active.keys()):
+                proc = active[task_id]
+                if proc.returncode is not None:
+                    status = "completed" if proc.returncode == 0 else f"failed (exit={proc.returncode})"
+                    print(f"[DAEMON] Finished: {task_id} -> {status}", flush=True)
+                    del active[task_id]
+                    # Cancel monitor task
+                    if task_id in monitors:
+                        monitors[task_id].cancel()
+                        del monitors[task_id]
+
+            # Find and spawn pending tasks
             if os.path.exists(tasks_dir):
-                for task_name in os.listdir(tasks_dir):
+                for task_name in sorted(os.listdir(tasks_dir)):
+                    if len(active) >= max_workflows:
+                        break
+                    if task_name in active:
+                        continue
+
                     task_path = os.path.join(tasks_dir, task_name)
                     if not os.path.isdir(task_path):
                         continue
@@ -1664,136 +1914,83 @@ def run_daemon(agents_dir: str, interval: int = 5, no_ui: bool = True):
                     if status_data.get("status") != "pending":
                         continue
 
-                    # Found pending task!
-                    print(f"[DAEMON] Found pending task: {task_name}", flush=True)
-
                     flow_name = status_data.get("flow", "")
-                    question = status_data.get("question", "")
-
                     if not flow_name:
-                        print(f"[DAEMON] ERROR: No flow specified for {task_name}")
-                        status_data["status"] = "failed"
-                        status_data["error"] = "No flow specified"
-                        with open(status_file, "w") as f:
-                            json.dump(status_data, f, indent=2)
                         continue
 
-                    # Update status to running
-                    status_data["status"] = "running"
-                    status_data["started_at"] = datetime.now().isoformat()
-                    with open(status_file, "w") as f:
-                        json.dump(status_data, f, indent=2)
-
-                    print(f"[DAEMON] Executing: flow={flow_name}", flush=True)
-                    print(f"[DAEMON] Question: {question}", flush=True)
-                    print(f"[DAEMON] Task path: {task_path}", flush=True)
-
-                    # Find flow config
                     flow_path = os.path.join(agents_dir, "flows", flow_name, f"{flow_name}.yaml")
                     if not os.path.exists(flow_path):
-                        print(f"[DAEMON] ERROR: Flow not found: {flow_path}")
-                        status_data["status"] = "failed"
-                        status_data["error"] = f"Flow not found: {flow_name}"
-                        status_data["completed_at"] = datetime.now().isoformat()
-                        with open(status_file, "w") as f:
-                            json.dump(status_data, f, indent=2)
+                        print(f"[DAEMON] Skip {task_name}: flow not found", flush=True)
                         continue
 
-                    # Execute task
+                    # Spawn async subprocess with PIPE for stdout
+                    print(f"[DAEMON] Spawning: {task_name} (flow={flow_name})", flush=True)
                     log_file = os.path.join(task_path, "state", "rein.log")
-                    exit_code_file = os.path.join(task_path, "state", "exit_code")
 
-                    try:
-                        # Run Rein for this task
-                        config = load_config(flow_path)
+                    proc = await asyncio.create_subprocess_exec(
+                        sys.executable, __file__, '--run-task', task_name, '--agents-dir', agents_dir,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT
+                    )
+                    active[task_name] = proc
 
-                        # Setup task input - use question text directly
-                        if question:
-                            task_input = {"task": question}  # "task" key is what ProcessManager expects
-                        else:
-                            # Try to read from input/task.json or input/question.txt
-                            task_json = os.path.join(task_path, "input", "task.json")
-                            question_txt = os.path.join(task_path, "input", "question.txt")
-                            if os.path.exists(task_json):
-                                with open(task_json) as f:
-                                    task_input = json.load(f)
-                            elif os.path.exists(question_txt):
-                                with open(question_txt) as f:
-                                    task_input = {"task": f.read().strip()}
-                            else:
-                                task_input = {}
+                    # Start monitor task
+                    monitor = asyncio.create_task(monitor_subprocess(proc, task_name, log_file))
+                    monitors[task_name] = monitor
 
-                        # Create ProcessManager like main() does
-                        manager = ProcessManager(
-                            max_parallel=config.get('semaphore', 3),
-                            flow_name=flow_name,
-                            task_input=task_input,
-                            agents_dir=agents_dir
-                        )
+                    print(f"[DAEMON] Started: {task_name} (pid={proc.pid})", flush=True)
 
-                        # Use existing task directory
-                        manager.task_id = task_name
-                        manager.task_dir = task_path
-                        manager.run_dir = task_path
-                        manager.log_dir = os.path.join(task_path, "state")
-                        manager.rein_log_file = log_file
-                        manager.db_path = os.path.join(task_path, "state", "rein.db")
-                        os.makedirs(manager.log_dir, exist_ok=True)
-                        manager.state = ReinState(manager.db_path, resume=False)
+            if active:
+                print(f"[DAEMON] Active: {len(active)}/{max_workflows} - {list(active.keys())}", flush=True)
 
-                        # Load workflow config
-                        manager.load_config(config, workflow_file=flow_path)
+            await asyncio.sleep(interval)
 
-                        # Redirect stdout to log file
-                        with open(log_file, "w") as lf:
-                            old_stdout = sys.stdout
-                            sys.stdout = lf
-                            try:
-                                manager.run_workflow()
-                                exit_code = 0
-                            except Exception as e:
-                                print(f"[ERROR] {e}")
-                                import traceback
-                                traceback.print_exc()
-                                exit_code = 1
-                            finally:
-                                sys.stdout = old_stdout
-
-                        # Write exit code
-                        with open(exit_code_file, "w") as f:
-                            f.write(str(exit_code))
-
-                        # Update final status
-                        status_data["status"] = "completed" if exit_code == 0 else "failed"
-                        status_data["completed_at"] = datetime.now().isoformat()
-                        if exit_code != 0:
-                            status_data["error"] = f"Exit code: {exit_code}"
-
-                        # Count completed blocks
-                        import glob
-                        completed_blocks = glob.glob(os.path.join(task_path, "*/outputs/result.json"))
-                        status_data["blocks_completed"] = len(completed_blocks)
-                        status_data["progress"] = 100 if exit_code == 0 else status_data.get("progress", 0)
-
-                        print(f"[DAEMON] Task {task_name}: {status_data['status']} ({len(completed_blocks)} blocks)", flush=True)
-
-                    except Exception as e:
-                        status_data["status"] = "failed"
-                        status_data["error"] = str(e)
-                        status_data["completed_at"] = datetime.now().isoformat()
-                        print(f"[DAEMON] Task {task_name} FAILED: {e}")
-
-                    with open(status_file, "w") as f:
-                        json.dump(status_data, f, indent=2)
-
-            time.sleep(interval)
-
-        except KeyboardInterrupt:
-            print("\n[DAEMON] Shutting down...")
+        except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"[DAEMON] Error in main loop: {e}")
-            time.sleep(interval)
+            print(f"[DAEMON] Error: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            await asyncio.sleep(interval)
+
+    # Cleanup on shutdown
+    for task_id, proc in active.items():
+        print(f"[DAEMON] Terminating: {task_id}", flush=True)
+        proc.terminate()
+
+
+def run_daemon(agents_dir: str, interval: int = 5, max_workflows: int = 3, ws_port: int = 8765, no_ui: bool = True):
+    """
+    Run Rein as daemon with WebSocket server for live updates.
+
+    Spawns separate subprocess for each workflow (up to max_workflows parallel).
+    Broadcasts events via WebSocket to connected clients.
+    """
+    async def main():
+        # Try to import websockets
+        try:
+            import websockets
+            # Start WebSocket server
+            ws_server = await websockets.serve(ws_handler, "0.0.0.0", ws_port)
+            print(f"[DAEMON] WebSocket server started on port {ws_port}", flush=True)
+        except ImportError:
+            print(f"[DAEMON] WebSocket disabled (pip install websockets)", flush=True)
+            ws_server = None
+        except Exception as e:
+            print(f"[DAEMON] WebSocket failed: {e}", flush=True)
+            ws_server = None
+
+        try:
+            await run_daemon_async(agents_dir, interval, max_workflows, ws_port)
+        finally:
+            if ws_server:
+                ws_server.close()
+                await ws_server.wait_closed()
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n[DAEMON] Shutting down...", flush=True)
 
 
 def main():
@@ -1816,12 +2013,23 @@ def main():
                         help='Run as daemon, watching for pending tasks')
     parser.add_argument('--daemon-interval', type=int, default=5,
                         help='Daemon check interval in seconds (default: 5)')
+    parser.add_argument('--max-workflows', type=int, default=3,
+                        help='Maximum parallel workflows in daemon mode (default: 3)')
+    parser.add_argument('--ws-port', type=int, default=8765,
+                        help='WebSocket server port for live updates (default: 8765)')
+    parser.add_argument('--run-task', metavar='TASK_ID',
+                        help='Execute specific task (used internally by daemon)')
 
     args = parser.parse_args()
 
+    # Handle --run-task mode (subprocess spawned by daemon)
+    if args.run_task:
+        exit_code = execute_task(args.run_task, args.agents_dir)
+        sys.exit(exit_code)
+
     # Handle --daemon mode
     if args.daemon:
-        run_daemon(args.agents_dir, args.daemon_interval, args.no_ui)
+        run_daemon(args.agents_dir, args.daemon_interval, args.max_workflows, args.ws_port, args.no_ui)
         sys.exit(0)
 
     # Handle --status command

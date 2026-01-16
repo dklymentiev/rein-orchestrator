@@ -1,0 +1,28 @@
+services:
+  rein-daemon:
+    build: .
+    container_name: rein-daemon
+    restart: unless-stopped
+    volumes:
+      - .:/app:ro
+      - /server/agents:/server/agents:rw
+      - /server/scripts/claude-wrapper:/server/scripts/claude-wrapper:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - BRAIN_API_URL=http://172.17.0.1:19842/api/prompt
+      - PYTHONPATH=/server/scripts/claude-wrapper:/app
+    networks:
+      - traefik-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.rein-ws.rule=Host(`hq.generic-app.com`) && PathPrefix(`/rein-ws`)"
+      - "traefik.http.routers.rein-ws.priority=100"
+      - "traefik.http.routers.rein-ws.entrypoints=https"
+      - "traefik.http.routers.rein-ws.tls=true"
+      - "traefik.http.routers.rein-ws.tls.certresolver=letsEncrypt"
+      - "traefik.http.routers.rein-ws.middlewares=hq-vpn-only@docker"
+      - "traefik.http.services.rein-ws.loadbalancer.server.port=8765"
+
+networks:
+  traefik-net:
+    external: true

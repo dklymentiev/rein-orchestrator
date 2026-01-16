@@ -1,15 +1,17 @@
 """
-Rein Claude Client - API calls to Anthropic and OpenRouter
+Rein Claude Client - API calls via Brain API, OpenRouter, or Anthropic direct
 """
 import os
 from typing import Optional, Callable
 
-import anthropic
 import requests
 
 
 class ClaudeClient:
-    """Client for Claude API (supports Anthropic direct and OpenRouter)"""
+    """Client for Claude API (supports Brain API, OpenRouter, Anthropic)"""
+
+    # Brain API endpoint (Claude CLI with full host access)
+    BRAIN_API_URL = "https://brain.generic-app.com/api/prompt"
 
     def __init__(
         self,
@@ -25,7 +27,12 @@ class ClaudeClient:
 
     def call(self, prompt: str, stage: str = "") -> str:
         """
-        Call Claude API (auto-selects Anthropic or OpenRouter based on env vars)
+        Call Claude API (auto-selects Brain API, OpenRouter, or Anthropic)
+
+        Priority:
+        1. BRAIN_API_URL env var or default brain.generic-app.com
+        2. OPENROUTER_API_KEY -> OpenRouter
+        3. ANTHROPIC_API_KEY -> Anthropic direct
 
         Args:
             prompt: The prompt to send
@@ -35,21 +42,50 @@ class ClaudeClient:
             Response text or error message
         """
         try:
+            brain_url = os.environ.get('BRAIN_API_URL', self.BRAIN_API_URL)
             openrouter_key = os.environ.get('OPENROUTER_API_KEY')
-            openrouter_model = os.environ.get('OPENROUTER_MODEL', 'anthropic/claude-3.5-sonnet')
+            anthropic_key = os.environ.get('ANTHROPIC_API_KEY')
 
+            # Priority 1: Brain API (default)
+            if brain_url and not os.environ.get('DISABLE_BRAIN_API'):
+                self.logger(f"BRAIN API CALL | stage={stage}")
+                return self._call_brain(prompt, stage, brain_url)
+
+            # Priority 2: OpenRouter
             if openrouter_key:
+                openrouter_model = os.environ.get('OPENROUTER_MODEL', 'anthropic/claude-3.5-sonnet')
                 self.logger(f"OPENROUTER CALL | stage={stage} | model={openrouter_model}")
                 return self._call_openrouter(prompt, stage, openrouter_key, openrouter_model)
-            else:
+
+            # Priority 3: Anthropic direct
+            if anthropic_key:
                 self.logger(f"ANTHROPIC CALL | stage={stage}")
                 return self._call_anthropic(prompt, stage)
+
+            # Fallback to Brain API anyway
+            self.logger(f"BRAIN API CALL (fallback) | stage={stage}")
+            return self._call_brain(prompt, stage, self.BRAIN_API_URL)
+
         except Exception as e:
             self.logger(f"API ERROR | stage={stage} | {str(e)}")
             return f"ERROR: {str(e)}"
 
+    def _call_brain(self, prompt: str, stage: str, url: str) -> str:
+        """Call Brain API (Claude CLI wrapper with full host access)"""
+        response = requests.post(
+            url,
+            json={"prompt": prompt},
+            timeout=120,
+            verify=True
+        )
+        response.raise_for_status()
+        result = response.json().get('response', '')
+        self.logger(f"BRAIN RESPONSE | stage={stage} | length={len(result)}")
+        return result
+
     def _call_anthropic(self, prompt: str, stage: str) -> str:
         """Call Anthropic Claude API directly"""
+        import anthropic
         client = anthropic.Anthropic()
         message = client.messages.create(
             model=self.default_model,
