@@ -39,6 +39,8 @@ try:
     from models.validator import ValidationEngine
     HAS_VALIDATION = True
 except ImportError:
+    import warnings
+    warnings.warn("models.validator not found - workflow schema validation disabled", stacklevel=2)
     HAS_VALIDATION = False
 
 
@@ -925,8 +927,9 @@ class ProcessManager:
                     env = os.environ.copy()
                     env['REIN_LOG_DIR'] = self.log_dir
 
+                    import shlex
                     proc = subprocess.Popen(
-                        command, shell=True,
+                        shlex.split(command),
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         env=env

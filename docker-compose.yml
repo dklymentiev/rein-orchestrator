@@ -1,28 +1,55 @@
+# Rein - Standalone Docker Compose
+#
+# Quick start:
+#   cp .env.example .env        # add your API key
+#   docker compose up hello     # run hello-world example
+#
+# Run any workflow:
+#   docker compose run --rm rein --agents-dir /workspace/agents workflow.yaml --no-ui
+#
+# Daemon mode (watches for tasks):
+#   docker compose up -d rein-daemon
+
 services:
+  # Hello-world example (quickest way to try Rein)
+  hello:
+    build: .
+    command: ["--agents-dir", "/workspace/agents", "/workspace/workflow.yaml", "--no-ui"]
+    volumes:
+      - ./examples/01-hello-world:/workspace:ro
+      - rein-runs:/tmp/rein-runs
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    profiles: [default]
+
+  # One-off workflow execution (mount your project)
+  rein:
+    build: .
+    volumes:
+      - ${REIN_WORKSPACE:-.}:/workspace
+      - rein-runs:/tmp/rein-runs
+    working_dir: /workspace
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    profiles: [cli]
+
+  # Background daemon (watches agents/tasks/ for pending work)
   rein-daemon:
     build: .
     container_name: rein-daemon
     restart: unless-stopped
+    command: ["--daemon", "--agents-dir", "/agents"]
     volumes:
-      - .:/app:ro
-      - /server/agents:/server/agents:rw
-      - /server/scripts/claude-wrapper:/server/scripts/claude-wrapper:ro
+      - ${REIN_AGENTS_DIR:-./agents}:/agents
+      - rein-runs:/tmp/rein-runs
+    ports:
+      - "${REIN_WS_PORT:-8765}:8765"
+    env_file: .env
     environment:
       - PYTHONUNBUFFERED=1
-      - BRAIN_API_URL=http://172.17.0.1:19842/api/prompt
-      - PYTHONPATH=/server/scripts/claude-wrapper:/app
-    networks:
-      - traefik-net
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.rein-ws.rule=Host(`hq.generic-app.com`) && PathPrefix(`/rein-ws`)"
-      - "traefik.http.routers.rein-ws.priority=100"
-      - "traefik.http.routers.rein-ws.entrypoints=https"
-      - "traefik.http.routers.rein-ws.tls=true"
-      - "traefik.http.routers.rein-ws.tls.certresolver=letsEncrypt"
-      - "traefik.http.routers.rein-ws.middlewares=hq-vpn-only@docker"
-      - "traefik.http.services.rein-ws.loadbalancer.server.port=8765"
+    profiles: [daemon]
 
-networks:
-  traefik-net:
-    external: true
+volumes:
+  rein-runs:

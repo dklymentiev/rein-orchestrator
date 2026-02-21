@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+*.egg-info
+.git
+.github
+tests/
+docs/
+examples/
+rein-v1-archive/
+dist/
+build/
+*.egg
+.pytest_cache

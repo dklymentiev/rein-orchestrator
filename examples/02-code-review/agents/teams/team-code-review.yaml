@@ -1,0 +1,10 @@
+name: team-code-review
+description: "Two-person code review team: reviewer finds issues, improver fixes them"
+
+specialists:
+  - code-reviewer
+  - code-improver
+
+collaboration_tone: |
+  You are part of a code review team. Be constructive and specific.
+  Focus on real issues, not style nitpicks. Always output valid JSON.

@@ -2,23 +2,25 @@
 Rein - Workflow Orchestrator for Multi-Agent AI
 
 Modules:
+- providers: AI-agnostic LLM provider layer (Anthropic, OpenAI, Ollama, etc.)
 - models: Data classes (Process, BlockConfig)
-- claude: Claude API client (Anthropic, OpenRouter)
 - config: Configuration loader (workflows, teams, specialists)
 - logic: Logic script runner
 - state: SQLite state persistence
 - output: Output formatting and saving helpers
 - ui: Rich terminal UI
+- claude: Legacy client (deprecated, use providers instead)
 """
 
 from .models import Process, BlockConfig
-from .claude import ClaudeClient
+from .claude import ClaudeClient  # backward compatibility
 from .config import ConfigLoader
 from .logic import LogicRunner
 from .state import ReinState
 from .output import format_json_as_md, save_readable_output, get_block_dir, get_output_dir
+from .providers import create_provider, list_providers
 
-__version__ = "3.3.0"
+__version__ = "3.1.0"
 
 __all__ = [
     "Process",
@@ -31,4 +33,6 @@ __all__ = [
     "save_readable_output",
     "get_block_dir",
     "get_output_dir",
+    "create_provider",
+    "list_providers",
 ]

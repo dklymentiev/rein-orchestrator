@@ -1,408 +1,408 @@
 # Rein
 
-Workflow orchestrator for multi-agent AI - like PM2 but for Claude specialists.
+Declarative YAML workflow orchestrator for multi-agent AI.
 
-**Status:** Production | **Version:** 3.3.0 (2026-01-13)
-
-## Problem Solved
-
-December 2025. Running multiple Claude agents in parallel. No coordination - agents stepping on each other, API rate limits hit randomly, no way to track what finished or failed. Needed something like PM2 or htop but for AI workflows.
-
-## Core Concept
-
-**Declarative + Runtime Architecture:**
-- **Declarations (text files):** Specialists (.md), Teams (.yaml), Workflows (.yaml)
-- **Runtime (system process):** Rein reads declarations, executes workflows, accepts commands via Unix socket
-
-Edit YAML -> Rein picks it up. No compilation. No restart. Text in, AI orchestration out.
-
-## Architecture
-
-```
-TEXT DECLARATIONS                    RUNTIME PROCESS
------------------                    ---------------
-Specialists (.md)  -+
-Teams (.yaml)      -+-->  Rein Process  <-->  Unix Socket (/tmp/rein-{guid}.sock)
-Workflows (.yaml)  -+         |                    ^
-Logic scripts (.py)           v              rein-cmd.sh (CLI client)
-                     Claude API + SQLite
-```
-
-## Directory Structure (v3.0)
-
-```
-/server/agents/
-|-- flows/                      # Workflow templates (no data)
-|   +-- blog-publication/
-|       |-- blog-publication.yaml
-|       |-- .env                # Per-flow API config
-|       +-- logic/
-|           |-- search-memory.py
-|           +-- publish-article.py
-|
-|-- specialists/                # Reusable agent prompts
-|   |-- blog-researcher.md
-|   |-- blog-writer.md
-|   +-- blog-censor.md
-|
-|-- teams/                      # Team configurations
-|   +-- team-blog.yaml
-|
-+-- tasks/                      # Workflow executions (data)
-    +-- task-20260102-183805/
-        |-- input/
-        |   +-- task.json       # Input parameters
-        |-- state/
-        |   |-- status          # completed/running/failed
-        |   |-- rein.log        # Execution log
-        |   +-- rein.db         # SQLite state
-        +-- research/           # Block directories (v3.0)
-        |   |-- inputs/
-        |   |-- outputs/
-        |   |   +-- result.json
-        |   +-- logs/
-        +-- draft/
-            |-- inputs/
-            |-- outputs/
-            |   +-- result.json
-            +-- logs/
-```
-
-## Key Features
-
-| Feature | Description |
-|---------|-------------|
-| **Semaphore Control** | Limit concurrent API calls (don't burn rate limits) |
-| **Dependency Graph** | Blocks wait for dependencies, auto-parallel when possible |
-| **Specialist System** | Reusable agent prompts in .md files, teams set tone |
-| **State Machine** | Conditional transitions (if/else/goto), revision loops with max_runs |
-| **Block Isolation** | Each block gets own directory with inputs/outputs/logs (v3.0) |
-| **Logic Scripts** | Python scripts for phases: pre, post, validate, custom |
-| **Visual Monitoring** | htop-like terminal UI with FLAGS and IN/OUT columns |
-| **Runtime Control** | Pause/resume/cancel blocks or entire workflow |
-| **Socket API** | Unix domain socket for external integrations |
-| **SQLite State** | Crash recovery, resume from last checkpoint |
-| **Schema Validation** | JSON Schema + Pydantic validation before execution |
-
-## CLI Reference
-
-### Basic Usage
-
-```bash
-# Simplest way - flow name + question text
-python3 rein.py --flow deliberation --question "Should we use Redis or PostgreSQL?"
-
-# With JSON input (for complex parameters)
-python3 rein.py --flow blog-publication --input '{"topic": "semantic search", "style": "technical"}'
-
-# Run existing task directory
-python3 rein.py --task /server/agents/tasks/task-20260113-143022
-
-# Check task status
-python3 rein.py --status task-20260113-143022
-```
-
-### All CLI Options
-
-| Option | Description | Example |
-|--------|-------------|---------|
-| `--flow NAME` | Flow name from /server/agents/flows/ | `--flow deliberation` |
-| `--question TEXT` | Simple question/topic (auto-creates task) | `--question "How to improve API?"` |
-| `--input JSON` | JSON parameters for task.input | `--input '{"topic": "...", "count": 5}'` |
-| `--task DIR` | Run existing task directory | `--task /server/agents/tasks/task-001` |
-| `--task-dir DIR` | Directory with task.md file | `--task-dir /path/to/my-task` |
-| `--status ID` | Show task status | `--status task-20260113-143022` |
-| `--resume ID` | Resume previous run | `--resume 20260113-143022` |
-| `--pause` | Start in paused state | `--pause` |
-| `--no-ui` | Disable Rich terminal UI | `--no-ui` |
-| `--agents-dir PATH` | Custom agents directory | `--agents-dir /my/agents` |
-| `config` | Direct path to YAML file | `rein.py workflow.yaml` |
-
-### How Task is Created
-
-When you run with `--flow` + `--question` or `--input`:
-
-1. Rein creates task directory:
-```
-/server/agents/tasks/task-20260113-143022/
-├── input/
-│   └── task.json      # {"topic": "your question"}
-├── output/            # Final results
-├── state/
-│   ├── status         # pending -> running -> completed
-│   ├── rein.db        # SQLite state
-│   └── rein.log       # Execution log
-└── {block_name}/      # Directory per block
-    └── outputs/
-        └── result.json
-```
-
-2. Loads flow YAML from `/server/agents/flows/{name}/{name}.yaml`
-3. Replaces `{{ task.input.topic }}` with your question
-4. Executes blocks according to dependencies
-
-### Input Methods
-
-**Simple question (recommended for single-topic flows):**
-```bash
-python3 rein.py --flow deliberation --question "What database should we use?"
-```
-Creates: `{"topic": "What database should we use?"}`
-
-**JSON input (for multiple parameters):**
-```bash
-python3 rein.py --flow blog-publication --input '{"topic": "AI trends", "style": "casual", "max_words": 1000}'
-```
-Creates: `{"topic": "AI trends", "style": "casual", "max_words": 1000}`
-
-**From task directory (pre-created):**
-```bash
-# Create task manually
-mkdir -p /server/agents/tasks/my-task/input
-echo '{"topic": "My question"}' > /server/agents/tasks/my-task/input/task.json
-
-# Run it
-python3 rein.py --task /server/agents/tasks/my-task
-```
-
-### Monitoring Running Task
-
-```bash
-# Check status
-python3 rein.py --status task-20260113-143022
-
-# Watch log
-tail -f /server/agents/tasks/task-20260113-143022/state/rein.log
-
-# Runtime control (while running)
-./rein-cmd.sh status
-./rein-cmd.sh pause block-name
-./rein-cmd.sh resume block-name
-```
-
-### Quick Start Examples
-
-```bash
-# Simple deliberation
-python3 rein.py --flow deliberation --question "Should we use Redis or PostgreSQL?"
-
-# Blog post generation
-python3 rein.py --flow blog-publication --input '{"topic": "semantic search"}'
-
-# Resume failed task
-python3 rein.py --resume 20260113-143022
-
-# Run without terminal UI (for scripts/cron)
-python3 rein.py --flow deliberation --question "Test" --no-ui
-```
-
-## Workflow Example
+Define AI agent workflows in YAML -- no Python code required. Rein coordinates specialists, manages dependencies, runs blocks in parallel, and handles conditional branching with revision loops.
 
 ```yaml
-schema_version: "3.0.0"
-name: blog-publication
-team: team-blog
-max_parallel: 2
+# workflow.yaml
+provider: anthropic
+model: claude-sonnet-4-20250514
+team: my-team
 
 blocks:
   - name: research
-    specialist: blog-researcher
-    prompt: "Research topic: {{ task.input.topic }}"
-    logic:
-      pre: logic/search-memory.py
+    specialist: researcher
+    prompt: "Analyze this topic: {{ task.input.topic }}"
 
-  - name: draft
-    specialist: blog-writer
+  - name: write
+    specialist: writer
     depends_on: [research]
     prompt: "Write article based on: {{ research.json }}"
-
-  - name: censor
-    specialist: blog-censor
-    depends_on: [draft]
-    prompt: "Review article: {{ draft.json }}"
-    next:
-      - if: "{{ result.approved }}"
-        goto: publish
-      - else: revision
-
-  - name: revision
-    specialist: blog-editor
-    depends_on: [censor]
-    max_runs: 2                    # Loop protection
-    next: censor                   # Back to censor
-
-  - name: publish
-    specialist: blog-publisher
-    depends_on: [censor]
-    logic:
-      post: logic/publish-article.py
 ```
 
-## Logic Scripts
+## Quick Start
+
+```bash
+# Install
+pip install rein-ai[anthropic]
+
+# Set your API key
+export ANTHROPIC_API_KEY=sk-...
+
+# Run the hello-world example
+cd examples/01-hello-world
+rein --agents-dir ./agents workflow.yaml --no-ui
+```
+
+Works with **any LLM**: Anthropic Claude, OpenAI GPT, Ollama local models, OpenRouter.
+
+## How It Works
+
+Rein has a 3-layer architecture -- all defined in text files:
+
+```
+Layer 1: SPECIALISTS (Markdown)     What each AI agent does
+Layer 2: TEAMS (YAML)               Groups of specialists + shared tone
+Layer 3: WORKFLOWS (YAML)           Execution flow with dependencies
+```
+
+**Specialist** -- a Markdown file defining an AI agent's role:
+
+```markdown
+# Code Reviewer
+
+You are a senior engineer conducting code reviews.
+
+## Output Format
+{"verdict": "approve|request_changes", "issues": [...]}
+```
+
+**Team** -- a YAML file grouping specialists:
+
+```yaml
+name: code-review-team
+specialists:
+  - code-reviewer
+  - code-improver
+collaboration_tone: |
+  Be constructive and specific. Always output valid JSON.
+```
+
+**Workflow** -- a YAML file defining what to execute:
+
+```yaml
+blocks:
+  - name: review
+    specialist: code-reviewer
+    prompt: "Review this code: ..."
+
+  - name: improve
+    specialist: code-improver
+    depends_on: [review]
+    prompt: "Fix issues found: {{ review.json }}"
+```
+
+## Installation
+
+```bash
+# Core (picks provider from environment)
+pip install rein-ai
+
+# With specific provider SDK
+pip install rein-ai[anthropic]    # Claude
+pip install rein-ai[openai]       # GPT-4o
+pip install rein-ai[all]          # All provider SDKs
+
+# For daemon mode (WebSocket support)
+pip install rein-ai[daemon]
+
+# For MCP server (Claude Desktop, Cursor, Claude Code)
+pip install rein-ai[mcp]
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/rein-orchestrator/rein.git
+cd rein
+pip install -e ".[dev]"
+```
+
+## Provider Configuration
+
+Set your provider in workflow YAML and API key in environment:
+
+```yaml
+# Anthropic Claude
+provider: anthropic
+model: claude-sonnet-4-20250514
+```
+
+```yaml
+# OpenAI
+provider: openai
+model: gpt-4o
+```
+
+```yaml
+# Ollama (local, no API key needed)
+provider: ollama
+model: llama3.1
+```
+
+```yaml
+# OpenRouter (100+ models)
+provider: openrouter
+model: anthropic/claude-sonnet-4-20250514
+```
+
+Environment variables:
+
+| Provider | Env Variable | Required |
+|----------|-------------|----------|
+| anthropic | `ANTHROPIC_API_KEY` | Yes |
+| openai | `OPENAI_API_KEY` | Yes |
+| ollama | `OLLAMA_URL` | No (default: localhost:11434) |
+| openrouter | `OPENROUTER_API_KEY` | Yes |
+
+Auto-detection: if no `provider:` is set in YAML, Rein checks environment variables in order: `ANTHROPIC_API_KEY` -> `OPENAI_API_KEY` -> `OPENROUTER_API_KEY` -> `OLLAMA_URL`.
+
+## Examples
+
+Five progressive examples in the `examples/` directory:
+
+| # | Example | Pattern | What you learn |
+|---|---------|---------|----------------|
+| 01 | [hello-world](examples/01-hello-world/) | 1 specialist | Basics: specialist, team, workflow |
+| 02 | [code-review](examples/02-code-review/) | 2 sequential | Dependencies and data flow |
+| 03 | [research-team](examples/03-research-team/) | 3 parallel + 1 | Fan-out / fan-in pattern |
+| 04 | [deliberation](examples/04-deliberation/) | 3-phase debate | Cross-review and multi-phase |
+| 05 | [conditional](examples/05-conditional/) | Branching + loops | if/else, revision loops, max_runs |
+
+```bash
+# Try any example
+cd examples/03-research-team
+export ANTHROPIC_API_KEY=sk-...
+rein --agents-dir ./agents workflow.yaml --no-ui
+```
+
+## CLI Reference
+
+```bash
+# Run a workflow file
+rein workflow.yaml --agents-dir ./agents
+
+# Run a named flow
+rein --flow deliberation --question "Should we use Redis or PostgreSQL?"
+
+# Run with JSON input
+rein --flow my-flow --input '{"topic": "AI trends", "style": "casual"}'
+
+# Check task status
+rein --status task-20260113-143022
+
+# Resume a failed run
+rein --resume 20260113-143022
+
+# Run without terminal UI
+rein workflow.yaml --no-ui
+
+# Daemon mode (watches for tasks)
+rein --daemon --agents-dir ./agents
+```
+
+All options:
+
+| Option | Description |
+|--------|-------------|
+| `config` | Path to workflow YAML file |
+| `--flow NAME` | Flow name (from agents/flows/) |
+| `--question TEXT` | Simple question input |
+| `--input JSON` | JSON parameters for task.input |
+| `--task DIR` | Run existing task directory |
+| `--status ID` | Show task status |
+| `--resume ID` | Resume previous run |
+| `--pause` | Start in paused state |
+| `--no-ui` | Disable Rich terminal UI |
+| `--agents-dir PATH` | Custom agents directory |
+| `--daemon` | Run as daemon |
+| `--ws-port PORT` | WebSocket port (default: 8765) |
+
+## Directory Structure
+
+```
+my-project/
+  agents/
+    specialists/         # AI agent definitions (Markdown)
+      researcher.md
+      writer.md
+    teams/               # Team configurations (YAML)
+      my-team.yaml
+    flows/               # Workflow templates (YAML)
+      my-flow/
+        my-flow.yaml
+        logic/           # Optional Python scripts
+          pre.py
+          post.py
+```
+
+When a workflow runs, Rein creates a task directory with isolated block outputs:
+
+```
+/tmp/rein-runs/run-20260113-143022/
+  state/
+    rein.db              # SQLite state (crash recovery)
+    rein.log             # Execution log
+  research/
+    outputs/
+      result.json        # Block output
+  write/
+    outputs/
+      result.json
+```
+
+## Workflow Features
+
+### Dependencies and Parallelism
+
+Blocks with no dependencies run in parallel. `max_parallel` limits concurrency.
+
+```yaml
+max_parallel: 3
+
+blocks:
+  - name: a
+    prompt: "..."         # Runs immediately
+
+  - name: b
+    prompt: "..."         # Runs in parallel with a
+
+  - name: c
+    depends_on: [a, b]    # Waits for both a and b
+    prompt: "{{ a.json }} {{ b.json }}"
+```
+
+### Conditional Branching
+
+Route execution based on block output:
+
+```yaml
+- name: gate
+  prompt: "Evaluate quality..."
+  next:
+    - if: "{{ result.approved }}"
+      goto: publish
+    - else: revision
+```
+
+Condition syntax: `{{ result.field }}` (truthy), `{{ result.score > 0.8 }}` (comparison), `{{ result.status == 'done' }}` (equality).
+
+### Revision Loops
+
+Send a block back for re-evaluation with loop protection:
+
+```yaml
+- name: revision
+  depends_on: [gate]
+  max_runs: 3            # Max 3 attempts
+  next: gate             # Back to quality check
+```
+
+### Logic Scripts
+
+Python scripts for pre/post processing:
+
+```yaml
+logic:
+  pre: logic/fetch-data.py       # Before LLM: prepare data
+  post: logic/save-result.py     # After LLM: process output
+  validate: logic/check.py       # Gate: exit code 0 = pass
+  custom: true                   # Skip LLM entirely
+```
 
 Scripts receive JSON context via stdin:
 
 ```json
 {
-  "output_file": "/path/to/block/outputs/result.json",
-  "block_dir": "/path/to/task/block/",
-  "block_config": { "name": "...", "prompt": "..." },
-  "outputs_dir": "/path/to/task/block/outputs/",
-  "task_input": { "topic": "..." },
+  "output_file": "path/to/result.json",
+  "block_dir": "path/to/block/",
+  "task_input": {"topic": "..."},
   "task_id": "task-20260102-183805",
-  "workflow_dir": "/path/to/flow/"
+  "workflow_dir": "path/to/flow/"
 }
 ```
 
-**Example script (aggregate.py):**
+### Template Variables
 
-```python
-#!/usr/bin/env python3
-import json, sys, os
-from pathlib import Path
-
-context = json.loads(sys.stdin.read())
-task_dir = Path(context['block_dir']).parent
-
-# Read dependencies by name (v3.0 structure)
-dep_result = task_dir / "research" / "outputs" / "result.json"
-data = json.load(open(dep_result))
-
-result = {"stage": "aggregate", "result": {"total": data['result']['value']}}
-
-with open(context['output_file'], 'w') as f:
-    json.dump(result, f, indent=2)
-
-print(f"[OK] Aggregated")
-```
-
-**Logic phases:**
+Reference previous block outputs and task input in prompts:
 
 ```yaml
-logic:
-  pre: logic/fetch-data.py       # Before Claude: prepare data
-  post: logic/save-result.py     # After Claude: process output
-  validate: logic/check.py       # Gate: return exit code 0/1
-  custom: true                   # Skip Claude, pre script does everything
-  custom: logic/run-llm.py       # Replace Claude with custom script
+prompt: |
+  Topic: {{ task.input.topic }}
+  Research: {{ research.json }}
+  Review: {{ review.json }}
 ```
 
-## State Machine Flow
+## Daemon Mode
 
-**Conditional transitions:**
-
-```yaml
-next:
-  - if: "{{ result.approved }}"
-    goto: publish
-  - if: "{{ result.score > 0.8 }}"
-    goto: fast_track
-  - else: revision
-```
-
-**Condition syntax:**
-- Truthy: `{{ result.approved }}`
-- Equality: `{{ result.status == 'done' }}`
-- Comparison: `{{ result.score > 0.8 }}`
-- Nested: `{{ result.data.count >= 10 }}`
-
-**Loop protection:**
-
-```yaml
-- name: revision
-  max_runs: 3          # Max 3 revision cycles
-  next: review         # Then back to review
-```
-
-## Runtime Control
+Run Rein as a background service that watches for tasks:
 
 ```bash
-# While workflow is running:
-./rein-cmd.sh status              # Current state
-./rein-cmd.sh list                # All processes with UIDs
-./rein-cmd.sh pause block-1       # Pause specific block
-./rein-cmd.sh resume block-1      # Resume block
-./rein-cmd.sh cancel block-1      # Kill block
-./rein-cmd.sh pause-workflow      # Pause everything
-./rein-cmd.sh resume-workflow     # Resume everything
-
-# Monitoring
-./rein-workflows.sh               # List active workflows
-./rein-status.sh                  # Detailed status
-watch -n 2 './rein-workflows.sh'  # Real-time updates
+rein --daemon --agents-dir ./agents --ws-port 8765
 ```
 
-## UI Columns
+The daemon monitors `agents/tasks/` for directories with `state/status = "pending"` and executes them automatically. Live updates are broadcast via WebSocket on the configured port.
 
-The terminal UI shows:
-- **Name:** Block name (16 chars)
-- **Status:** running/done/failed/waiting
-- **Flags:** P=parallel D=deps L=logic N=next S=skip C=continue R=max_runs
-- **IN/OUT:** Input/output data sizes (e.g., "1.2K/0.8K")
-- **Progress:** Progress bar
-- **Time:** Elapsed time
+## MCP Server
 
-## Flow Control Parameters
-
-```yaml
-blocks:
-  - name: critical_step
-    continue_if_failed: false    # Stop workflow if this fails
-
-  - name: optional_step
-    continue_if_failed: true     # Continue even if fails (default)
-    skip_if_previous_failed: true  # Run even if earlier blocks failed
-```
-
-## Schema Validation
-
-Workflows are validated before execution:
+Rein includes an MCP (Model Context Protocol) server, so you can run workflows directly from Claude Desktop, Cursor, Claude Code, or any MCP-compatible client.
 
 ```bash
-# Validate workflow
-python3 -c "
-from models.validator import ValidationEngine
-v = ValidationEngine()
-result = v.validate_workflow('agents/flows/my-flow/my-flow.yaml')
-print(result)
-"
+pip install rein-ai[mcp]
 ```
 
-**Schema files:**
-- `schemas/workflow-v3.0.0.json` - Workflow structure
-- `schemas/team-v2.5.3.json` - Team structure
-- `schemas/registry.json` - Version compatibility matrix
+### Claude Desktop / Cursor
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "rein": {
+      "command": "rein-mcp",
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-...",
+        "REIN_AGENTS_DIR": "/path/to/your/agents"
+      }
+    }
+  }
+}
+```
+
+### Claude Code
+
+```bash
+claude mcp add rein -- rein-mcp
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `list_flows` | List available workflows with descriptions and block counts |
+| `list_specialists` | List specialists with summaries |
+| `list_teams` | List teams and their composition |
+| `run_workflow` | Execute a workflow synchronously and return results |
+| `create_task` | Create an async task for the daemon |
+| `task_status` | Check task progress (block-level detail) |
+| `list_tasks` | List recent tasks with status |
+
+The MCP server also supports SSE and streamable-http transports:
+
+```bash
+rein-mcp --sse          # SSE transport
+rein-mcp --streamable-http  # HTTP streaming
+```
+
+## Terminal UI
+
+When running without `--no-ui`, Rein displays an htop-like interface:
+
+- Block name, status (running/done/failed/waiting), progress bar
+- Flags: P=parallel, D=deps, L=logic, N=next, R=max_runs
+- IN/OUT data sizes, elapsed time
+
+Runtime controls (via stdin): `p` = pause, `r` = resume, `q` = quit.
 
 ## Tech Stack
 
-- Python 3.10+ (~1900 lines in modular package)
+- Python 3.10+
 - Rich (terminal UI)
-- SQLite (state persistence)
-- Unix domain sockets (runtime control)
-- Anthropic SDK / OpenRouter (Claude API)
-- Pydantic + JSON Schema (validation)
+- SQLite (state persistence, crash recovery)
+- YAML (workflow definitions)
+- Markdown (specialist prompts)
 
-## Metrics
+## License
 
-- 50-block workflow: ~3 minutes (parallel arithmetic test)
-- 10-block deliberation: ~15 minutes (4 Claude API calls per block)
-- ~30MB base memory + 5-10MB per 100 tasks
-- ~1900 lines Python (vs 50k+ for alternatives)
-
-## Limitations
-
-- Single machine only (not distributed)
-- Tested up to 50 blocks (need to test 500+)
-
-## Planned: v3.4+
-
-- **Retry logic:** `retry: 3` with exponential backoff
-- **Resource pools:** `max_concurrent: 5` per resource type
-- **Notifications:** Telegram alerts on events
-- **Heartbeat:** Watchdog for hung processes
-- **Checkpointing:** Resume long operations
-- **Together AI:** Additional LLM provider support
-
----
-
-See CHANGELOG.md for version history.
+MIT

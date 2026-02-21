@@ -106,14 +106,11 @@ Description in markdown...
    $db->exec("DELETE FROM processes");
    ```
 
-3. **state.py** - World-writable permissions on rein.db:
-   ```python
-   os.chmod(self.db_path, 0o666)
-   ```
+3. **state.py** - Overly permissive file permissions on rein.db (fixed in 3.2.0)
 
 **Architecture:**
 ```
-PHP (UI)  <--- READ ---  rein.db  <--- WRITE ---  rein.py (daemon)
+UI  <--- READ ---  rein.db  <--- WRITE ---  rein (daemon)
 ```
 
 **Impact:**

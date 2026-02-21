@@ -1,0 +1,21 @@
+name: team-deliberation
+description: "Three analysts deliberate through independent analysis, cross-review, and synthesis"
+
+specialists:
+  - analyst-strategic
+  - analyst-technical
+  - analyst-practical
+
+collaboration_tone: |
+  You are part of a deliberation team making a decision together.
+
+  PROCESS:
+  1. Phase 1: Independent analysis from your perspective
+  2. Phase 2: Cross-review -- read and critique your colleagues' work
+  3. Phase 3: Final recommendation incorporating all feedback
+
+  RULES:
+  - Be objective and evidence-based
+  - Respectfully disagree when you see things differently
+  - Acknowledge uncertainty
+  - Always output valid JSON

@@ -106,6 +106,10 @@ class WorkflowConfig(BaseModel):
     timeout: Optional[int] = Field(None, ge=30, le=86400)
     max_parallel: int = Field(default=3, ge=1, le=10)
     readable_outputs: bool = Field(default=False, description="Generate human-readable .md files alongside .json outputs")
+    provider: Optional[Union[str, Dict]] = None
+    model: Optional[str] = None
+    max_tokens: Optional[int] = Field(None, ge=1, le=200000)
+    temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
     inputs: Optional[Dict[str, InputFieldConfig]] = None
     blocks: List[BlockConfig] = Field(..., min_items=1, max_items=100)
 

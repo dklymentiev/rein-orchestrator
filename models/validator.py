@@ -35,7 +35,11 @@ class ValidationEngine:
             registry_dir: Directory containing registry.json
         """
         if schemas_dir is None:
-            schemas_dir = Path(__file__).parent.parent / "schemas"
+            try:
+                from schemas import SCHEMAS_DIR
+                schemas_dir = SCHEMAS_DIR
+            except ImportError:
+                schemas_dir = Path(__file__).parent.parent / "schemas"
 
         self.schemas_dir = Path(schemas_dir)
         if registry_dir is None:

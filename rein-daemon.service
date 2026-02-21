@@ -4,10 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
+# Adjust User/Group and paths for your environment
 User=admin
 Group=admin
-WorkingDirectory=/server/scripts/rein
-ExecStart=/usr/bin/python3 /server/scripts/rein/rein.py --daemon --daemon-interval 5
+WorkingDirectory=/opt/rein
+ExecStart=/usr/bin/python3 -m rein --daemon --daemon-interval 5 --max-workflows 3 --ws-port 8765 --agents-dir /opt/rein/agents
 Restart=always
 RestartSec=10
 
@@ -18,6 +19,7 @@ SyslogIdentifier=rein-daemon
 
 # Environment
 Environment=PYTHONUNBUFFERED=1
+# Environment=ANTHROPIC_API_KEY=sk-ant-...
 
 [Install]
 WantedBy=multi-user.target

@@ -2,12 +2,32 @@
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+build/
+dist/
 
 # Environment
 .env
 
 # IDE
 .claude/
+
+# Project internals (not part of open-source release)
+CLAUDE.md
+MEMORY.md
+SECURITY-POLICY.md
+PLAN-V3.md
+rein-v2.py
+rein-v1-archive/
+mock-agent.py
+search_bing.sh
+search_google.sh
+search_reddit.sh
+summarize.sh
+task-watcher.sh
+workflow-100.yaml
+rein-workflows.sh
+test-phase-2-5.py
 
 # Temporary outputs (should be in tasks/)
 *.json
@@ -20,3 +40,7 @@ __pycache__/
 
 # SQLite
 *.db
+
+# Server-specific overrides (not part of open-source release)
+docker-compose.override.yml
+rein/providers/gateway.py
