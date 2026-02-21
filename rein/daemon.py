@@ -13,6 +13,9 @@ import asyncio
 from typing import Set, Dict
 
 from rein.config import DEFAULT_AGENTS_DIR
+from rein.log import get_logger
+
+logger = get_logger(__name__)
 
 WS_CLIENTS: Set = set()
 
@@ -85,7 +88,7 @@ def get_task_state_snapshot(task_id: str, tasks_root: str = "") -> dict:
 
             conn.close()
         except Exception as e:
-            print(f"[WS] Error reading task state: {e}", flush=True)
+            logger.error("[WS] Error reading task state: %s", e)
 
     return {
         "type": "state",
@@ -143,14 +146,14 @@ async def ws_handler(websocket):
     """Handle WebSocket connection."""
     WS_CLIENTS.add(websocket)
     remote = websocket.remote_address
-    print(f"[WS] Client connected: {remote}", flush=True)
+    logger.info("[WS] Client connected: %s", remote)
     try:
         await websocket.send(json.dumps({"type": "connected", "message": "Rein Daemon"}))
 
         for task_id in get_running_tasks():
             snapshot = get_task_state_snapshot(task_id)
             await websocket.send(json.dumps(snapshot))
-            print(f"[WS] Sent state snapshot for {task_id}", flush=True)
+            logger.info("[WS] Sent state snapshot for %s", task_id)
 
         async for message in websocket:
             try:
@@ -158,14 +161,14 @@ async def ws_handler(websocket):
                 if msg.get("type") == "subscribe" and msg.get("task_id"):
                     snapshot = get_task_state_snapshot(msg["task_id"])
                     await websocket.send(json.dumps(snapshot))
-                    print(f"[WS] Sent snapshot for subscribed task {msg['task_id']}", flush=True)
+                    logger.info("[WS] Sent snapshot for subscribed task %s", msg['task_id'])
             except Exception:
                 pass
     except Exception as e:
-        print(f"[WS] Client error: {e}", flush=True)
+        logger.error("[WS] Client error: %s", e)
     finally:
         WS_CLIENTS.discard(websocket)
-        print(f"[WS] Client disconnected: {remote}", flush=True)
+        logger.info("[WS] Client disconnected: %s", remote)
 
 
 async def monitor_subprocess(proc: asyncio.subprocess.Process, task_id: str, log_file: str):
@@ -197,7 +200,7 @@ async def monitor_subprocess(proc: asyncio.subprocess.Process, task_id: str, log
                         k, v = p.split("=", 1)
                         event[k] = v
                 await ws_broadcast(event)
-                print(f"[DAEMON] Block done: {task_id} / {event.get('block', '?')}", flush=True)
+                logger.info("[DAEMON] Block done: %s / %s", task_id, event.get('block', '?'))
 
             elif "[TASK_DONE]" in line_str:
                 parts = line_str.strip().split()
@@ -215,11 +218,10 @@ async def run_daemon_async(agents_dir: str, interval: int, max_workflows: int, w
     active: Dict[str, asyncio.subprocess.Process] = {}
     monitors: Dict[str, asyncio.Task] = {}
 
-    print(f"[DAEMON] Started (async)", flush=True)
-    print(f"[DAEMON] Watching: {tasks_dir}", flush=True)
-    print(f"[DAEMON] Interval: {interval}s | Max parallel: {max_workflows}", flush=True)
-    print(f"[DAEMON] WebSocket: ws://127.0.0.1:{ws_port}", flush=True)
-    print(flush=True)
+    logger.info("[DAEMON] Started (async)")
+    logger.info("[DAEMON] Watching: %s", tasks_dir)
+    logger.info("[DAEMON] Interval: %ds | Max parallel: %d", interval, max_workflows)
+    logger.info("[DAEMON] WebSocket: ws://127.0.0.1:%d", ws_port)
 
     while True:
         try:
@@ -228,7 +230,7 @@ async def run_daemon_async(agents_dir: str, interval: int, max_workflows: int, w
                 proc = active[task_id]
                 if proc.returncode is not None:
                     status = "completed" if proc.returncode == 0 else f"failed (exit={proc.returncode})"
-                    print(f"[DAEMON] Finished: {task_id} -> {status}", flush=True)
+                    logger.info("[DAEMON] Finished: %s -> %s", task_id, status)
                     del active[task_id]
                     if task_id in monitors:
                         monitors[task_id].cancel()
@@ -279,7 +281,7 @@ async def run_daemon_async(agents_dir: str, interval: int, max_workflows: int, w
 
                     flow_path = os.path.join(agents_dir, "flows", flow_name, f"{flow_name}.yaml")
                     if not os.path.exists(flow_path):
-                        print(f"[DAEMON] Skip {task_name}: flow not found", flush=True)
+                        logger.warning("[DAEMON] Skip %s: flow not found", task_name)
                         continue
 
                     if os.path.exists(status_marker):
@@ -288,7 +290,7 @@ async def run_daemon_async(agents_dir: str, interval: int, max_workflows: int, w
                         except Exception:
                             pass
 
-                    print(f"[DAEMON] Spawning: {task_name} (flow={flow_name})", flush=True)
+                    logger.info("[DAEMON] Spawning: %s (flow=%s)", task_name, flow_name)
                     log_file = os.path.join(task_path, "state", "rein.log")
 
                     proc = await asyncio.create_subprocess_exec(
@@ -301,23 +303,21 @@ async def run_daemon_async(agents_dir: str, interval: int, max_workflows: int, w
                     monitor = asyncio.create_task(monitor_subprocess(proc, task_name, log_file))
                     monitors[task_name] = monitor
 
-                    print(f"[DAEMON] Started: {task_name} (pid={proc.pid})", flush=True)
+                    logger.info("[DAEMON] Started: %s (pid=%s)", task_name, proc.pid)
 
             if active:
-                print(f"[DAEMON] Active: {len(active)}/{max_workflows} - {list(active.keys())}", flush=True)
+                logger.info("[DAEMON] Active: %d/%d - %s", len(active), max_workflows, list(active.keys()))
 
             await asyncio.sleep(interval)
 
         except asyncio.CancelledError:
             break
         except Exception as e:
-            print(f"[DAEMON] Error: {e}", flush=True)
-            import traceback
-            traceback.print_exc()
+            logger.exception("[DAEMON] Error: %s", e)
             await asyncio.sleep(interval)
 
     for task_id, proc in active.items():
-        print(f"[DAEMON] Terminating: {task_id}", flush=True)
+        logger.info("[DAEMON] Terminating: %s", task_id)
         proc.terminate()
 
 
@@ -331,12 +331,12 @@ def run_daemon(agents_dir: str, interval: int = 5, max_workflows: int = 3, ws_po
         try:
             import websockets
             ws_server = await websockets.serve(ws_handler, "127.0.0.1", ws_port)
-            print(f"[DAEMON] WebSocket server started on port {ws_port}", flush=True)
+            logger.info("[DAEMON] WebSocket server started on port %d", ws_port)
         except ImportError:
-            print(f"[DAEMON] WebSocket disabled (pip install websockets)", flush=True)
+            logger.warning("[DAEMON] WebSocket disabled (pip install websockets)")
             ws_server = None
         except Exception as e:
-            print(f"[DAEMON] WebSocket failed: {e}", flush=True)
+            logger.error("[DAEMON] WebSocket failed: %s", e)
             ws_server = None
 
         try:
@@ -349,4 +349,4 @@ def run_daemon(agents_dir: str, interval: int = 5, max_workflows: int = 3, ws_po
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n[DAEMON] Shutting down...", flush=True)
+        logger.info("[DAEMON] Shutting down...")

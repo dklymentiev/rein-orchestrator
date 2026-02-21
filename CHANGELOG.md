@@ -1,638 +1,157 @@
-# Rein Changelog
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [3.2.0] - 2026-02-20
 
-### Added - Declarative Workflow Input Validation (Schema v2.6.0)
+### Added
+- Declarative `inputs:` section in workflow YAML for pre-dispatch validation
+- `InputFieldConfig` Pydantic model with `description`, `required`, `default` fields
+- Cross-check validator: verifies `{{ task.input.X }}` placeholders match declared inputs
+- Unresolved placeholder safety net in `assemble_prompt()`
+- MCP `list_flows` now shows inputs schema per flow
+- MCP `create_task` accepts `input_json` parameter
+- Centralized logging module (`rein/log.py`) replacing print statements
 
-**Problem:** Workflows use `{{ task.input.FIELD }}` placeholders in prompts, but there was no way to declare what inputs a workflow expects. When inputs were missing, placeholders passed through as literal text -- all agents ran on broken prompts, wasting tokens and producing garbage output.
-
-**Solution:** New `inputs:` section in workflow YAML with pre-dispatch validation and fast-fail.
-
-```yaml
-inputs:
-  topic:
-    description: "The question for the team to analyze"
-    required: true
-  project:
-    description: "Project name for context"
-    required: false
-    default: "unknown"
-```
-
-**Features:**
-
-1. **InputFieldConfig model** -- Pydantic model with `description`, `required` (default: true), `default` (only when optional)
-2. **Cross-check validator** -- At YAML parse time, verifies every `{{ task.input.X }}` in prompts has a matching declaration in `inputs:`
-3. **Pre-dispatch validation** (`_validate_task_inputs`) -- Before any block runs:
-   - Required fields missing -> clear error message + `sys.exit(1)`
-   - Optional fields with `default` -> value injected into task_input
-   - Extra undeclared inputs -> warning logged
-4. **Unresolved placeholder safety net** -- After all substitutions in `assemble_prompt()`, detects any remaining `{{ task.input.* }}` and raises `ValueError`
-5. **MCP integration** -- `list_flows` shows inputs schema per flow; `create_task` accepts `input_json` parameter for structured inputs
-
-**Backward Compatible:** Workflows without `inputs:` work exactly as before.
-
-**Updated Workflows:** deliberation, code-review, generic, brainstorm, research-project, docs-architecture, product-analysis, x-daily-report, x-daily-digest, x-profile-analyzer, blog-publication, my-blog-content-pipeline, task-creator
-
-**Files Changed:**
-
-| File | Change |
-|------|--------|
-| `models/workflow.py` | `InputFieldConfig` + `inputs` field + cross-check validator |
-| `rein/orchestrator.py` | `_validate_task_inputs()` + unresolved placeholder check |
-| `rein/mcp_server.py` | `inputs` in list_flows + `input_json` in create_task |
-| `schemas/workflow-v2.6.0.json` | JSON Schema with inputField definition |
-| `schemas/registry.json` | v2.6.0 entry, updated current_version |
-| `tests/test_input_validation.py` | 29 new tests |
-
-**Tests:** 345 passed, 0 failures (29 new + all existing)
+### Changed
+- Replaced all `print()` calls with structured `logging` in orchestrator and daemon
+- Internal diagnostics go to stderr (`[REIN] LEVEL: message` format)
+- CLI user output goes to stdout via separate console logger
 
 ## [3.1.3] - 2026-01-16
 
-### Fixed - skip_if_previous_failed Logic Bug
+### Fixed
+- Inverted `skip_if_previous_failed` logic -- blocks were skipped when flag was false
 
-**Problem:** Logic was inverted - blocks were SKIPPED when `skip_if_previous_failed=false` (default).
-
-**Root Cause:** Condition `if previous_failed and not skip_if_failed` was backwards.
-
-**Fix:** Changed to `if previous_failed and skip_if_failed` in `rein/orchestrator.py`
-
-**Impact:** Workflows now correctly continue past failed blocks when `skip_if_previous_failed=false`.
-
-### Changed - LLM API Timeout
-
-- Increased timeout from 120s to 300s for LLM API calls
-- Prevents timeout errors for complex deliberation tasks
-
-### RFC - Task Input Format (Deliberation Result)
-
-Team deliberation reached consensus on structured task input format:
-
-```yaml
----
-version: 1
-scope: file | dir | abstract | server
-target: /path/to/target
-boundaries: read-only | read-write
-allowed_tools: [Read, Glob, Grep, Edit, Write]
-read_dirs: [/path/a, /path/b]
-write_dirs: [/path/c]
----
-
-# Task Title
-Description in markdown...
-```
-
-**Next:** Implement YAML frontmatter parser in `rein/orchestrator.py`
+### Changed
+- Increased LLM API timeout from 120s to 300s
 
 ## [3.1.2] - 2026-01-15
 
-### Fixed - Race Condition in Block Status
-
-**Problem:** PHP UI and rein daemon both wrote to status.json, causing race conditions. After task restart, blocks remained visually highlighted because status.json wasn't properly synchronized.
-
-**Solution:** PHP now reads block completion status from rein.db (SQLite) - single source of truth.
-
-**Changes:**
-
-1. **index.php** - AJAX `task-blocks` endpoint reads from SQLite:
-   ```php
-   $db = new SQLite3($reinDb, SQLITE3_OPEN_READONLY);
-   $result = $db->query("SELECT name FROM processes WHERE status='done'");
-   ```
-
-2. **api-flow.php** - Restart clears rein.db:
-   ```php
-   $db->exec("DELETE FROM processes");
-   ```
-
-3. **state.py** - Overly permissive file permissions on rein.db (fixed in 3.2.0)
-
-**Architecture:**
-```
-UI  <--- READ ---  rein.db  <--- WRITE ---  rein (daemon)
-```
-
-**Impact:**
-- Live updates now correctly show block progress
-- Restart properly resets all block statuses
-- No more race conditions between PHP and daemon
+### Fixed
+- Race condition between PHP UI and daemon writing to status.json
+- PHP now reads block status from rein.db (SQLite) as single source of truth
+- Restart properly clears rein.db state
 
 ## [3.1.1] - 2026-01-04
 
-### Security - Task Directory Isolation
+### Security
+- Logic scripts now run in task directory (`cwd=task_dir`) instead of project root
+- Default file access restricted to task directory only
 
-**CRITICAL FIX: Logic scripts now run in task directory instead of Rein directory**
-
-**Problem:**
-- Logic scripts executed with `cwd=<project_root>` or other system paths
-- Claude CLI could access Rein source code and other tasks
-- Product workflows analyzed Rein codebase instead of assigned tasks
-
-**Fix:**
-- Added `cwd=self.task_dir` to subprocess.run() calls in `rein/orchestrator.py`
-- Added default directory restriction: `add_dirs=[task_dir]` (run-specialist.py:192-195)
-- Logic scripts now isolated to task directory by default
-
-**Impact:**
-- BREAKING: Custom logic scripts assuming `cwd=workflow_dir` will fail
-- Migration: Use `context['workflow_dir']` from stdin instead of `os.getcwd()`
-
-**Security Policy:**
-- Created SECURITY-POLICY.md documenting isolation rules
-- Rule 1: All subprocess calls MUST use `cwd=task_dir`
-- Rule 2: Default file access restricted to task directory only
-
-**Testing:**
-```bash
-# Logic script now sees only task files
-os.getcwd() == '<task_dir>/task-20260104-012158/'
-# NOT '<project_root>/'
-```
-
-**References:**
-- Issue: Product Team analyzing Rein code instead of wizard flow
-- Policy: Added SECURITY.md
+### Added
+- SECURITY-POLICY.md documenting task isolation rules
 
 ## [3.1.0] - 2026-01-02
 
-### Changed - Rebrand: Dog -> Rein
-
-**Product renamed from "Dog" to "Rein"**
-
-- Renamed all internal references: DogState -> ReinState, DogUI -> ReinUI
-- Updated log prefixes: DOG STARTED -> REIN STARTED, etc.
-- Changed temp directories: /tmp/dog-runs/ -> /tmp/rein-runs/
-- Changed socket paths: /tmp/dog.sock -> /tmp/rein.sock
-- Updated environment variable: DOG_LOG_DIR -> REIN_LOG_DIR
-- Main script: dog.py -> rein.py
-
-Rein = reins/узда (harness control metaphor for workflow orchestration)
+### Changed
+- Renamed project from "Dog" to "Rein"
+- Updated all internal references, log prefixes, temp directories, env variables
 
 ## [3.0.0] - 2026-01-02
 
-### Added - v3.0 Directory Structure
+### Added
+- Block isolation architecture: each block gets `{inputs,outputs,logs}/` subdirectories
+- Standard output naming: all blocks write to `result.json`
+- UI columns: FLAGS (P/D/L/N/S/C/R) and IN/OUT data sizes
+- Automatic task directory creation
 
-**Major change: Block isolation architecture**
-
-- Each block gets own directory: task/block/{inputs,outputs,logs}/
-- Removed symlinks - direct reads via task_dir/dep/outputs/result.json
-- Standard output naming: all blocks write to result.json
-- New UI columns: FLAGS (P/D/L/N/S/C/R) and IN/OUT (data sizes)
-- Automatic task_dir creation
+### Removed
+- Symlinks between blocks -- replaced with direct reads via `task_dir/dep/outputs/`
 
 ## [2.5.5] - 2026-01-02
 
-### Added - Input Directory Architecture + Custom Logic Fix
+### Added
+- Input directory architecture: `inputs/<block>/` with symlinks to dependency outputs
+- `input_dir` and `block_config` fields in logic script context
 
-### Fixed - Custom Logic Boolean Handling
-
-When `custom: true` (boolean), Rein now correctly skips Claude call (pre script already handled it).
-When `custom: "script.py"` (string), Rein runs that script.
-
-Previously, `custom: true` caused error: `join() argument must be str, not 'bool'`
-
-### Added - Input Directory Architecture
-
-**Major Feature: Dependency data flow via filesystem**
-
-Logic scripts no longer need to reverse-engineer workflow YAML to find dependencies.
-Rein now creates `inputs/<block>/` directory with symlinks to dependency outputs before running each block.
-
-**New directory structure per task:**
-
-```
-task-xxx/
-├── outputs/                    # Final results (existing)
-│   ├── prepare.json
-│   ├── write.json
-│   └── review.json
-└── inputs/                     # NEW: symlinks to depends_on outputs
-    ├── prepare/                # empty (no depends_on)
-    ├── write/
-    │   └── prepare.json        # symlink -> ../outputs/prepare.json
-    └── review/
-        ├── prepare.json        # symlink
-        └── write.json          # symlink
-```
-
-**New context fields passed to logic scripts:**
-
-```json
-{
-  "output_file": "path/to/block.json",
-  "outputs_dir": "path/to/outputs/",
-  "input_dir": "path/to/inputs/block/",   // NEW
-  "block_config": { ... },                 // NEW: full block configuration
-  "task_input": { ... },
-  "task_id": "...",
-  "workflow_dir": "..."
-}
-```
-
-**Logic scripts become trivial:**
-
-```python
-import json, sys, os
-
-context = json.load(sys.stdin)
-input_dir = context['input_dir']
-
-# Read ALL dependencies - no need to know names
-for filename in os.listdir(input_dir):
-    data = json.load(open(f"{input_dir}/{filename}"))
-    # process...
-```
-
-### Implementation Details
-
-New method `_prepare_input_dir(block_name, depends_on)`:
-- Creates `inputs/<block>/` directory
-- Clears old symlinks/files
-- Creates symlinks to each dependency output
-- Falls back to copy if symlink fails
-- Logs each link: `INPUT LINK | review <- write.json`
-
-Updated `_run_logic()` signature:
-- Added `input_dir` parameter
-- Added `block_config` parameter
-
-### Benefits
-
-- **Unix-way:** Filesystem as interface between blocks
-- **Debuggable:** `ls inputs/review/` shows what block sees
-- **No duplication:** Symlinks, not copies
-- **Simple scripts:** Just read from input_dir, no YAML parsing
-
----
+### Fixed
+- `custom: true` (boolean) no longer causes `join()` type error
 
 ## [2.5.4] - 2026-01-01
 
-### Added - State Machine Flow Control (`next` field)
-
-**Major Feature: Conditional transitions and revision loops**
-
-New block-level fields for state machine style flow:
-
-- `next` - Specify next block to execute after completion
-  - Simple string: `next: "publish"` - always go to publish
-  - Conditional list with `if`/`else`:
-    ```yaml
-    next:
-      - if: "{{ result.approved }}"
-        goto: publish
-      - else:
-        goto: revision
-    ```
-
-- `max_runs` (default: 1) - Maximum times a block can run (loop protection)
-
-### Condition Syntax
-
-Conditions support `{{ result.field }}` placeholders with comparison operators:
-
-- Truthy check: `{{ result.approved }}`
-- Equality: `{{ result.status == 'approved' }}`
-- Comparison: `{{ result.score > 0.8 }}`
-
-### Usage Example: Approval Loop
-
-```yaml
-blocks:
-  - name: writer
-    specialist: content-writer
-    prompt: "Write article about {{ task.input.topic }}"
-    next: censor
-
-  - name: censor
-    specialist: content-censor
-    prompt: "Review article from {{ writer.json }}"
-    next:
-      - if: "{{ result.approved }}"
-        goto: publish
-      - else:
-        goto: revision
-
-  - name: revision
-    specialist: content-editor
-    prompt: "Revise based on feedback: {{ censor.json }}"
-    max_runs: 2
-    next: censor
-
-  - name: publish
-    specialist: publisher
-    prompt: "Publish final article"
-```
-
-### Implementation Details
-
-New fields in Process dataclass:
-- `next_spec` - stores next block specification
-- `max_runs` - maximum run count
-- `run_count` - current run count
-
-New structures in ProcessManager:
-- `next_queue` - queue of blocks triggered by `next`
-- `run_counts` - tracks how many times each block has run
-- `block_configs` - stores block configs for re-running
-
-New methods:
-- `_evaluate_next_block()` - evaluates `next` spec and returns target block
-- `_evaluate_condition()` - parses and evaluates `{{ }}` conditions
-- `_resolve_path()` - resolves dot paths like `result.approved`
-
-### Other Additions
-- `--question FILE` - Simple question file support (no task directory needed)
-- Auto-detect `context/` subdirectory for file access
-- Questions directory: `agents/questions/`
+### Added
+- State machine flow control via `next` field (simple string or conditional list)
+- `max_runs` for loop protection in revision loops
+- Condition syntax: `{{ result.field }}`, comparisons, equality checks
+- `--question FILE` for simple question input
 
 ### Fixed
-- ClaudeWrapper file access: added `--tools` and `--add-dir` CLI flags
-- run-specialist.py: auto-extracts directories from task.md paths
+- ClaudeWrapper file access with `--tools` and `--add-dir` flags
 
 ## [2.5.3] - 2026-01-01
 
-### Added - Flow Control Parameters
-
-**New Block-Level Control Parameters for Resilient Workflows:**
-
-- `skip_if_previous_failed` (default: false) - Block execution control
-  - If true: Execute block even if previous blocks failed
-  - If false: Skip block if any previous block failed
-
-- `continue_if_failed` (default: true) - Workflow continuation control
-  - If true: Workflow continues even if this block fails (optional block)
-  - If false: Workflow stops immediately on block failure (critical block)
-
-### Implementation Details
-
-New methods added to ProcessManager:
-
-1. `_get_previous_blocks_status()` - Returns list of failed block names
-2. `_should_execute_block()` - Determines if block should execute based on `skip_if_previous_failed`
-3. `_should_continue_after_failure()` - Determines if workflow should continue based on `continue_if_failed`
-
-New flow control flags in ProcessManager:
-
-- `stop_workflow` - Set to True when critical failure occurs
-- `stop_reason` - Human-readable reason for workflow stop
-
-### Usage Example
-
-```yaml
-blocks:
-  - name: data_validation
-    specialist: validator
-    continue_if_failed: false  # CRITICAL - stop if validation fails
-
-  - name: data_enrichment
-    specialist: enricher
-    skip_if_previous_failed: false  # Skip if validation failed
-    continue_if_failed: true  # Continue even if enrichment fails
-
-  - name: backup_operation
-    specialist: backup
-    skip_if_previous_failed: true  # Always try backup, even if earlier blocks failed
-    continue_if_failed: true  # Don't stop workflow if backup fails
-
-  - name: final_report
-    specialist: reporter
-    skip_if_previous_failed: false  # Skip if any dependency failed
-    continue_if_failed: false  # Stop if report generation fails
-```
-
-### Default Behavior
-
-- All blocks are `continue_if_failed: true` (optional) by default
-- All blocks are `skip_if_previous_failed: false` by default (require success)
-- This ensures safe workflows: failures in earlier stages prevent dependent stages from running
-
-### Logging
-
-New log entries for flow control:
-
-- `BLOCK SKIPPED | {name} | skip_if_previous_failed=false and failures detected`
-- `WORKFLOW STOPPED | {name} | continue_if_failed=false`
-
----
+### Added
+- `skip_if_previous_failed` block parameter (default: false)
+- `continue_if_failed` block parameter (default: true)
+- Flow control logging for skipped blocks and workflow stops
 
 ## [2.5.2] - 2025-12-31
 
-### Added - Task System Integration
-
+### Added
 - Task execution mode with `--task` flag
-- task.yaml configuration format
-- status.json automatic status tracking
+- `task.yaml` configuration format
+- Automatic status tracking: pending -> running -> completed/failed
 - Memory system callbacks for result storage
-- Task output directory organization
-
-### Features
-
-- Separate flows/ (templates) and tasks/ (executions) directories
-- Automatic status updates: pending → running → completed/failed
-- JSON result file collection in outputs/ directory
-- Optional memory system integration
-
----
 
 ## [2.5.1] - 2025-12-30
 
-### Added - Russian Language Support & Complex Workflows
-
-- Russian-language specialist templates
-- Parallel block execution (creation_1, creation_2, creation_3 simultaneous)
-- Russian humor poetry workflow example
-- Proper JSON data flow between parallel stages
+### Added
+- Parallel block execution support
 
 ### Fixed
-
-- Placeholder substitution with regex matching (preserves spaces)
+- Placeholder substitution with regex (preserves spaces)
 - JSON extraction from mixed text responses
-- Logic script envelope unwrapping
-- Per-flow .env file loading with OpenRouter API support
-
----
+- Per-flow `.env` file loading
 
 ## [2.5.0] - 2025-12-28
 
-### Major Addition - Flow-Centric Architecture
-
-**New directory structure:**
-
-```
-agents/
-├── flows/              # Flow templates
-│   ├── create-poem/
-│   │   ├── create-poem.yaml
-│   │   ├── .env
-│   │   └── logic/
-│   │       ├── validate-themes.py
-│   │       ├── enhance-draft.py
-│   │       └── validate-revision.py
-│   └── russian-humor-poetry/
-│       ├── russian-humor-poetry.yaml
-│       ├── .env
-│       └── logic/
-├── specialists/        # Specialist instructions
-│   ├── poet.md
-│   ├── critic.md
-│   └── poet-humor-ru.md
-└── teams/             # Team configurations
-    ├── team-creative.yaml
-    └── team-russian-humor.yaml
-```
-
-### New Features
-
-1. **Logic Phases**
-   - pre: Run before Claude (data preparation)
-   - post: Run after Claude (result processing)
-   - validate: Validation logic (quality checks)
-   - custom: Skip Claude entirely
-
-2. **Per-Flow Configuration**
-   - .env files in flow directories
-   - OpenRouter API support with fallback to Anthropic
-
-3. **Specialist System**
-   - Load instructions from .md files
-   - Team tone injection
-   - Prompt assembly from components
-
-4. **Placeholder Substitution**
-   - `{{ file.json }}` placeholders in prompts
-   - Automatic file loading and JSON substitution
-   - Handles both plain JSON and envelope-wrapped results
-
-### Key Methods
-
-- `load_team()` - Load team tone configuration
-- `load_specialist()` - Load specialist instructions from .md
-- `assemble_prompt()` - Build full prompt from components
-- `call_claude()` - Unified API call (Anthropic or OpenRouter)
-- `_run_logic()` - Execute logic scripts (Python or Shell)
-- `_load_env_file()` - Load per-flow .env configuration
-
----
+### Added
+- Flow-centric architecture with `flows/`, `specialists/`, `teams/` directories
+- Logic phases: `pre`, `post`, `validate`, `custom`
+- Per-flow `.env` configuration
+- Specialist system with Markdown definitions and team tone injection
+- `{{ file.json }}` placeholder substitution in prompts
 
 ## [2.4.0] - 2025-12-20
 
-### Added - Process Management Features
-
-- Socket server for async command handling
-- Pause/Resume individual processes
-- Pause/Resume entire workflow
+### Added
+- Unix domain socket server for async command handling
+- Pause/resume individual processes and entire workflow
 - Process cancellation
-- Status queries via socket interface
-
-### Commands
-
-- `pause <uid|name>` - Pause specific process
-- `resume <uid|name>` - Resume paused process
-- `cancel <uid|name>` - Cancel process permanently
-- `pause-workflow` - Pause entire workflow
-- `resume-workflow` - Resume workflow
-- `status` - Get workflow status
-- `log <uid|name>` - Get process log info
-- `list` - List all processes with UIDs
-
----
+- Interactive commands: `pause`, `resume`, `cancel`, `status`, `log`, `list`
 
 ## [2.3.0] - 2025-12-18
 
-### Added - Database Persistence
-
-- SQLite database for process state
+### Added
+- SQLite database for process state persistence
 - Resume from previous run with `--resume RUN_ID`
 - State recovery on interruption
-- Persistent process tracking across sessions
-
-### Features
-
-- Automatic database creation
-- State serialization on each process update
-- Fresh run mode vs. resume mode
-- Log directory organization by run_id
-
----
 
 ## [2.2.0] - 2025-12-15
 
-### Added - Dependency Management
-
-- Block-level dependencies with `depends_on` list
-- Automatic phase calculation
-- Semaphore-based parallelism control
-- Blocking pause support (`blocking_pause` flag)
-
-### Features
-
-- Phases calculated from dependency graph
-- Parallel execution within same phase
-- Configurable max_parallel (default: 3)
-- Wait for all dependencies before spawning block
-
----
+### Added
+- Block-level dependencies with `depends_on`
+- Automatic phase calculation from dependency graph
+- Semaphore-based parallelism control (`max_parallel`)
+- Blocking pause support
 
 ## [2.1.0] - 2025-12-10
 
-### Added - Rich UI Monitoring
-
-- htop-like terminal interface using Rich library
-- Live process table with real-time updates
-- Progress bars for each process
-- Overall workflow progress tracking
-- CPU and memory metrics
-- Time elapsed display with timeout countdown
-
-### Features
-
+### Added
+- Rich terminal UI (htop-like) with live process monitoring
+- Progress bars, CPU/memory metrics, elapsed time
 - Color-coded status display
-- Process UIDs for identification
-- Agent name display
-- Workflow pause indicator
-
----
 
 ## [2.0.0] - 2025-12-08
 
-### Initial Release - Agent Process Manager
-
-**Architecture:** Dog v2 - Meta-orchestrator for workflows
-
+### Added
+- Initial release as workflow orchestrator
 - Process manager with dependency tracking
-- Configuration via YAML
-- JSON output files for each block
-- htop-like UI for monitoring
-- SQLite database for state
-- Socket server for async commands
-
-**Key Concepts:**
-
-- Blocks: Smallest unit of work
-- Phases: Automatic ordering based on dependencies
-- Workflow: Complete execution graph
-- Semaphore: Parallel execution control
-
-**Status Codes:**
-- waiting: Pending dependencies
-- running: Currently executing
-- done: Completed successfully
-- failed: Execution error
-- paused: Temporarily halted
-- cancelled: Permanently cancelled
-
----
-
-## Version History Notes
-
-- **v2.5.3**: Flow control parameters for resilient workflows
-- **v2.5.2**: Task system with memory integration
-- **v2.5.1**: Russian language support
-- **v2.5.0**: Flow-centric architecture with specialists
-- **v2.4.0**: Advanced process management (pause/resume)
-- **v2.3.0**: Database persistence and resume capability
-- **v2.2.0**: Dependency management and phases
-- **v2.1.0**: Rich UI with real-time monitoring
-- **v2.0.0**: Initial Dog v2 release
-
+- YAML-based workflow configuration
+- JSON output per block
+- SQLite state persistence
+- Unix domain socket command interface

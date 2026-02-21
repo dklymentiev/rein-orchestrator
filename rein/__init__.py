@@ -20,7 +20,7 @@ from .state import ReinState
 from .output import format_json_as_md, save_readable_output, get_block_dir, get_output_dir
 from .providers import create_provider, list_providers
 
-__version__ = "3.1.0"
+__version__ = "3.2.0"
 
 __all__ = [
     "Process",

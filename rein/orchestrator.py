@@ -33,6 +33,10 @@ from rein import (
 from rein.providers import create_provider
 from rein.tasks import update_task_status as _update_task_status
 from rein.tasks import save_task_to_memory as _save_task_to_memory
+from rein.log import get_logger, get_console
+
+logger = get_logger(__name__)
+console = get_console()
 
 # Import validation engine (Phase 1: Schema validation)
 try:
@@ -148,7 +152,7 @@ class ProcessManager:
                 f.write(f"{timestamp} | {message}\n")
                 f.flush()
         except Exception as e:
-            print(f"[Rein Log Error] {e}", flush=True)
+            logger.error("Log write failed: %s", e)
 
     def create_task(self, flow_name: str, input_params: dict = None) -> str:
         """Create a new task directory and return task_id (v3.0: new structure)"""
@@ -239,32 +243,29 @@ class ProcessManager:
 
             if result.is_valid:
                 self._write_rein_log(f"VALIDATE OK | schema_version={result.metadata.get('schema_version')} | blocks={result.metadata.get('blocks_count')} | phases={result.metadata.get('phases')}")
-                # Print validation summary to console
-                print(f"\n[VALIDATE] Workflow: {result.metadata.get('name')}")
-                print(f"[VALIDATE] Team: {result.metadata.get('team')}")
-                print(f"[VALIDATE] Schema Version: {result.metadata.get('schema_version')}")
-                print(f"[VALIDATE] Blocks: {result.metadata.get('blocks_count')}")
-                print(f"[VALIDATE] Execution Phases: {result.metadata.get('phases')}")
-                print(f"[VALIDATE] Flow Control Blocks: {result.metadata.get('flow_control_blocks')}")
-                print(f"[VALIDATE] Status: OK\n")
+                console.info("")
+                console.info("[VALIDATE] Workflow: %s", result.metadata.get('name'))
+                console.info("[VALIDATE] Team: %s", result.metadata.get('team'))
+                console.info("[VALIDATE] Schema Version: %s", result.metadata.get('schema_version'))
+                console.info("[VALIDATE] Blocks: %s", result.metadata.get('blocks_count'))
+                console.info("[VALIDATE] Execution Phases: %s", result.metadata.get('phases'))
+                console.info("[VALIDATE] Flow Control Blocks: %s", result.metadata.get('flow_control_blocks'))
+                console.info("[VALIDATE] Status: OK\n")
             else:
                 self._write_rein_log(f"VALIDATE FAILED | errors={len(result.errors)} | warnings={len(result.warnings)}")
-                print(f"\n[ERROR] Workflow validation failed!")
-                print(result.format_report())
-                print()
+                console.error("\n[ERROR] Workflow validation failed!")
+                console.error(result.format_report())
+                console.info("")
                 sys.exit(1)
 
-            # Print warnings if any
             if result.warnings:
-                print(f"[WARNING] {len(result.warnings)} validation warnings:")
+                logger.warning("%d validation warnings:", len(result.warnings))
                 for warning in result.warnings:
-                    print(f"  - {warning.field}: {warning.message}")
-                print()
+                    logger.warning("  - %s: %s", warning.field, warning.message)
 
         except Exception as e:
             self._write_rein_log(f"VALIDATE ERROR | {str(e)}")
-            # Don't fail on validation errors, just log them
-            print(f"[WARNING] Validation engine error (continuing anyway): {e}\n")
+            logger.warning("Validation engine error (continuing anyway): %s", e)
 
     def _validate_task_inputs(self, config: dict):
         """Validate task inputs against declarative inputs: section (v2.6.0).
@@ -310,7 +311,7 @@ class ProcessManager:
         extra = provided - declared
         if extra:
             self._write_rein_log(f"INPUT WARNING | Extra undeclared inputs: {sorted(extra)}")
-            print(f"[WARNING] Extra inputs not declared in workflow: {sorted(extra)}")
+            logger.warning("Extra inputs not declared in workflow: %s", sorted(extra))
 
         if errors:
             workflow_name = config.get('name', 'unknown')
@@ -321,7 +322,7 @@ class ProcessManager:
                 + f"\nProvided inputs: {sorted(provided)}"
                 + "\n\nProvide inputs via --input '{\"field\": \"value\"}' or task.input.json\n"
             )
-            print(msg)
+            console.error(msg)
             missing_names = [e.strip().lstrip("- '").split("'")[0] for e in errors]
             self._write_rein_log(f"INPUT VALIDATION FAILED | missing: {missing_names}")
             sys.exit(1)
@@ -863,8 +864,8 @@ class ProcessManager:
         name = process.name
         block_failed = False
 
-        # Event marker for WebSocket broadcast
-        print(f"[BLOCK_START] task={self.task_id} block={name}", flush=True)
+        # Event marker for WebSocket broadcast (must be stdout for daemon parsing)
+        console.info("[BLOCK_START] task=%s block=%s", self.task_id, name)
 
         try:
             process.progress = 25
@@ -978,8 +979,8 @@ class ProcessManager:
             self._write_rein_log(f"BLOCK COMPLETED | {name}[{uid}] | saved={save_file}")
             self.completed.add(name)
 
-            # Event marker for WebSocket broadcast
-            print(f"[BLOCK_DONE] task={self.task_id} block={name}", flush=True)
+            # Event marker for WebSocket broadcast (must be stdout for daemon parsing)
+            console.info("[BLOCK_DONE] task=%s block=%s", self.task_id, name)
 
             # STATE MACHINE: Evaluate and trigger next block (Phase 2.5.4)
             if block.get('next'):
@@ -1364,11 +1365,11 @@ class ProcessManager:
                             task_config.get('callback', {}).get('memory_config', {})
                         )
 
-            print(f"\n[OK] Run completed. Logs saved to: {self.run_dir}")
+            console.info("\n[OK] Run completed. Logs saved to: %s", self.run_dir)
             if output_dir:
-                print(f"[OK] Results saved to: {output_dir}")
+                console.info("[OK] Results saved to: %s", output_dir)
         except Exception as e:
-            print(f"[ERROR] Error saving run summary: {e}")
+            logger.error("Error saving run summary: %s", e)
             self._write_rein_log(f"FINALIZE ERROR | {str(e)}")
 
     def _kill_remaining_processes(self, reason: str = "timeout"):

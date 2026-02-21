@@ -299,7 +299,7 @@ class TestValidateTaskInputs:
         manager._validate_task_inputs(config)
         assert manager.task_input["project"] == "my-project"
 
-    def test_extra_inputs_warning(self, manager, capsys):
+    def test_extra_inputs_warning(self, manager, capfd):
         """Extra undeclared inputs produce warning"""
         manager.task_input = {"topic": "AI", "garbage": "extra"}
         config = {
@@ -309,8 +309,8 @@ class TestValidateTaskInputs:
             }
         }
         manager._validate_task_inputs(config)
-        captured = capsys.readouterr()
-        assert "Extra inputs" in captured.out or "garbage" in captured.out
+        captured = capfd.readouterr()
+        assert "Extra inputs" in captured.err or "garbage" in captured.err
 
     def test_multiple_missing_all_reported(self, manager):
         """Multiple missing required fields all reported"""
