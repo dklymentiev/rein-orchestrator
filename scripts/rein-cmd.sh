@@ -58,7 +58,7 @@ if [ $IS_COMMAND -eq 1 ]; then
         exit 1
     else
         # No sockets found
-        echo "Error: No Rein workflows found. Start one with: python3 rein.py workflow.yaml"
+        echo "Error: No Rein workflows found. Start one with: python3 -m rein workflow.yaml"
         exit 1
     fi
 else

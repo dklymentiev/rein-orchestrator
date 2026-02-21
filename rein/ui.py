@@ -10,7 +10,7 @@ from rich.table import Table
 from rich.live import Live
 
 if TYPE_CHECKING:
-    from ..rein import ProcessManager
+    from rein.orchestrator import ProcessManager
 
 
 class ReinUI:

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Dog Workflow Schema v2.5.4",
-  "description": "Schema for Dog v2.5.4 workflow definitions with state machine flow control (next field)",
+  "title": "Rein Workflow Schema v2.5.4",
+  "description": "Schema for Rein v2.5.4 workflow definitions with state machine flow control (next field)",
   "type": "object",
   "required": ["schema_version", "name", "team", "blocks"],
   "additionalProperties": true,

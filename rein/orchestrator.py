@@ -359,7 +359,6 @@ class ProcessManager:
             prompt = block.get('prompt', '')
 
             # REFACTOR: Substitute task.input.* placeholders first
-            import re
             if self.task_input:
                 # Find {{ task.input.fieldname }} placeholders
                 task_input_pattern = r'\{\{\s*task\.input\.(\w+)\s*\}\}'

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Dog Workflow Schema v2.5.5",
-  "description": "Schema for Dog v2.5.5 workflow definitions with input directory architecture",
+  "title": "Rein Workflow Schema v2.5.5",
+  "description": "Schema for Rein v2.5.5 workflow definitions with input directory architecture",
   "type": "object",
   "required": ["schema_version", "name", "team", "blocks"],
   "additionalProperties": true,

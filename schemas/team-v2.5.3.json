@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Dog Team Schema v2.5.3",
-  "description": "Schema for Dog v2.5.3 team definitions",
+  "title": "Rein Team Schema v2.5.3",
+  "description": "Schema for Rein v2.5.3 team definitions",
   "type": "object",
   "required": ["schema_version", "name", "specialists"],
   "additionalProperties": false,

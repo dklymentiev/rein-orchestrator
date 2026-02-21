@@ -1,5 +1,5 @@
 """
-Pydantic models for Dog v2.6.0 workflow definitions.
+Pydantic models for Rein v2.6.0 workflow definitions.
 Includes business logic validation for circular dependencies, timeouts, and data flow.
 Supports state machine flow control with `next` field.
 Supports declarative input validation with `inputs` section.
@@ -45,9 +45,9 @@ class BlockConfig(BaseModel):
     skip_if_previous_failed: bool = False
     continue_if_failed: bool = False
     timeout: Optional[int] = Field(None, ge=30, le=7200)
-    model: str = Field(
-        default="anthropic/claude-3.5-sonnet",
-        pattern=r'^(anthropic|openai|google)/[a-z0-9.-]+$'
+    model: Optional[str] = Field(
+        default="",
+        description="LLM model override for this block. Empty = use provider default."
     )
     save_as: Optional[str] = Field(None, pattern=r'^[a-z0-9_.-]+\.json$')
     logic: Optional[LogicConfig] = None

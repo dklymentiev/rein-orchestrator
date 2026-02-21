@@ -1,5 +1,5 @@
 """
-Dog v2.5.4 Models Package
+Rein Models Package
 
 Provides:
 - Pydantic models for workflow and team validation
@@ -38,5 +38,3 @@ __all__ = [
     "validate_workflow_file",
     "validate_team_file",
 ]
-
-__version__ = "2.5.4"

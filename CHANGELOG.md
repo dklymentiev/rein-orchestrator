@@ -55,7 +55,7 @@ inputs:
 
 **Root Cause:** Condition `if previous_failed and not skip_if_failed` was backwards.
 
-**Fix:** Changed to `if previous_failed and skip_if_failed` in rein.py:504
+**Fix:** Changed to `if previous_failed and skip_if_failed` in `rein/orchestrator.py`
 
 **Impact:** Workflows now correctly continue past failed blocks when `skip_if_previous_failed=false`.
 
@@ -83,7 +83,7 @@ write_dirs: [/path/c]
 Description in markdown...
 ```
 
-**Next:** Implement YAML frontmatter parser in rein.py
+**Next:** Implement YAML frontmatter parser in `rein/orchestrator.py`
 
 ## [3.1.2] - 2026-01-15
 
@@ -130,7 +130,7 @@ UI  <--- READ ---  rein.db  <--- WRITE ---  rein (daemon)
 - Product workflows analyzed Rein codebase instead of assigned tasks
 
 **Fix:**
-- Added `cwd=self.task_dir` to subprocess.run() calls (rein.py:662, 671)
+- Added `cwd=self.task_dir` to subprocess.run() calls in `rein/orchestrator.py`
 - Added default directory restriction: `add_dirs=[task_dir]` (run-specialist.py:192-195)
 - Logic scripts now isolated to task directory by default
 
@@ -187,8 +187,8 @@ Rein = reins/узда (harness control metaphor for workflow orchestration)
 
 ### Fixed - Custom Logic Boolean Handling
 
-When `custom: true` (boolean), Dog now correctly skips Claude call (pre script already handled it).
-When `custom: "script.py"` (string), Dog runs that script.
+When `custom: true` (boolean), Rein now correctly skips Claude call (pre script already handled it).
+When `custom: "script.py"` (string), Rein runs that script.
 
 Previously, `custom: true` caused error: `join() argument must be str, not 'bool'`
 
@@ -197,7 +197,7 @@ Previously, `custom: true` caused error: `join() argument must be str, not 'bool
 **Major Feature: Dependency data flow via filesystem**
 
 Logic scripts no longer need to reverse-engineer workflow YAML to find dependencies.
-Dog now creates `inputs/<block>/` directory with symlinks to dependency outputs before running each block.
+Rein now creates `inputs/<block>/` directory with symlinks to dependency outputs before running each block.
 
 **New directory structure per task:**
 
@@ -636,30 +636,3 @@ agents/
 - **v2.1.0**: Rich UI with real-time monitoring
 - **v2.0.0**: Initial Dog v2 release
 
-## Next Planned Releases
-
-### v3.0.0 - Production Grade (Major Rewrite)
-
-For 10-hour workflows with 500+ blocks:
-
-**Directory Structure:**
-- `input/` - Workflow-level input data
-- `output/` - Workflow-level final result
-- `blocks/<name>/` - Per-block isolation
-  - `inputs/` with timestamps (run001, run002)
-  - `outputs/` with timestamps
-  - `logs/` per-run
-  - `checkpoint/` for resumable operations
-
-**Reliability:**
-- `retry: 3` with exponential backoff
-- `resource_pool: video` with `max_concurrent: 5`
-- `heartbeat` file for watchdog monitoring
-- Checkpointing for long operations
-
-**Notifications:**
-- `notifications:` section in workflow YAML
-- Events: workflow_started, workflow_completed, block_failed
-- Integration with unified-alert-bot (Telegram)
-
-**See:** architecture documentation in task directory

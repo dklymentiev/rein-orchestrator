@@ -120,7 +120,7 @@ cmd_run() {
 
     echo -e "${YELLOW}Running: $yaml${NC}"
     cd "$SCRIPT_DIR"
-    python3 rein.py "$yaml"
+    python3 -m rein "$yaml"
 }
 
 cmd_list() {
