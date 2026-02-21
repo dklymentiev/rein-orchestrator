@@ -7,31 +7,27 @@ Supports declarative input validation with `inputs` section.
 
 from typing import List, Dict, Optional, Set, Tuple, Union
 from dataclasses import dataclass, field
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 import re
 
 
 class LogicConfig(BaseModel):
     """Logic phase configuration"""
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
     pre: Optional[str] = None
     post: Optional[str] = None
     validate_script: Optional[str] = Field(None, alias="validate")
     custom: Optional[Union[bool, str]] = None  # True = skip Claude API, str = custom script path
 
-    class Config:
-        extra = "forbid"
-        populate_by_name = True
-
 
 class NextCondition(BaseModel):
     """Conditional transition for state machine flow"""
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
     if_condition: Optional[str] = Field(None, alias="if", pattern=r'^\{\{.*\}\}$')
     else_target: Optional[str] = Field(None, alias="else", pattern=r'^[a-z0-9_]+$')
     goto: Optional[str] = Field(None, pattern=r'^[a-z0-9_]+$')
-
-    class Config:
-        extra = "forbid"
-        populate_by_name = True
 
 
 class BlockConfig(BaseModel):
@@ -55,10 +51,10 @@ class BlockConfig(BaseModel):
     next: Optional[Union[str, List[NextCondition]]] = None
     max_runs: int = Field(default=1, ge=1, le=10)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
-    @validator('depends_on')
+    @field_validator('depends_on')
+    @classmethod
     def validate_depends_on(cls, v):
         """Ensure depends_on contains valid block names"""
         if not isinstance(v, list):
@@ -86,12 +82,12 @@ class InputFieldConfig(BaseModel):
     required: bool = Field(default=True)
     default: Optional[str] = None
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
-    @validator('default')
-    def default_only_when_optional(cls, v, values):
-        if v is not None and values.get('required', True):
+    @field_validator('default')
+    @classmethod
+    def default_only_when_optional(cls, v, info):
+        if v is not None and info.data.get('required', True):
             raise ValueError("'default' only valid when required=false")
         return v
 
@@ -111,12 +107,12 @@ class WorkflowConfig(BaseModel):
     max_tokens: Optional[int] = Field(None, ge=1, le=200000)
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
     inputs: Optional[Dict[str, InputFieldConfig]] = None
-    blocks: List[BlockConfig] = Field(..., min_items=1, max_items=100)
+    blocks: List[BlockConfig] = Field(..., min_length=1, max_length=100)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
-    @validator('blocks')
+    @field_validator('blocks')
+    @classmethod
     def detect_circular_dependencies(cls, blocks):
         """
         Detect circular dependencies in workflow using DFS (Depth-First Search).
@@ -160,7 +156,8 @@ class WorkflowConfig(BaseModel):
 
         return blocks
 
-    @validator('blocks')
+    @field_validator('blocks')
+    @classmethod
     def validate_block_name_uniqueness(cls, blocks):
         """Ensure all block names are unique"""
         names = [block.name for block in blocks]
@@ -169,7 +166,8 @@ class WorkflowConfig(BaseModel):
             raise ValueError(f"Duplicate block names: {set(duplicates)}")
         return blocks
 
-    @validator('blocks')
+    @field_validator('blocks')
+    @classmethod
     def validate_flow_control_logic(cls, blocks):
         """Validate flow control parameter combinations"""
         for block in blocks:
@@ -186,10 +184,11 @@ class WorkflowConfig(BaseModel):
 
         return blocks
 
-    @validator('blocks')
-    def validate_inputs_match_prompts(cls, blocks, values):
+    @field_validator('blocks')
+    @classmethod
+    def validate_inputs_match_prompts(cls, blocks, info):
         """If inputs: is declared, verify every {{ task.input.X }} in prompts has a matching declaration"""
-        inputs = values.get('inputs')
+        inputs = info.data.get('inputs')
         if not inputs:
             return blocks
         declared = set(inputs.keys())
@@ -261,8 +260,7 @@ class SpecialistMapping(BaseModel):
     specialist: str = Field(..., pattern=r'^[a-z0-9-]+$')
     bio: Optional[str] = Field(None, max_length=500)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class TeamConfig(BaseModel):
@@ -275,13 +273,13 @@ class TeamConfig(BaseModel):
         default="professional",
         pattern=r'^(professional|creative|humorous|academic|casual|formal)$'
     )
-    specialists: List[SpecialistMapping] = Field(..., min_items=1, max_items=50)
+    specialists: List[SpecialistMapping] = Field(..., min_length=1, max_length=50)
     shared_instructions: Optional[str] = Field(None, max_length=2000)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
-    @validator('specialists')
+    @field_validator('specialists')
+    @classmethod
     def validate_specialist_uniqueness(cls, specialists):
         """Ensure all roles and specialists are unique"""
         roles = [s.role for s in specialists]
