@@ -1,5 +1,52 @@
 # Rein Changelog
 
+## [3.2.0] - 2026-02-20
+
+### Added - Declarative Workflow Input Validation (Schema v2.6.0)
+
+**Problem:** Workflows use `{{ task.input.FIELD }}` placeholders in prompts, but there was no way to declare what inputs a workflow expects. When inputs were missing, placeholders passed through as literal text -- all agents ran on broken prompts, wasting tokens and producing garbage output.
+
+**Solution:** New `inputs:` section in workflow YAML with pre-dispatch validation and fast-fail.
+
+```yaml
+inputs:
+  topic:
+    description: "The question for the team to analyze"
+    required: true
+  project:
+    description: "Project name for context"
+    required: false
+    default: "unknown"
+```
+
+**Features:**
+
+1. **InputFieldConfig model** -- Pydantic model with `description`, `required` (default: true), `default` (only when optional)
+2. **Cross-check validator** -- At YAML parse time, verifies every `{{ task.input.X }}` in prompts has a matching declaration in `inputs:`
+3. **Pre-dispatch validation** (`_validate_task_inputs`) -- Before any block runs:
+   - Required fields missing -> clear error message + `sys.exit(1)`
+   - Optional fields with `default` -> value injected into task_input
+   - Extra undeclared inputs -> warning logged
+4. **Unresolved placeholder safety net** -- After all substitutions in `assemble_prompt()`, detects any remaining `{{ task.input.* }}` and raises `ValueError`
+5. **MCP integration** -- `list_flows` shows inputs schema per flow; `create_task` accepts `input_json` parameter for structured inputs
+
+**Backward Compatible:** Workflows without `inputs:` work exactly as before.
+
+**Updated Workflows:** deliberation, code-review, generic, brainstorm, research-project, docs-architecture, product-analysis, x-daily-report, x-daily-digest, x-profile-analyzer, blog-publication, my-blog-content-pipeline, task-creator
+
+**Files Changed:**
+
+| File | Change |
+|------|--------|
+| `models/workflow.py` | `InputFieldConfig` + `inputs` field + cross-check validator |
+| `rein/orchestrator.py` | `_validate_task_inputs()` + unresolved placeholder check |
+| `rein/mcp_server.py` | `inputs` in list_flows + `input_json` in create_task |
+| `schemas/workflow-v2.6.0.json` | JSON Schema with inputField definition |
+| `schemas/registry.json` | v2.6.0 entry, updated current_version |
+| `tests/test_input_validation.py` | 29 new tests |
+
+**Tests:** 345 passed, 0 failures (29 new + all existing)
+
 ## [3.1.3] - 2026-01-16
 
 ### Fixed - skip_if_previous_failed Logic Bug
@@ -12,9 +59,9 @@
 
 **Impact:** Workflows now correctly continue past failed blocks when `skip_if_previous_failed=false`.
 
-### Changed - Brain API Timeout
+### Changed - LLM API Timeout
 
-- Increased timeout from 120s to 300s in claude-api/main.py
+- Increased timeout from 120s to 300s for LLM API calls
 - Prevents timeout errors for complex deliberation tasks
 
 ### RFC - Task Input Format (Deliberation Result)
@@ -81,7 +128,7 @@ PHP (UI)  <--- READ ---  rein.db  <--- WRITE ---  rein.py (daemon)
 **CRITICAL FIX: Logic scripts now run in task directory instead of Rein directory**
 
 **Problem:**
-- Logic scripts executed with `cwd=/server/scripts/rein` or `cwd=/server/hq`
+- Logic scripts executed with `cwd=<project_root>` or other system paths
 - Claude CLI could access Rein source code and other tasks
 - Product workflows analyzed Rein codebase instead of assigned tasks
 
@@ -102,14 +149,13 @@ PHP (UI)  <--- READ ---  rein.db  <--- WRITE ---  rein.py (daemon)
 **Testing:**
 ```bash
 # Logic script now sees only task files
-os.getcwd() == '/server/agents/tasks/task-20260104-012158/'
-# NOT '/server/scripts/rein/'
+os.getcwd() == '<task_dir>/task-20260104-012158/'
+# NOT '<project_root>/'
 ```
 
 **References:**
 - Issue: Product Team analyzing Rein code instead of wizard flow
-- Report: /server/agents/tasks/saas-wizard-review/REPORT-file-access-issue.md
-- Policy: SECURITY-POLICY.md
+- Policy: Added SECURITY.md
 
 ## [3.1.0] - 2026-01-02
 
@@ -301,7 +347,7 @@ New methods:
 ### Other Additions
 - `--question FILE` - Simple question file support (no task directory needed)
 - Auto-detect `context/` subdirectory for file access
-- Questions directory: `/server/agents/questions/`
+- Questions directory: `agents/questions/`
 
 ### Fixed
 - ClaudeWrapper file access: added `--tools` and `--add-dir` CLI flags
@@ -619,4 +665,4 @@ For 10-hour workflows with 500+ blocks:
 - Events: workflow_started, workflow_completed, block_failed
 - Integration with unified-alert-bot (Telegram)
 
-**See:** `/server/agents/tasks/task-dog-v3-architecture/input/architecture.md`
+**See:** architecture documentation in task directory
