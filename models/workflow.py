@@ -1,7 +1,8 @@
 """
-Pydantic models for Dog v2.5.4 workflow definitions.
+Pydantic models for Dog v2.6.0 workflow definitions.
 Includes business logic validation for circular dependencies, timeouts, and data flow.
 Supports state machine flow control with `next` field.
+Supports declarative input validation with `inputs` section.
 """
 
 from typing import List, Dict, Optional, Set, Tuple, Union
@@ -79,6 +80,22 @@ class BlockConfig(BaseModel):
             return "critical"  # Standard: run normally, failure stops workflow
 
 
+class InputFieldConfig(BaseModel):
+    """Declares a workflow input field for pre-dispatch validation"""
+    description: Optional[str] = Field(None, max_length=500)
+    required: bool = Field(default=True)
+    default: Optional[str] = None
+
+    class Config:
+        extra = "forbid"
+
+    @validator('default')
+    def default_only_when_optional(cls, v, values):
+        if v is not None and values.get('required', True):
+            raise ValueError("'default' only valid when required=false")
+        return v
+
+
 class WorkflowConfig(BaseModel):
     """Complete workflow configuration with validation"""
     schema_version: str = Field(default="2.5.3")
@@ -89,6 +106,7 @@ class WorkflowConfig(BaseModel):
     timeout: Optional[int] = Field(None, ge=30, le=86400)
     max_parallel: int = Field(default=3, ge=1, le=10)
     readable_outputs: bool = Field(default=False, description="Generate human-readable .md files alongside .json outputs")
+    inputs: Optional[Dict[str, InputFieldConfig]] = None
     blocks: List[BlockConfig] = Field(..., min_items=1, max_items=100)
 
     class Config:
@@ -162,6 +180,25 @@ class WorkflowConfig(BaseModel):
                 # Warning: might want error handling logic, but not required
                 pass
 
+        return blocks
+
+    @validator('blocks')
+    def validate_inputs_match_prompts(cls, blocks, values):
+        """If inputs: is declared, verify every {{ task.input.X }} in prompts has a matching declaration"""
+        inputs = values.get('inputs')
+        if not inputs:
+            return blocks
+        declared = set(inputs.keys())
+        for block in blocks:
+            if not block.prompt:
+                continue
+            for match in re.finditer(r'\{\{\s*task\.input\.(\w+)\s*\}\}', block.prompt):
+                field_name = match.group(1)
+                if field_name not in declared:
+                    raise ValueError(
+                        f"Block '{block.name}' uses undeclared input 'task.input.{field_name}'. "
+                        f"Add it to 'inputs:' section."
+                    )
         return blocks
 
     def get_execution_order(self) -> List[List[str]]:

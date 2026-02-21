@@ -1,7 +1,21 @@
 {
-  "current_version": "2.5.5",
+  "current_version": "2.6.0",
   "description": "Schema version registry and compatibility matrix",
   "versions": {
+    "2.6.0": {
+      "released": "2026-02-20",
+      "description": "Declarative workflow input validation",
+      "features": [
+        "inputs: section for declaring expected workflow inputs",
+        "Pre-dispatch validation of task inputs (fast-fail on missing required)",
+        "Default value injection for optional inputs",
+        "Cross-check: prompts vs declared inputs at parse time",
+        "Unresolved placeholder detection as safety net"
+      ],
+      "backwards_compatible_with": ["2.5.5", "2.5.4", "2.5.3"],
+      "migration_required": false,
+      "breaking_changes": []
+    },
     "2.5.5": {
       "released": "2026-01-02",
       "description": "Input directory architecture for dependency data flow",
@@ -69,6 +83,11 @@
     }
   },
   "compatibility_matrix": {
+    "2.6.0": {
+      "can_upgrade_from": ["2.5.5", "2.5.4", "2.5.3", "2.5.2", "2.5.1"],
+      "can_downgrade_to": ["2.5.5"],
+      "migration_script": null
+    },
     "2.5.4": {
       "can_upgrade_from": ["2.5.3", "2.5.2", "2.5.1"],
       "can_downgrade_to": ["2.5.3"],
