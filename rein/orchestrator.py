@@ -579,7 +579,7 @@ class ProcessManager:
         try:
             for db_proc in self.state.get_all_processes():
                 existing_status[db_proc.name] = db_proc.status
-        except:
+        except Exception:
             pass
 
         # First pass - calculate phases

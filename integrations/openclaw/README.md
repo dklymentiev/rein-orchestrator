@@ -1,6 +1,6 @@
 # Rein OpenClaw Integration
 
-Run [Rein](https://github.com/codimcc/rein) multi-agent workflows from [OpenClaw](https://github.com/nicepkg/openclaw) -- your personal AI assistant on Telegram, WhatsApp, Slack, Discord, and more.
+Run [Rein](https://github.com/rein-orchestrator/rein) multi-agent workflows from [OpenClaw](https://github.com/nicepkg/openclaw) -- your personal AI assistant on Telegram, WhatsApp, Slack, Discord, and more.
 
 ## What this does
 

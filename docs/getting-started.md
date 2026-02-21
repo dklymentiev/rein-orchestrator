@@ -115,7 +115,7 @@ The workflow defines what to execute. Each unit of work is called a **block**.
 Create `workflow.yaml` in the project root:
 
 ```yaml
-schema_version: "2.5.3"
+schema_version: "2.6.0"
 name: my-first-workflow
 description: "Single-block research workflow"
 team: research-team
@@ -217,7 +217,7 @@ collaboration_tone: |
 Update `workflow.yaml` -- add the `write` block after the `research` block:
 
 ```yaml
-schema_version: "2.5.3"
+schema_version: "2.6.0"
 name: my-first-workflow
 description: "Research then write workflow"
 team: research-team

@@ -52,3 +52,7 @@ requirements.txt
 # Server-specific overrides (not part of open-source release)
 docker-compose.override.yml
 rein/providers/gateway.py
+
+# Integration build artifacts
+integrations/openclaw/node_modules/
+integrations/openclaw/package-lock.json

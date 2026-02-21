@@ -181,7 +181,7 @@ rein --agents-dir ./agents workflow.yaml --no-ui
 rein workflow.yaml --agents-dir ./agents
 
 # Run a named flow
-rein --flow deliberation --question "Should we use Redis or PostgreSQL?"
+rein --flow deliberation --question question.txt
 
 # Run with JSON input
 rein --flow my-flow --input '{"topic": "AI trends", "style": "casual"}'
@@ -205,16 +205,20 @@ All options:
 |--------|-------------|
 | `config` | Path to workflow YAML file |
 | `--flow NAME` | Flow name (from agents/flows/) |
-| `--question TEXT` | Simple question input |
+| `--question FILE` | Question file path (used with --flow) |
 | `--input JSON` | JSON parameters for task.input |
 | `--task DIR` | Run existing task directory |
+| `--task-dir DIR` | Task directory with task.md (used with --flow) |
 | `--status ID` | Show task status |
 | `--resume ID` | Resume previous run |
 | `--pause` | Start in paused state |
 | `--no-ui` | Disable Rich terminal UI |
 | `--agents-dir PATH` | Custom agents directory |
 | `--daemon` | Run as daemon |
+| `--daemon-interval N` | Daemon check interval in seconds (default: 5) |
+| `--max-workflows N` | Max parallel workflows in daemon mode (default: 3) |
 | `--ws-port PORT` | WebSocket port (default: 8765) |
+| `-V, --version` | Show version and exit |
 
 ## Directory Structure
 

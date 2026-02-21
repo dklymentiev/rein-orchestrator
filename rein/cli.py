@@ -23,7 +23,9 @@ from rein.state import ReinState
 def main():
     """Entry point for the `rein` CLI command."""
 
+    from rein import __version__
     parser = argparse.ArgumentParser(description='Rein - Workflow Orchestrator')
+    parser.add_argument('--version', '-V', action='version', version=f'rein {__version__}')
     parser.add_argument('config', nargs='?', help='Path to YAML configuration file (or use --flow/--task)')
     parser.add_argument('--flow', metavar='FLOW_NAME', help='Flow name (creates new task automatically)')
     parser.add_argument('--input', metavar='JSON', help='Input parameters as JSON (used with --flow)')
