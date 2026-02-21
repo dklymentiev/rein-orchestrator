@@ -38,6 +38,7 @@ requirements.txt
 !schemas/*.json
 !tasks/**/outputs/*.json
 !agents/flows/workflow-generation/test-input.json
+!integrations/**/*.json
 
 # Logs
 *.log

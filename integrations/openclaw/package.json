@@ -1,0 +1,58 @@
+{
+  "name": "@rein-ai/openclaw-plugin",
+  "version": "1.0.0",
+  "description": "Run Rein multi-agent workflows from OpenClaw",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "reinPath": {
+        "type": "string",
+        "description": "Path to rein CLI executable (default: searches PATH for 'rein', falls back to 'python -m rein')"
+      },
+      "agentsDir": {
+        "type": "string",
+        "description": "Path to agents directory containing flows/, specialists/, teams/"
+      },
+      "timeout": {
+        "type": "number",
+        "description": "Workflow execution timeout in seconds (default: 600)",
+        "default": 600
+      },
+      "gatewayUrl": {
+        "type": "string",
+        "description": "Rein HTTP Gateway URL (e.g. http://your-server:8200). If set, uses HTTP instead of local subprocess"
+      },
+      "apiKey": {
+        "type": "string",
+        "description": "API key for Rein HTTP Gateway authentication"
+      }
+    }
+  },
+  "dependencies": {
+    "yaml": "^2.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/",
+    "skills/"
+  ]
+}
