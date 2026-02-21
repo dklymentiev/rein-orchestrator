@@ -1,5 +1,5 @@
 """
-ValidationEngine for Rein v2.5.4 workflows.
+ValidationEngine for Rein workflows.
 Orchestrates JSON Schema validation, Pydantic model validation, and cross-reference checks.
 """
 

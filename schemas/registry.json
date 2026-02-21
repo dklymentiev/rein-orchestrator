@@ -109,20 +109,7 @@
       "migration_script": null
     }
   },
-  "migration_scripts": {
-    "2.5.1_to_2.5.2": {
-      "path": "migrations/2.5.1_to_2.5.2.py",
-      "description": "Add flow control parameters to existing workflows"
-    },
-    "2.5.2_to_2.5.3": {
-      "path": "migrations/2.5.2_to_2.5.3.py",
-      "description": "Add schema_version field and validate with new schemas"
-    },
-    "2.5.3_to_2.5.4": {
-      "path": "migrations/2.5.3_to_2.5.4.py",
-      "description": "No migration needed - next and max_runs are optional fields"
-    }
-  },
+  "migration_scripts": {},
   "deprecation_notices": {
     "2.5.1": {
       "deprecated_in": "2.5.2",
@@ -131,29 +118,25 @@
     }
   },
   "model_aliases": {
-    "anthropic/claude-3.5-sonnet": {
-      "full_name": "anthropic/claude-3.5-sonnet",
+    "anthropic/claude-sonnet-4": {
+      "full_name": "anthropic/claude-sonnet-4",
       "provider": "OpenRouter",
       "default": true
     },
-    "anthropic/claude-3-opus": {
-      "full_name": "anthropic/claude-3-opus",
+    "anthropic/claude-opus-4": {
+      "full_name": "anthropic/claude-opus-4",
       "provider": "OpenRouter"
     },
-    "anthropic/claude-3-haiku": {
-      "full_name": "anthropic/claude-3-haiku",
+    "anthropic/claude-haiku-4": {
+      "full_name": "anthropic/claude-haiku-4",
       "provider": "OpenRouter"
     },
-    "openai/gpt-4-turbo": {
-      "full_name": "openai/gpt-4-turbo",
+    "openai/gpt-4o": {
+      "full_name": "openai/gpt-4o",
       "provider": "OpenRouter"
     },
-    "openai/gpt-3.5-turbo": {
-      "full_name": "openai/gpt-3.5-turbo",
-      "provider": "OpenRouter"
-    },
-    "google/gemini-pro": {
-      "full_name": "google/gemini-pro",
+    "google/gemini-2.0-flash": {
+      "full_name": "google/gemini-2.0-flash",
       "provider": "OpenRouter"
     }
   }
