@@ -51,6 +51,14 @@ export OPENAI_API_KEY=sk-...
 # ollama serve
 ```
 
+> **Want to skip ahead?** Run the included example instead:
+> ```bash
+> cd examples/01-hello-world
+> rein --agents-dir ./agents workflow.yaml --no-ui
+> ```
+> See [examples/01-hello-world/README.md](../examples/01-hello-world/README.md)
+> for details. Otherwise, keep reading to build one from scratch.
+
 ## 3. Create your first workflow
 
 Set up a project directory with the required structure:
@@ -113,8 +121,10 @@ description: "Single-block research workflow"
 team: research-team
 max_parallel: 1
 
-provider: anthropic
-model: claude-sonnet-4-20250514
+# Provider is auto-detected from your API key environment variable.
+# To override, uncomment:
+#   provider: anthropic
+#   model: claude-sonnet-4-20250514
 
 blocks:
   - name: research
@@ -128,19 +138,9 @@ blocks:
     depends_on: []
 ```
 
-If you are using OpenAI, change the provider/model lines:
-
-```yaml
-provider: openai
-model: gpt-4o
-```
-
-If you are using Ollama:
-
-```yaml
-provider: ollama
-model: llama3.1
-```
+Rein auto-detects your provider from the environment variable you set in step 2.
+To use a specific provider/model, add `provider:` and `model:` to the YAML
+(see the [README](../README.md#provider-configuration) for all options).
 
 ### 3d. Run it
 
@@ -223,9 +223,6 @@ description: "Research then write workflow"
 team: research-team
 max_parallel: 1
 
-provider: anthropic
-model: claude-sonnet-4-20250514
-
 blocks:
   - name: research
     specialist: researcher
@@ -297,6 +294,28 @@ Use these in block prompts to pass data between blocks:
 | `{{ blockname.json }}` | Full JSON output of a previous block |
 | `{{ task.input.topic }}` | Input parameter (when using `--input '{"topic": "..."}'`) |
 | `{{ task.input.* }}` | Any field from the JSON input |
+
+## Troubleshooting
+
+**`rein: command not found`**
+Make sure the pip install directory is on your PATH. Try `python -m rein --help`
+as a fallback, or re-install with `pip install --user rein-ai[anthropic]`.
+
+**`Python 3.10+ required` / syntax errors on import**
+Rein requires Python 3.10 or later. Check with `python3 --version`. If you have
+multiple Python versions, use `python3.10 -m pip install rein-ai[anthropic]`.
+
+**`API key not found` / authentication errors**
+Verify your key is exported in the current shell:
+```bash
+echo $ANTHROPIC_API_KEY   # Should print sk-ant-...
+```
+If empty, re-export it. The variable must be set in the same terminal where you
+run `rein`.
+
+**No output / empty run directory**
+Check `/tmp/rein-runs/` for the latest run. If missing, the workflow may have
+failed -- re-run with `--no-ui` to see error messages in the terminal.
 
 ## Next steps
 

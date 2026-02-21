@@ -1,3 +1,8 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://github.com/rein-orchestrator/rein/actions/workflows/test.yml/badge.svg)](https://github.com/rein-orchestrator/rein/actions/workflows/test.yml)
+[![PyPI](https://img.shields.io/pypi/v/rein-ai.svg)](https://pypi.org/project/rein-ai/)
+
 # Rein
 
 Declarative YAML workflow orchestrator for multi-agent AI.
@@ -36,6 +41,8 @@ rein --agents-dir ./agents workflow.yaml --no-ui
 ```
 
 Works with **any LLM**: Anthropic Claude, OpenAI GPT, Ollama local models, OpenRouter.
+
+For a step-by-step tutorial that walks you through creating specialists, teams, and workflows from scratch, see the **[Getting Started Guide](docs/getting-started.md)**.
 
 ## How It Works
 
@@ -402,6 +409,14 @@ Runtime controls (via stdin): `p` = pause, `r` = resume, `q` = quit.
 - SQLite (state persistence, crash recovery)
 - YAML (workflow definitions)
 - Markdown (specialist prompts)
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+
+For security issues, please see [SECURITY.md](SECURITY.md).
+
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
