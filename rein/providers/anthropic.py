@@ -36,20 +36,38 @@ class AnthropicProvider(Provider):
         )
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
 
-    def call(self, prompt: str, stage: str = "") -> str:
+    def call(self, prompt: str, stage: str = ""):
         import anthropic
+        import time as _time
+        from .base import UsageStats, calculate_cost
 
         self.logger(f"ANTHROPIC CALL | stage={stage} | model={self.model}")
 
+        t0 = _time.monotonic()
         client = anthropic.Anthropic(api_key=self.api_key) if self.api_key else anthropic.Anthropic()
         message = client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
+        duration_ms = int((_time.monotonic() - t0) * 1000)
+
         result = message.content[0].text
-        self.logger(f"ANTHROPIC RESPONSE | stage={stage} | length={len(result)}")
-        return result
+        input_tokens = getattr(message.usage, 'input_tokens', 0)
+        output_tokens = getattr(message.usage, 'output_tokens', 0)
+        cost = calculate_cost(self.model, input_tokens, output_tokens)
+
+        usage = UsageStats(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=cost,
+            model=self.model,
+            provider="anthropic",
+            duration_ms=duration_ms,
+        )
+
+        self.logger(f"ANTHROPIC RESPONSE | stage={stage} | length={len(result)} | tokens={usage.total_tokens} | cost=${cost:.4f}")
+        return result, usage
 
     @property
     def provider_name(self) -> str:

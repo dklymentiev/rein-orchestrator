@@ -20,7 +20,7 @@ Supported providers:
 import os
 from typing import Optional, Callable
 
-from .base import Provider
+from .base import Provider, UsageStats
 from .anthropic import AnthropicProvider
 from .openai import OpenAIProvider
 from .ollama import OllamaProvider
@@ -116,6 +116,7 @@ def list_providers() -> list:
 
 __all__ = [
     "Provider",
+    "UsageStats",
     "AnthropicProvider",
     "OpenAIProvider",
     "OllamaProvider",

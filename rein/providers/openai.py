@@ -39,11 +39,14 @@ class OpenAIProvider(Provider):
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self.base_url = base_url or os.environ.get("OPENAI_BASE_URL", "")
 
-    def call(self, prompt: str, stage: str = "") -> str:
+    def call(self, prompt: str, stage: str = ""):
         from openai import OpenAI
+        import time as _time
+        from .base import UsageStats, calculate_cost
 
         self.logger(f"OPENAI CALL | stage={stage} | model={self.model}")
 
+        t0 = _time.monotonic()
         client_kwargs = {}
         if self.api_key:
             client_kwargs["api_key"] = self.api_key
@@ -57,9 +60,24 @@ class OpenAIProvider(Provider):
             temperature=self.temperature,
             messages=[{"role": "user", "content": prompt}],
         )
+        duration_ms = int((_time.monotonic() - t0) * 1000)
+
         result = response.choices[0].message.content
-        self.logger(f"OPENAI RESPONSE | stage={stage} | length={len(result)}")
-        return result
+        input_tokens = getattr(response.usage, 'prompt_tokens', 0) if response.usage else 0
+        output_tokens = getattr(response.usage, 'completion_tokens', 0) if response.usage else 0
+        cost = calculate_cost(self.model, input_tokens, output_tokens)
+
+        usage = UsageStats(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=cost,
+            model=self.model,
+            provider="openai",
+            duration_ms=duration_ms,
+        )
+
+        self.logger(f"OPENAI RESPONSE | stage={stage} | length={len(result)} | tokens={usage.total_tokens} | cost=${cost:.4f}")
+        return result, usage
 
     @property
     def provider_name(self) -> str:

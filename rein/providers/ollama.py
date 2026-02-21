@@ -39,9 +39,13 @@ class OllamaProvider(Provider):
         )
         self.base_url = base_url or os.environ.get("OLLAMA_URL", self.DEFAULT_URL)
 
-    def call(self, prompt: str, stage: str = "") -> str:
+    def call(self, prompt: str, stage: str = ""):
+        import time as _time
+        from .base import UsageStats
+
         self.logger(f"OLLAMA CALL | stage={stage} | model={self.model} | url={self.base_url}")
 
+        t0 = _time.monotonic()
         response = requests.post(
             f"{self.base_url}/api/chat",
             json={
@@ -56,10 +60,25 @@ class OllamaProvider(Provider):
             timeout=300,  # Local models can be slow
         )
         response.raise_for_status()
+        duration_ms = int((_time.monotonic() - t0) * 1000)
 
-        result = response.json()["message"]["content"]
-        self.logger(f"OLLAMA RESPONSE | stage={stage} | length={len(result)}")
-        return result
+        data = response.json()
+        result = data["message"]["content"]
+
+        input_tokens = data.get("prompt_eval_count", 0)
+        output_tokens = data.get("eval_count", 0)
+
+        usage = UsageStats(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=0.0,  # Local model, free
+            model=self.model,
+            provider="ollama",
+            duration_ms=duration_ms,
+        )
+
+        self.logger(f"OLLAMA RESPONSE | stage={stage} | length={len(result)} | tokens={usage.total_tokens}")
+        return result, usage
 
     @property
     def provider_name(self) -> str:

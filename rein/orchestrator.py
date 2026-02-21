@@ -31,6 +31,7 @@ from rein import (
     format_json_as_md, save_readable_output, get_block_dir, get_output_dir
 )
 from rein.providers import create_provider
+from rein.providers.base import UsageStats
 from rein.tasks import update_task_status as _update_task_status
 from rein.tasks import save_task_to_memory as _save_task_to_memory
 from rein.log import get_logger, get_console
@@ -122,6 +123,10 @@ class ProcessManager:
         self.config_loader = ConfigLoader(agents_dir=self.agents_dir, logger=self._write_rein_log)
         # Provider will be initialized when workflow config is loaded (see _init_provider)
         self._provider = None
+
+        # Cost/token tracking
+        self._block_usage: Dict[str, UsageStats] = {}  # block_name -> usage
+        self._total_usage = UsageStats()  # Accumulated totals
 
         # Write metadata
         if resume_run_id:
@@ -469,11 +474,28 @@ class ProcessManager:
             raise
 
     def call_claude(self, prompt: str, stage: str) -> str:
-        """Call LLM provider (backward-compatible name)."""
+        """Call LLM provider and track usage (backward-compatible name).
+
+        Returns only the text; usage is accumulated internally.
+        """
         if self._provider is None:
             # Late init with empty config - will auto-detect from env
             self._init_provider({})
-        return self._provider.call(prompt, stage)
+
+        text, usage = self._provider.call(prompt, stage)
+        self._accumulate_usage(stage, usage)
+        return text
+
+    def _accumulate_usage(self, block_name: str, usage: UsageStats):
+        """Accumulate per-block and total usage stats."""
+        self._block_usage[block_name] = usage
+        self._total_usage.input_tokens += usage.input_tokens
+        self._total_usage.output_tokens += usage.output_tokens
+        self._total_usage.cost += usage.cost
+        self._total_usage.duration_ms += usage.duration_ms
+        if not self._total_usage.provider:
+            self._total_usage.provider = usage.provider
+            self._total_usage.model = usage.model
 
     def _prepare_input_dir(self, block_name: str, depends_on: list) -> str:
         """Create task/block/inputs/ directory (v3.0: no symlinks, direct reads via task_dir)"""
@@ -944,12 +966,16 @@ class ProcessManager:
                     process.progress = 75
 
                 # Save result from Claude (only if not custom - custom script saves its own result)
+                block_usage = self._block_usage.get(name)
+                save_data = {
+                    "stage": name,
+                    "result": result,
+                    "timestamp": datetime.now().isoformat()
+                }
+                if block_usage:
+                    save_data["usage"] = block_usage.to_dict()
                 with open(save_file, 'w') as f:
-                    json.dump({
-                        "stage": name,
-                        "result": result,
-                        "timestamp": datetime.now().isoformat()
-                    }, f, indent=2, ensure_ascii=False)
+                    json.dump(save_data, f, indent=2, ensure_ascii=False)
 
             # POST-PHASE: Run post-processing logic (after Claude)
             if logic_config.get('post'):
@@ -1288,6 +1314,13 @@ class ProcessManager:
                 "log_dir": self.log_dir
             }
 
+            # Add usage/cost data to summary
+            if self._total_usage.total_tokens > 0:
+                summary["usage"] = self._total_usage.to_dict()
+                summary["block_usage"] = {
+                    name: u.to_dict() for name, u in self._block_usage.items()
+                }
+
             # Save metadata
             with open(os.path.join(self.run_dir, "metadata.json"), 'w') as f:
                 json.dump(self.metadata, f, indent=2)
@@ -1298,6 +1331,17 @@ class ProcessManager:
 
             # Log completion
             self._write_rein_log(f"REIN FINISHED | completed={completed} | failed={failed} | total={len(self.processes)}")
+
+            # Log cost summary
+            if self._total_usage.total_tokens > 0:
+                cost_line = (
+                    f"[COST] Total: ${self._total_usage.cost:.4f} | "
+                    f"Tokens: {self._total_usage.total_tokens:,} "
+                    f"(in:{self._total_usage.input_tokens:,} out:{self._total_usage.output_tokens:,}) | "
+                    f"Provider: {self._total_usage.provider} | Model: {self._total_usage.model}"
+                )
+                self._write_rein_log(cost_line)
+                console.info(cost_line)
 
             # v3.0: Update task status file and task.json
             if self.task_dir:
