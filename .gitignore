@@ -28,8 +28,12 @@ task-watcher.sh
 workflow-100.yaml
 rein-workflows.sh
 test-phase-2-5.py
+rein-generator/
+output.txt
+test-input.txt
+requirements.txt
 
-# Temporary outputs (should be in tasks/)
+# Temporary outputs
 *.json
 !schemas/*.json
 !tasks/**/outputs/*.json
@@ -40,6 +44,9 @@ test-phase-2-5.py
 
 # SQLite
 *.db
+
+# Testing cache
+.pytest_cache/
 
 # Server-specific overrides (not part of open-source release)
 docker-compose.override.yml
