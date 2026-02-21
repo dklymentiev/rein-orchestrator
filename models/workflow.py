@@ -1,5 +1,5 @@
 """
-Pydantic models for Rein v2.6.0 workflow definitions.
+Pydantic models for Rein workflow definitions.
 Includes business logic validation for circular dependencies, timeouts, and data flow.
 Supports state machine flow control with `next` field.
 Supports declarative input validation with `inputs` section.

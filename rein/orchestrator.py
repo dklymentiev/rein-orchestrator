@@ -201,10 +201,6 @@ class ProcessManager:
         """Save readable MD output (delegates to output module)"""
         save_readable_output(json_file, block_name, result, self._write_rein_log)
 
-    def _format_json_as_md(self, data: dict, level: int = 0) -> list:
-        """Format JSON as markdown (delegates to output module)"""
-        return format_json_as_md(data, level)
-
     def load_config(self, config: dict, workflow_file: str = None):
         """Load block configuration"""
         self.config = config  # Save full config for task mode
@@ -290,7 +286,7 @@ class ProcessManager:
         provided = set(self.task_input.keys())
 
         for field_name, field_config in inputs_spec.items():
-            # field_config can be a dict (from YAML) or InputFieldConfig (from Pydantic)
+            # field_config can be a dict (from YAML) or InputFieldConfig (from models.workflow)
             if isinstance(field_config, dict):
                 is_required = field_config.get('required', True)
                 default_val = field_config.get('default')
@@ -572,6 +568,38 @@ class ProcessManager:
         max_dep_phase = max(block_phases.get(dep, 0) for dep in depends_on) if depends_on else 0
         return max_dep_phase + 1
 
+    def _get_dependents_map(self) -> Dict[str, List[str]]:
+        """Build reverse dependency graph: {block -> [blocks that depend on it]}"""
+        dependents: Dict[str, List[str]] = {}
+        for block in self.all_blocks:
+            name = block.get('name') or block.get('stage', 'unknown')
+            for dep in block.get('depends_on', []):
+                if dep not in dependents:
+                    dependents[dep] = []
+                dependents[dep].append(name)
+        return dependents
+
+    def _cascade_invalidation(self, failed_blocks: Set[str], dependents_map: Dict[str, List[str]]) -> Set[str]:
+        """BFS from failed blocks through dependents. Returns full set needing re-run."""
+        needs_rerun = set(failed_blocks)
+        queue = list(failed_blocks)
+        while queue:
+            current = queue.pop(0)
+            for downstream in dependents_map.get(current, []):
+                if downstream not in needs_rerun:
+                    needs_rerun.add(downstream)
+                    queue.append(downstream)
+                    self._write_rein_log(f"CASCADE | {downstream} | invalidated (depends on {current})")
+        return needs_rerun
+
+    def _clean_block_outputs(self, block_name: str):
+        """Delete output files for a block to prevent stale data."""
+        import shutil
+        outputs_dir = os.path.join(self.run_dir, block_name, "outputs")
+        if os.path.exists(outputs_dir):
+            shutil.rmtree(outputs_dir)
+            self._write_rein_log(f"CLEANUP | {block_name} | removed outputs")
+
     def _initialize_all_processes(self):
         """Initialize all processes in DB with 'waiting' status (or restore existing)"""
         # First, load existing processes from DB to check for completed blocks
@@ -581,6 +609,17 @@ class ProcessManager:
                 existing_status[db_proc.name] = db_proc.status
         except Exception:
             pass
+
+        # Cascade invalidation: find failed/running blocks and their downstream dependents
+        needs_rerun: Set[str] = set()
+        failed_blocks = {name for name, status in existing_status.items() if status in ("failed", "running")}
+        if failed_blocks:
+            dependents_map = self._get_dependents_map()
+            needs_rerun = self._cascade_invalidation(failed_blocks, dependents_map)
+            self._write_rein_log(f"RESUME | {len(failed_blocks)} failed/running blocks, {len(needs_rerun)} total to re-run")
+            # Clean outputs for all invalidated blocks
+            for block_name in needs_rerun:
+                self._clean_block_outputs(block_name)
 
         # First pass - calculate phases
         block_phases: Dict[str, int] = {}
@@ -607,9 +646,9 @@ class ProcessManager:
             next_spec = block.get('next')
             max_runs = block.get('max_runs', 1)
 
-            # Check if block already completed - skip reinitializing
+            # Check if block already completed and not invalidated - skip reinitializing
             prev_status = existing_status.get(name)
-            if prev_status == "done":
+            if prev_status == "done" and name not in needs_rerun:
                 self._write_rein_log(f"RESUME SKIP | {name} | already done")
                 self.completed.add(name)
                 restored_count += 1

@@ -14,7 +14,7 @@ Configure in Claude Desktop (claude_desktop_config.json):
           "command": "python",
           "args": ["-m", "rein.mcp_server"],
           "env": {
-            "ANTHROPIC_API_KEY": "sk-ant-...",
+            "ANTHROPIC_API_KEY": "<YOUR_API_KEY>",
             "REIN_AGENTS_DIR": "/path/to/agents"
           }
         }

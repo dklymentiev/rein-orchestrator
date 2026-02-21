@@ -11,7 +11,7 @@ from rein.state import ReinState
 
 
 def update_task_status(status_path, status, **kwargs):
-    """DEPRECATED: Status is now tracked in rein.db (source of truth)."""
+    """Legacy status callback. Primary status is tracked in rein.db."""
     pass
 
 
@@ -134,7 +134,8 @@ def execute_task(task_id: str, agents_dir: str) -> int:
         manager.rein_log_file = log_file
         manager.db_path = os.path.join(task_path, "state", "rein.db")
         os.makedirs(manager.log_dir, exist_ok=True)
-        manager.state = ReinState(manager.db_path, resume=False)
+        db_exists = os.path.exists(manager.db_path)
+        manager.state = ReinState(manager.db_path, resume=db_exists)
 
         manager.load_config(config, workflow_file=flow_path)
         manager.run_workflow()

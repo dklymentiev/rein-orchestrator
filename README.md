@@ -5,9 +5,13 @@
 
 # Rein
 
-Declarative YAML workflow orchestrator for multi-agent AI.
+**Give a complex task to a team of AI agents instead of just one.**
 
-Define AI agent workflows in YAML -- no Python code required. Rein coordinates specialists, manages dependencies, runs blocks in parallel, and handles conditional branching with revision loops.
+Instead of writing a single massive prompt, you break work into steps and assign each step to a specialist -- a researcher, a writer, an editor. Each one gets the previous agent's output automatically. They can work in parallel, loop back for revisions, and make decisions based on results.
+
+You describe *what* should happen in plain text files (YAML + Markdown). Rein figures out the *how* -- launches agents, passes data between them, tracks progress, handles failures.
+
+Works with any LLM: Claude, GPT, Ollama (local/free), OpenRouter (100+ models). No Python code required.
 
 ```yaml
 # workflow.yaml
@@ -152,12 +156,21 @@ Environment variables:
 | openai | `OPENAI_API_KEY` | Yes |
 | ollama | `OLLAMA_URL` | No (default: localhost:11434) |
 | openrouter | `OPENROUTER_API_KEY` | Yes |
+| gateway | `AI_GATEWAY_URL` or `BRAIN_API_URL` | Yes |
 
-Auto-detection: if no `provider:` is set in YAML, Rein checks environment variables in order: `ANTHROPIC_API_KEY` -> `OPENAI_API_KEY` -> `OPENROUTER_API_KEY` -> `OLLAMA_URL`.
+Auto-detection: if no `provider:` is set in YAML, Rein checks environment variables in order: `ANTHROPIC_API_KEY` -> `OPENAI_API_KEY` -> `OPENROUTER_API_KEY` -> `OLLAMA_URL` -> `AI_GATEWAY_URL`.
+
+Copy `.env.example` to `.env` and fill in your preferred provider key:
+
+```bash
+cp .env.example .env
+```
 
 ## Examples
 
-Five progressive examples in the `examples/` directory:
+Ten progressive examples in the `examples/` directory:
+
+### Basics (01-05)
 
 | # | Example | Pattern | What you learn |
 |---|---------|---------|----------------|
@@ -166,6 +179,16 @@ Five progressive examples in the `examples/` directory:
 | 03 | [research-team](examples/03-research-team/) | 3 parallel + 1 | Fan-out / fan-in pattern |
 | 04 | [deliberation](examples/04-deliberation/) | 3-phase debate | Cross-review and multi-phase |
 | 05 | [conditional](examples/05-conditional/) | Branching + loops | if/else, revision loops, max_runs |
+
+### Advanced (06-10)
+
+| # | Example | Pattern | What you learn |
+|---|---------|---------|----------------|
+| 06 | [product-analysis](examples/06-product-analysis/) | 10 blocks, 4 phases | Multi-role product analysis (PM, UX, Business) |
+| 07 | [brainstorm](examples/07-brainstorm/) | 7 blocks, diverge/converge | Divergent ideation + cross-pollination + synthesis |
+| 08 | [generic-deliberation](examples/08-generic-deliberation/) | 7 blocks, 3 phases | Creator/Critic/Integrator -- reusable template |
+| 09 | [docs-architecture](examples/09-docs-architecture/) | 10 blocks, 4 phases | Architecture review (Architect, API, PM) |
+| 10 | [creative-writing](examples/10-creative-writing/) | 5 blocks, sequential | Logic scripts: validate, post-process, enrich |
 
 ```bash
 # Try any example
@@ -344,6 +367,8 @@ rein --daemon --agents-dir ./agents --ws-port 8765
 ```
 
 The daemon monitors `agents/tasks/` for directories with `state/status = "pending"` and executes them automatically. Live updates are broadcast via WebSocket on the configured port.
+
+For systemd deployment, see `deploy/rein-daemon.service`.
 
 ## MCP Server
 

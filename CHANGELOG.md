@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default file access restricted to task directory only
 
 ### Added
-- SECURITY-POLICY.md documenting task isolation rules
+- SECURITY.md documenting task isolation rules
 
 ## [3.1.0] - 2026-01-02
 

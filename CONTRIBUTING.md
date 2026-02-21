@@ -33,7 +33,7 @@ Providers live in `rein/providers/`. To add one:
 
 1. Create `rein/providers/your_provider.py`
 2. Inherit from the `Provider` base class in `rein/providers/base.py`
-3. Implement the `call(prompt: str, stage: str = "") -> str` method
+3. Implement the `call(prompt: str, stage: str = "") -> Tuple[str, UsageStats]` method
 4. Register your provider in `rein/providers/__init__.py`:
    - Import your class
    - Add an entry to the `PROVIDERS` dict
@@ -42,7 +42,8 @@ Providers live in `rein/providers/`. To add one:
 Example skeleton:
 
 ```python
-from .base import Provider
+from typing import Tuple
+from .base import Provider, UsageStats
 
 class YourProvider(Provider):
     def __init__(self, model: str = "", max_tokens: int = 4096,
@@ -51,9 +52,14 @@ class YourProvider(Provider):
                          temperature=temperature, logger=logger, **kwargs)
         # Initialize your client here
 
-    def call(self, prompt: str, stage: str = "") -> str:
-        # Call your LLM API and return the response text
-        ...
+    def call(self, prompt: str, stage: str = "") -> Tuple[str, UsageStats]:
+        # Call your LLM API and return (response_text, usage_stats)
+        result = "..."
+        usage = UsageStats(
+            input_tokens=0, output_tokens=0, cost=0.0,
+            model=self.model, provider="your_provider", duration_ms=0
+        )
+        return result, usage
 ```
 
 Then in `rein/providers/__init__.py`:
@@ -97,6 +103,6 @@ Use GitHub Issues. Include:
 
 - What you expected to happen
 - What actually happened
-- Rein version (`rein --version` or check `VERSION` file)
+- Rein version (`rein --version` or check `rein/__init__.py`)
 - Python version
 - Relevant config (workflow YAML, provider settings) with API keys redacted

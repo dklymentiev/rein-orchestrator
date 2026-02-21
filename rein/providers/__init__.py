@@ -16,6 +16,7 @@ Supported providers:
     - openai: OpenAI API (OPENAI_API_KEY), also works with Azure
     - ollama: Local models via Ollama (OLLAMA_URL)
     - openrouter: Multi-model proxy (OPENROUTER_API_KEY)
+    - gateway: AI Gateway proxy (AI_GATEWAY_URL)
 """
 import os
 from typing import Optional, Callable
@@ -25,12 +26,14 @@ from .anthropic import AnthropicProvider
 from .openai import OpenAIProvider
 from .ollama import OllamaProvider
 from .openrouter import OpenRouterProvider
+from .gateway import GatewayProvider
 
 PROVIDERS = {
     "anthropic": AnthropicProvider,
     "openai": OpenAIProvider,
     "ollama": OllamaProvider,
     "openrouter": OpenRouterProvider,
+    "gateway": GatewayProvider,
 }
 
 
@@ -93,9 +96,12 @@ def create_provider(
     if os.environ.get("OLLAMA_URL"):
         return OllamaProvider(model=model, max_tokens=max_tokens, temperature=temperature, logger=logger, **kwargs)
 
+    if os.environ.get("AI_GATEWAY_URL") or os.environ.get("BRAIN_API_URL"):
+        return GatewayProvider(model=model, max_tokens=max_tokens, temperature=temperature, logger=logger, **kwargs)
+
     raise ValueError(
         "No provider specified and no API keys found in environment. "
-        "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, or OLLAMA_URL"
+        "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, OLLAMA_URL, or AI_GATEWAY_URL"
     )
 
 
@@ -111,6 +117,7 @@ __all__ = [
     "OpenAIProvider",
     "OllamaProvider",
     "OpenRouterProvider",
+    "GatewayProvider",
     "create_provider",
     "list_providers",
 ]
