@@ -1,7 +1,6 @@
 """
 Rein State Manager - SQLite-based state persistence for workflow execution
 """
-import os
 import sqlite3
 import time
 from typing import List

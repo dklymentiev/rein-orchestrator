@@ -9,11 +9,9 @@ Modules:
 - state: SQLite state persistence
 - output: Output formatting and saving helpers
 - ui: Rich terminal UI
-- claude: Legacy client (deprecated, use providers instead)
 """
 
 from .models import Process, BlockConfig
-from .claude import ClaudeClient  # backward compatibility
 from .config import ConfigLoader
 from .logic import LogicRunner
 from .state import ReinState
@@ -25,7 +23,6 @@ __version__ = "3.2.0"
 __all__ = [
     "Process",
     "BlockConfig",
-    "ClaudeClient",
     "ConfigLoader",
     "LogicRunner",
     "ReinState",

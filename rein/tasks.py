@@ -4,7 +4,6 @@ Rein Tasks - Task execution helpers.
 Functions for executing tasks, saving results to memory, and status management.
 """
 import os
-import sys
 import json
 import yaml
 

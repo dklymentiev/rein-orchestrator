@@ -3,7 +3,7 @@ import os
 import pytest
 from unittest.mock import patch, MagicMock
 
-from rein.providers import create_provider, list_providers, Provider, PROVIDERS
+from rein.providers import create_provider, list_providers, Provider
 from rein.providers.anthropic import AnthropicProvider
 from rein.providers.openai import OpenAIProvider
 from rein.providers.ollama import OllamaProvider
@@ -138,19 +138,6 @@ class TestOllamaProvider:
     def test_custom_url(self):
         p = OllamaProvider(base_url="http://gpu-server:11434")
         assert p.base_url == "http://gpu-server:11434"
-
-
-@pytest.mark.skipif("gateway" not in PROVIDERS, reason="gateway provider not installed")
-class TestGatewayProvider:
-    """Test GatewayProvider (optional, internal use only)"""
-
-    def test_no_url_raises_on_call(self):
-        """Gateway without URL raises on call"""
-        from rein.providers.gateway import GatewayProvider
-        with patch.dict(os.environ, {}, clear=True):
-            p = GatewayProvider()
-            with pytest.raises(ValueError, match="AI_GATEWAY_URL is required"):
-                p.call("test prompt")
 
 
 class TestConfigIntegration:

@@ -12,32 +12,15 @@ dist/
 # IDE
 .claude/
 
-# Project internals (not part of open-source release)
-CLAUDE.md
-MEMORY.md
-SECURITY-POLICY.md
-PLAN-V3.md
-rein-v2.py
-rein-v1-archive/
-mock-agent.py
-search_bing.sh
-search_google.sh
-search_reddit.sh
-summarize.sh
-task-watcher.sh
-workflow-100.yaml
-rein-workflows.sh
-test-phase-2-5.py
-rein-generator/
-output.txt
-test-input.txt
-requirements.txt
+# Testing & coverage
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
 # Temporary outputs
 *.json
 !schemas/*.json
-!tasks/**/outputs/*.json
-!agents/flows/workflow-generation/test-input.json
 !integrations/**/*.json
 
 # Logs
@@ -46,13 +29,11 @@ requirements.txt
 # SQLite
 *.db
 
-# Testing cache
-.pytest_cache/
-
-# Server-specific overrides (not part of open-source release)
+# Server-specific (not part of open-source release)
 docker-compose.override.yml
 rein/providers/gateway.py
 
 # Integration build artifacts
 integrations/openclaw/node_modules/
 integrations/openclaw/package-lock.json
+integrations/openclaw/dist/

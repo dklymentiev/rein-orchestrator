@@ -33,13 +33,6 @@ PROVIDERS = {
     "openrouter": OpenRouterProvider,
 }
 
-# Optional: gateway provider (internal use, not shipped in open-source)
-try:
-    from .gateway import GatewayProvider
-    PROVIDERS["gateway"] = GatewayProvider
-    _has_gateway = True
-except ImportError:
-    _has_gateway = False
 
 
 def create_provider(
@@ -99,9 +92,6 @@ def create_provider(
 
     if os.environ.get("OLLAMA_URL"):
         return OllamaProvider(model=model, max_tokens=max_tokens, temperature=temperature, logger=logger, **kwargs)
-
-    if _has_gateway and os.environ.get("AI_GATEWAY_URL"):
-        return GatewayProvider(model=model, max_tokens=max_tokens, temperature=temperature, logger=logger, **kwargs)
 
     raise ValueError(
         "No provider specified and no API keys found in environment. "

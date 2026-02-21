@@ -19,7 +19,7 @@ SyslogIdentifier=rein-daemon
 
 # Environment
 Environment=PYTHONUNBUFFERED=1
-# Environment=ANTHROPIC_API_KEY=sk-ant-...
+# Environment=ANTHROPIC_API_KEY=your-key-here
 
 [Install]
 WantedBy=multi-user.target
