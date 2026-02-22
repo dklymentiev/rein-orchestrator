@@ -10,6 +10,10 @@ Step-by-step process for publishing a new version.
    ```bash
    make lint && make test && make typecheck
    ```
+4. Run release hygiene check (English-only, no emoji, no non-ASCII):
+   ```bash
+   make check-release
+   ```
 
 ## Bump Version
 

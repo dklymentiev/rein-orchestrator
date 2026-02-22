@@ -13,8 +13,8 @@ Iterative poetry creation with validation and post-processing scripts -- demonst
 ## How It Works
 
 ```
-ideation ──[validate: validate-themes.py]──> draft ──[post: enhance-draft.py]──>
-critique ──> revision ──[post: validate-revision.py]──> final_critique
+ideation --[validate: validate-themes.py]--> draft --[post: enhance-draft.py]-->
+critique --> revision --[post: validate-revision.py]--> final_critique
 ```
 
 Each logic script does pure Python work (no LLM calls):
