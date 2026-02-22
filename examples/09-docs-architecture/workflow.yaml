@@ -1,0 +1,272 @@
+schema_version: "2.6.0"
+name: docs-architecture
+team: team-deliberation
+description: Architecture deliberation with software architect, API designer, and product manager
+max_parallel: 3
+readable_outputs: true
+
+inputs:
+  topic:
+    description: "Architecture topic or question to deliberate"
+    required: true
+
+# USAGE:
+# rein --agents-dir ./agents workflow.yaml --no-ui --input '{"topic": "Should we merge our 3 document APIs into one?"}'
+#
+# Phase 1: Independent analysis by 3 specialists
+# Phase 2: Cross-review (each reads others' work)
+# Phase 3: Synthesis with all feedback
+# Phase 4: Final consolidated recommendation
+
+blocks:
+  # PHASE 1: Initial independent analysis
+  - name: architect_initial
+    phase: 1
+    specialist: architect-specialist
+    prompt: |
+      ARCHITECTURE QUESTION:
+      {{ task.input.topic }}
+
+      You are the Software Architect. Analyze this from system architecture perspective.
+      Focus on:
+      1. System design patterns (monolith vs microservices, shared vs separate DBs)
+      2. Data model consolidation (how to merge different schemas)
+      3. Technical complexity and maintainability
+      4. Migration and backwards compatibility
+      5. Your initial recommendation
+
+      Output JSON with:
+      - perspective: str (your role)
+      - architecture_analysis: str (detailed analysis)
+      - data_model_considerations: [str]
+      - technical_risks: [str]
+      - proposed_approach: str
+      - initial_recommendation: str
+    depends_on: []
+    parallel: true
+
+  - name: api_designer_initial
+    phase: 1
+    specialist: api-designer-specialist
+    prompt: |
+      API DESIGN QUESTION:
+      {{ task.input.topic }}
+
+      You are the API Designer. Analyze this from API and developer experience perspective.
+      Focus on:
+      1. API consolidation strategies
+      2. Endpoint design (REST structure, naming)
+      3. Developer experience (CLI, SDK, docs)
+      4. Versioning and migration path
+      5. Your initial recommendation
+
+      Output JSON with:
+      - perspective: str (your role)
+      - api_analysis: str (detailed analysis)
+      - endpoint_design: [str] (proposed endpoints)
+      - dx_considerations: [str]
+      - migration_strategy: str
+      - initial_recommendation: str
+    depends_on: []
+    parallel: true
+
+  - name: product_manager_initial
+    phase: 1
+    specialist: product-manager-specialist
+    prompt: |
+      PRODUCT QUESTION:
+      {{ task.input.topic }}
+
+      You are the Product Manager. Analyze this from user and business perspective.
+      Focus on:
+      1. User experience (how users organize and find documents)
+      2. Use cases (structured vs unstructured, search vs browse)
+      3. User mental models (folders vs tags vs search)
+      4. Adoption and learning curve
+      5. Your initial recommendation
+
+      Output JSON with:
+      - perspective: str (your role)
+      - user_analysis: str (detailed analysis)
+      - use_cases: [str]
+      - ux_considerations: [str]
+      - adoption_risks: [str]
+      - initial_recommendation: str
+    depends_on: []
+    parallel: true
+
+  # PHASE 2: Cross-review
+  - name: architect_review
+    phase: 2
+    specialist: architect-specialist
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Review your colleagues' analyses:
+      - API Designer: {{ api_designer_initial.json }}
+      - Product Manager: {{ product_manager_initial.json }}
+
+      Provide feedback:
+      1. Points you agree with
+      2. Points you disagree with
+      3. Technical constraints they missed
+      4. How their input affects your view
+
+      Output JSON with:
+      - agreements: [str]
+      - disagreements: [str]
+      - missed_constraints: [str]
+      - updated_view: str
+    depends_on: ["api_designer_initial", "product_manager_initial"]
+    parallel: true
+    continue_if_failed: true
+
+  - name: api_designer_review
+    phase: 2
+    specialist: api-designer-specialist
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Review your colleagues' analyses:
+      - Software Architect: {{ architect_initial.json }}
+      - Product Manager: {{ product_manager_initial.json }}
+
+      Provide feedback:
+      1. Points you agree with
+      2. Points you disagree with
+      3. API/DX concerns they missed
+      4. How their input affects your view
+
+      Output JSON with:
+      - agreements: [str]
+      - disagreements: [str]
+      - missed_considerations: [str]
+      - updated_view: str
+    depends_on: ["architect_initial", "product_manager_initial"]
+    parallel: true
+    continue_if_failed: true
+
+  - name: product_manager_review
+    phase: 2
+    specialist: product-manager-specialist
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Review your colleagues' analyses:
+      - Software Architect: {{ architect_initial.json }}
+      - API Designer: {{ api_designer_initial.json }}
+
+      Provide feedback:
+      1. Points you agree with
+      2. Points you disagree with
+      3. User/business concerns they missed
+      4. How their input affects your view
+
+      Output JSON with:
+      - agreements: [str]
+      - disagreements: [str]
+      - missed_user_concerns: [str]
+      - updated_view: str
+    depends_on: ["architect_initial", "api_designer_initial"]
+    parallel: true
+    continue_if_failed: true
+
+  # PHASE 3: Synthesis
+  - name: architect_synthesis
+    phase: 3
+    specialist: architect-specialist
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Synthesize all feedback into your final position:
+      - Your review: {{ architect_review.json }}
+      - API Designer review: {{ api_designer_review.json }}
+      - Product Manager review: {{ product_manager_review.json }}
+
+      Provide your final recommendation.
+
+      Output JSON with:
+      - final_position: str
+      - key_insights: [str]
+      - recommendation: str
+      - confidence: float (0-1)
+    depends_on: ["architect_review", "api_designer_review", "product_manager_review"]
+    parallel: true
+
+  - name: api_designer_synthesis
+    phase: 3
+    specialist: api-designer-specialist
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Synthesize all feedback into your final position:
+      - Your review: {{ api_designer_review.json }}
+      - Architect review: {{ architect_review.json }}
+      - Product Manager review: {{ product_manager_review.json }}
+
+      Provide your final recommendation.
+
+      Output JSON with:
+      - final_position: str
+      - key_insights: [str]
+      - recommendation: str
+      - confidence: float (0-1)
+    depends_on: ["architect_review", "api_designer_review", "product_manager_review"]
+    parallel: true
+
+  - name: product_manager_synthesis
+    phase: 3
+    specialist: product-manager-specialist
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Synthesize all feedback into your final position:
+      - Your review: {{ product_manager_review.json }}
+      - Architect review: {{ architect_review.json }}
+      - API Designer review: {{ api_designer_review.json }}
+
+      Provide your final recommendation.
+
+      Output JSON with:
+      - final_position: str
+      - key_insights: [str]
+      - recommendation: str
+      - confidence: float (0-1)
+    depends_on: ["architect_review", "api_designer_review", "product_manager_review"]
+    parallel: true
+
+  # PHASE 4: Final consolidation
+  - name: final_recommendation
+    phase: 4
+    specialist: architect-specialist
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Create the final consolidated recommendation based on all synthesis:
+      - Architect final: {{ architect_synthesis.json }}
+      - API Designer final: {{ api_designer_synthesis.json }}
+      - Product Manager final: {{ product_manager_synthesis.json }}
+
+      Consolidate into a clear, actionable recommendation.
+
+      Output JSON with:
+      - topic: str (the original question)
+      - final_recommendation: str (clear decision)
+      - reasoning: str (why this recommendation)
+      - architecture_summary: str (proposed architecture)
+      - api_summary: str (proposed API structure)
+      - user_experience_summary: str (how users will work with it)
+      - key_points: [str] (main supporting points)
+      - dissenting_views: [str] (if any disagreements remain)
+      - risks: [str] (main risks to consider)
+      - action_items: [str] (concrete next steps)
+      - confidence: float (team confidence 0-1)
+    depends_on: ["architect_synthesis", "api_designer_synthesis", "product_manager_synthesis"]
+    parallel: false

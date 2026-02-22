@@ -1,0 +1,256 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Rein Workflow Schema v2.6.0",
+  "description": "Schema for Rein v2.6.0 workflow definitions with declarative input validation",
+  "type": "object",
+  "required": ["schema_version", "name", "team", "blocks"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["2.5.3", "2.5.4", "2.5.5", "2.6.0"],
+      "description": "Schema version identifier"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Workflow name (lowercase, hyphens allowed)"
+    },
+    "team": {
+      "type": "string",
+      "pattern": "^team-[a-z0-9-]+$",
+      "description": "Team reference (must start with 'team-')"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Human-readable workflow description"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "author": {
+          "type": "string"
+        }
+      },
+      "description": "Optional metadata about the workflow"
+    },
+    "timeout": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 86400,
+      "description": "Global timeout in seconds (30 - 24h)"
+    },
+    "max_parallel": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 3,
+      "description": "Maximum number of parallel blocks to run simultaneously"
+    },
+    "readable_outputs": {
+      "type": "boolean",
+      "default": false,
+      "description": "Generate human-readable .md files alongside .json outputs"
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/inputField"
+      },
+      "description": "Declarative input field definitions. Keys are field names used in {{ task.input.FIELD }} placeholders."
+    },
+    "blocks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/definitions/block"
+      },
+      "description": "List of workflow blocks"
+    }
+  },
+  "definitions": {
+    "inputField": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Human-readable description of this input field"
+        },
+        "required": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this input must be provided (default: true)"
+        },
+        "default": {
+          "type": "string",
+          "description": "Default value when required=false and input is not provided"
+        }
+      },
+      "description": "Input field configuration for workflow validation"
+    },
+    "block": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "Block identifier (lowercase, underscores allowed)"
+        },
+        "phase": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Execution phase (blocks with same phase run in parallel if possible)"
+        },
+        "specialist": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "Reference to specialist (filename without .md extension)"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Template string for the prompt (may include {{ file.json }} placeholders)"
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "default": [],
+          "description": "List of block names this block depends on"
+        },
+        "parallel": {
+          "type": "boolean",
+          "default": false,
+          "description": "Can this block run in parallel with others in same phase"
+        },
+        "skip_if_previous_failed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Skip this block if any dependent block failed"
+        },
+        "continue_if_failed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Continue workflow execution even if this block fails"
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 7200,
+          "description": "Block-specific timeout in seconds (30 - 2h)"
+        },
+        "model": {
+          "type": "string",
+          "enum": [
+            "anthropic/claude-3.5-sonnet",
+            "anthropic/claude-3-opus",
+            "anthropic/claude-3-haiku",
+            "openai/gpt-4-turbo",
+            "openai/gpt-3.5-turbo",
+            "google/gemini-pro"
+          ],
+          "default": "anthropic/claude-3.5-sonnet",
+          "description": "LLM model to use (via OpenRouter)"
+        },
+        "save_as": {
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]+\\.json$",
+          "description": "Output filename to save results (optional, for inter-block data passing)"
+        },
+        "next": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z0-9_]+$",
+              "description": "Simple: always go to this block"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/nextCondition"
+              },
+              "description": "Conditional: list of if/else conditions"
+            }
+          ],
+          "description": "Next block to execute (state machine transition)"
+        },
+        "max_runs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 1,
+          "description": "Maximum times this block can run (loop protection)"
+        },
+        "logic": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "pre": {
+              "type": "string",
+              "description": "Python script to run before Claude call (relative path)"
+            },
+            "post": {
+              "type": "string",
+              "description": "Python script to run after Claude response (relative path)"
+            },
+            "validate": {
+              "type": "string",
+              "description": "Python script to validate block output (relative path)"
+            },
+            "custom": {
+              "oneOf": [
+                { "type": "boolean" },
+                { "type": "string" }
+              ],
+              "description": "If true, skip Claude API call (pre script handles everything). If string, path to custom script."
+            }
+          },
+          "description": "Logic phase scripts"
+        }
+      }
+    },
+    "nextCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "if": {
+          "type": "string",
+          "pattern": "^\\{\\{.*\\}\\}$",
+          "description": "Condition expression (e.g., '{{ result.approved }}')"
+        },
+        "else": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$",
+          "description": "Default/fallback block name"
+        },
+        "goto": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$",
+          "description": "Target block name"
+        }
+      },
+      "description": "Conditional transition with if/else logic"
+    }
+  }
+}

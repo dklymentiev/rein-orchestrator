@@ -1,0 +1,70 @@
+schema_version: "2.6.0"
+name: research-team
+description: "Three parallel researchers + synthesizer. Demonstrates fan-out/fan-in pattern."
+team: team-research
+max_parallel: 3
+
+# Provider is auto-detected from environment variables.
+# Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY
+# Or override explicitly:
+#   provider: anthropic
+#   model: claude-sonnet-4-20250514
+
+blocks:
+  # Phase 1: Three analysts run in PARALLEL (no dependencies between them)
+  - name: market_analysis
+    specialist: market-analyst
+    prompt: |
+      Analyze the market opportunity for the following product idea:
+
+      "An open-source CLI tool that lets developers define multi-agent AI
+      workflows in YAML files instead of writing Python code. Targets
+      developers who want to coordinate multiple AI agents but don't want
+      to learn LangChain/CrewAI/AutoGen frameworks."
+
+      Focus on market size, competitors, and opportunities.
+    depends_on: []
+
+  - name: tech_analysis
+    specialist: tech-analyst
+    prompt: |
+      Analyze the technical feasibility of the following product:
+
+      "An open-source CLI tool that lets developers define multi-agent AI
+      workflows in YAML files instead of writing Python code. Targets
+      developers who want to coordinate multiple AI agents but don't want
+      to learn LangChain/CrewAI/AutoGen frameworks."
+
+      Focus on architecture, tech stack, and scalability.
+    depends_on: []
+
+  - name: user_analysis
+    specialist: user-researcher
+    prompt: |
+      Analyze the user needs for the following product:
+
+      "An open-source CLI tool that lets developers define multi-agent AI
+      workflows in YAML files instead of writing Python code. Targets
+      developers who want to coordinate multiple AI agents but don't want
+      to learn LangChain/CrewAI/AutoGen frameworks."
+
+      Focus on personas, pain points, and adoption barriers.
+    depends_on: []
+
+  # Phase 2: Synthesizer reads ALL three analyses (fan-in)
+  - name: synthesis
+    specialist: synthesizer
+    prompt: |
+      Synthesize the following research into a unified recommendation:
+
+      MARKET ANALYSIS:
+      {{ market_analysis.json }}
+
+      TECHNICAL ANALYSIS:
+      {{ tech_analysis.json }}
+
+      USER RESEARCH:
+      {{ user_analysis.json }}
+
+      Produce a go/no-go recommendation with clear reasoning.
+    depends_on: [market_analysis, tech_analysis, user_analysis]

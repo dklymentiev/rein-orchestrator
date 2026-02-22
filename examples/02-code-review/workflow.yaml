@@ -1,0 +1,61 @@
+schema_version: "2.6.0"
+name: code-review
+description: "Sequential two-specialist workflow: review code, then improve it"
+team: team-code-review
+max_parallel: 1
+
+# Provider is auto-detected from environment variables.
+# Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY
+# Or override explicitly:
+#   provider: anthropic
+#   model: claude-sonnet-4-20250514
+
+blocks:
+  # Step 1: Review the code
+  - name: review
+    specialist: code-reviewer
+    prompt: |
+      Review the following Python function:
+
+      ```python
+      def get_user_data(user_id, db):
+          query = f"SELECT * FROM users WHERE id = {user_id}"
+          result = db.execute(query)
+          user = result.fetchone()
+          data = {
+              "name": user[1],
+              "email": user[2],
+              "password": user[3],
+              "role": user[4]
+          }
+          return data
+      ```
+
+      Check for security issues, bugs, and best practices.
+    depends_on: []
+
+  # Step 2: Improve based on review
+  - name: improve
+    specialist: code-improver
+    prompt: |
+      Here is the original code:
+
+      ```python
+      def get_user_data(user_id, db):
+          query = f"SELECT * FROM users WHERE id = {user_id}"
+          result = db.execute(query)
+          user = result.fetchone()
+          data = {
+              "name": user[1],
+              "email": user[2],
+              "password": user[3],
+              "role": user[4]
+          }
+          return data
+      ```
+
+      And here is the code review feedback:
+      {{ review.json }}
+
+      Produce an improved version that addresses all issues found.
+    depends_on: [review]

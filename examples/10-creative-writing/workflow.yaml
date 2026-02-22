@@ -1,0 +1,101 @@
+schema_version: "2.6.0"
+name: creative-writing
+team: team-poetry
+description: Multi-round poetry creation workflow with revision and validation
+
+inputs:
+  topic:
+    description: "Theme or subject for the poem (optional, poet will brainstorm if not given)"
+    required: false
+
+# USAGE:
+# rein --agents-dir ./agents workflow.yaml --no-ui
+# rein --agents-dir ./agents workflow.yaml --no-ui --input '{"topic": "the passage of time"}'
+#
+# Pipeline: ideation -> draft -> critique -> revision -> final critique
+# Demonstrates: validation scripts, post-processing logic, sequential pipeline
+
+blocks:
+  - name: ideation
+    specialist: poet-specialist
+    prompt: |
+      Brainstorm and generate poetry themes and ideas.
+
+      {% if task.input.topic %}
+      Focus on this theme: {{ task.input.topic }}
+      Generate variations and angles on this theme.
+      {% else %}
+      Consider diverse themes like: nature, love, loss, hope, time, identity.
+      {% endif %}
+
+      Provide 5-10 potential themes with brief descriptions.
+      Output as JSON with structure: {themes: [{title: "...", description: "..."}]}
+    save_as: ideation.json
+    logic:
+      validate: logic/validate-themes.py
+
+  - name: draft
+    specialist: poet-specialist
+    prompt: |
+      Based on the brainstormed themes:
+      {{ ideation.json }}
+
+      Write a 4-8 line poem based on one of these themes.
+      Choose the theme you find most inspiring.
+      Focus on strong imagery and emotional resonance.
+      Output as JSON with structure: {theme: "...", poem: "...", form: "..."}
+    depends_on: [ideation]
+    save_as: draft.json
+    logic:
+      post: logic/enhance-draft.py
+
+  - name: critique
+    specialist: critic-specialist
+    prompt: |
+      Review this draft poem:
+      {{ draft.json }}
+
+      Provide constructive criticism addressing:
+      1. Technical skill (meter, rhyme, form)
+      2. Language and word choices
+      3. Imagery and vividness
+      4. Emotional impact
+      5. Overall effectiveness
+
+      Output as JSON with structure: {strengths: [...], improvements: [...], suggestions: [...], rating: X/10}
+    depends_on: [draft]
+    save_as: critique.json
+
+  - name: revision
+    specialist: poet-specialist
+    prompt: |
+      Original draft:
+      {{ draft.json }}
+
+      Critic feedback:
+      {{ critique.json }}
+
+      Revise the poem incorporating the feedback.
+      Maintain your artistic vision while addressing valid concerns.
+      Output as JSON with structure: {original: "...", revised: "...", changes: "..."}
+    depends_on: [critique]
+    save_as: final.json
+    logic:
+      post: logic/validate-revision.py
+
+  - name: final_critique
+    specialist: critic-specialist
+    prompt: |
+      Evaluate the revised poem. Here is the comparison data:
+      {{ final.json }}
+
+      The JSON contains:
+      - "original": the original poem text
+      - "revised": the revised poem text
+      - "changes": what was changed
+
+      Compare the original and revised versions. Assess whether revisions improved the poem.
+      Provide final rating and assessment.
+      Output as JSON with structure: {assessment: "...", final_rating: X/10, success: true/false}
+    depends_on: [revision]
+    save_as: final_critique.json

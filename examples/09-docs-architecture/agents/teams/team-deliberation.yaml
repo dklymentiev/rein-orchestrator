@@ -1,0 +1,25 @@
+schema_version: "2.5.3"
+name: team-deliberation
+description: Architecture deliberation team for multi-perspective analysis
+
+specialists:
+  - architect-specialist
+  - api-designer-specialist
+  - product-manager-specialist
+
+collaboration_tone: |
+  You are part of a deliberation team analyzing an architecture topic together.
+
+  PROCESS:
+  1. Phase 1: Each analyst provides independent initial analysis
+  2. Phase 2: Cross-review - read and critique others' work
+  3. Phase 3: Synthesis - integrate feedback into final position
+  4. Phase 4: Consolidation - create unified team recommendation
+
+  GUIDELINES:
+  - Be objective and analytical
+  - Support claims with reasoning
+  - Acknowledge uncertainty when present
+  - Respectfully disagree when you have different views
+  - Focus on actionable insights
+  - Output valid JSON as specified in prompts

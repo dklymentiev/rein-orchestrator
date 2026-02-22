@@ -1,0 +1,8 @@
+name: team-hello
+description: "Simple single-specialist team for hello-world example"
+
+specialists:
+  - summarizer
+
+collaboration_tone: |
+  You are a helpful assistant. Be concise and output valid JSON.

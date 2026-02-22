@@ -1,0 +1,195 @@
+schema_version: "2.6.0"
+name: generic-deliberation
+team: team-generic
+description: Generic problem-solving workflow with Creator, Critic, and Integrator
+max_parallel: 3
+readable_outputs: true
+
+inputs:
+  task:
+    description: "The task or problem for the team to solve"
+    required: true
+
+# USAGE:
+# rein --agents-dir ./agents workflow.yaml --no-ui --input '{"task": "Design a caching layer for the API"}'
+#
+# Phase 1: Independent proposals from all specialists
+# Phase 2: Cross-review (each reviews others' work)
+# Phase 3: Final synthesis by Integrator
+
+blocks:
+  # PHASE 1: Independent proposals
+  - name: creator_proposal
+    phase: 1
+    specialist: creator-specialist
+    prompt: |
+      TASK:
+      {{ task.input.task }}
+
+      You are the Creator. Generate multiple solution approaches for this task.
+
+      Focus on:
+      1. Multiple distinct approaches (at least 2-3)
+      2. Concrete implementation details
+      3. Trade-offs between options
+      4. Your recommended approach
+
+      Output JSON with:
+      - task_understanding: str (your interpretation of the task)
+      - proposals: [{name, approach, pros, cons, effort, risk}]
+      - recommended: str (which option and why)
+      - reasoning: str (key factors in recommendation)
+    depends_on: []
+    parallel: true
+
+  - name: critic_proposal
+    phase: 1
+    specialist: critic-specialist
+    prompt: |
+      TASK:
+      {{ task.input.task }}
+
+      You are the Critic. Analyze this task for risks, problems, and edge cases.
+
+      Focus on:
+      1. What could go wrong?
+      2. What's missing from the requirements?
+      3. Hidden assumptions
+      4. Security/reliability concerns
+
+      Output JSON with:
+      - task_understanding: str (your interpretation of the task)
+      - potential_issues: [{severity, category, description, impact, suggestion}]
+      - missing_requirements: [str]
+      - assumptions: [str]
+      - risks: [{risk, probability, impact, mitigation}]
+    depends_on: []
+    parallel: true
+
+  - name: integrator_proposal
+    phase: 1
+    specialist: integrator-specialist
+    prompt: |
+      TASK:
+      {{ task.input.task }}
+
+      You are the Integrator. Provide initial analysis and success criteria.
+
+      Focus on:
+      1. Key requirements and constraints
+      2. Success criteria
+      3. Implementation priorities
+      4. Integration considerations
+
+      Output JSON with:
+      - task_understanding: str (your interpretation of the task)
+      - requirements: [str]
+      - constraints: [str]
+      - success_criteria: [str]
+      - priorities: [str]
+      - integration_points: [str]
+    depends_on: []
+    parallel: true
+
+  # PHASE 2: Cross-review
+  - name: creator_review
+    phase: 2
+    specialist: creator-specialist
+    prompt: |
+      ORIGINAL TASK:
+      {{ task.input.task }}
+
+      Review your colleagues' work:
+      - Critic analysis: {{ critic_proposal.json }}
+      - Integrator analysis: {{ integrator_proposal.json }}
+
+      Update your proposals based on their feedback:
+      1. Which risks affect your proposals?
+      2. How do constraints change your recommendation?
+      3. Any new approaches based on their insights?
+
+      Output JSON with:
+      - feedback_response: str (how you're addressing their points)
+      - updated_proposals: [{name, approach, addresses_risks}]
+      - final_recommendation: str
+      - confidence: float (0-1)
+    depends_on: ["critic_proposal", "integrator_proposal"]
+    parallel: true
+    continue_if_failed: true
+
+  - name: critic_review
+    phase: 2
+    specialist: critic-specialist
+    prompt: |
+      ORIGINAL TASK:
+      {{ task.input.task }}
+
+      Review your colleagues' proposals:
+      - Creator proposals: {{ creator_proposal.json }}
+      - Integrator analysis: {{ integrator_proposal.json }}
+
+      Evaluate the proposals against your risk analysis:
+      1. Which proposals address the risks you identified?
+      2. Which proposals introduce new risks?
+      3. Your verdict on each proposal
+
+      Output JSON with:
+      - proposal_evaluations: [{proposal_name, verdict, issues, strengths}]
+      - new_risks_identified: [str]
+      - recommended_approach: str
+      - confidence: float (0-1)
+    depends_on: ["creator_proposal", "integrator_proposal"]
+    parallel: true
+    continue_if_failed: true
+
+  - name: integrator_review
+    phase: 2
+    specialist: integrator-specialist
+    prompt: |
+      ORIGINAL TASK:
+      {{ task.input.task }}
+
+      Review your colleagues' work:
+      - Creator proposals: {{ creator_proposal.json }}
+      - Critic analysis: {{ critic_proposal.json }}
+
+      Assess feasibility and integration:
+      1. Which proposals meet the requirements?
+      2. Which proposals are most feasible?
+      3. How do proposals address the identified risks?
+
+      Output JSON with:
+      - feasibility_assessment: [{proposal_name, feasible, blockers, effort}]
+      - risk_coverage: str (how well risks are addressed)
+      - preliminary_recommendation: str
+      - open_questions: [str]
+    depends_on: ["creator_proposal", "critic_proposal"]
+    parallel: true
+    continue_if_failed: true
+
+  # PHASE 3: Final synthesis
+  - name: final_plan
+    phase: 3
+    specialist: integrator-specialist
+    prompt: |
+      ORIGINAL TASK:
+      {{ task.input.task }}
+
+      Create the final implementation plan based on all reviews:
+      - Creator final: {{ creator_review.json }}
+      - Critic final: {{ critic_review.json }}
+      - Your review: {{ integrator_review.json }}
+
+      Synthesize into a clear, actionable plan.
+
+      Output JSON with:
+      - task: str (the original task)
+      - chosen_approach: str (the selected solution)
+      - reasoning: str (why this approach)
+      - implementation_steps: [{step, description, effort}]
+      - risks_and_mitigations: [{risk, mitigation}]
+      - success_criteria: [str]
+      - open_items: [str] (things that need further clarification)
+      - confidence: float (team confidence 0-1)
+    depends_on: ["creator_review", "critic_review", "integrator_review"]
+    parallel: false

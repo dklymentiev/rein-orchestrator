@@ -1,0 +1,29 @@
+schema_version: "2.6.0"
+name: hello-world
+description: "Simplest Rein workflow: one specialist, one task"
+team: team-hello
+max_parallel: 1
+
+# Provider is auto-detected from environment variables.
+# Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY
+# Or override explicitly:
+#   provider: anthropic
+#   model: claude-sonnet-4-20250514
+
+blocks:
+  - name: summarize
+    specialist: summarizer
+    prompt: |
+      Summarize the following text:
+
+      "Rein is a declarative YAML workflow orchestrator for multi-agent AI.
+      Unlike frameworks that require writing Python code to coordinate agents,
+      Rein lets you define specialists, teams, and workflows entirely in YAML
+      and Markdown files. Specialists are defined as Markdown prompts, teams
+      group specialists with a shared collaboration tone, and workflows
+      describe the execution flow with dependencies, conditions, and loops.
+      Rein supports any LLM provider including Anthropic Claude, OpenAI GPT,
+      Ollama local models, and OpenRouter."
+
+      Follow your specialist instructions for output format.
+    depends_on: []

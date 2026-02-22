@@ -1,0 +1,25 @@
+[Unit]
+Description=Rein Workflow Orchestrator Daemon
+After=network.target
+
+[Service]
+Type=simple
+# Adjust User/Group and paths for your environment
+User=admin
+Group=admin
+WorkingDirectory=/opt/rein
+ExecStart=/usr/bin/python3 -m rein --daemon --daemon-interval 5 --max-workflows 3 --ws-port 8765 --agents-dir /opt/rein/agents
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rein-daemon
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+# Environment=ANTHROPIC_API_KEY=your-key-here
+
+[Install]
+WantedBy=multi-user.target

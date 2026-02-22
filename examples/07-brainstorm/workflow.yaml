@@ -1,0 +1,188 @@
+schema_version: "2.6.0"
+name: brainstorm
+description: Creative brainstorming for generating new ideas
+team: team-brainstorm
+readable_outputs: true
+
+inputs:
+  topic:
+    description: "The topic or challenge to brainstorm about"
+    required: true
+
+# USAGE:
+# rein --agents-dir ./agents workflow.yaml --no-ui --input '{"topic": "How to improve developer onboarding?"}'
+#
+# Phase 1: Divergent generation (3 parallel specialists)
+# Phase 2: Cross-pollination (each reads others' ideas, adds more)
+# Phase 3: Synthesis into actionable concepts
+
+blocks:
+  # ============================================
+  # PHASE 1: DIVERGENT GENERATION (parallel)
+  # Each specialist generates ideas independently
+  # ============================================
+
+  - name: divergent_ideas
+    specialist: divergent-thinker
+    parallel: true
+    prompt: |
+      # Divergent Brainstorming
+
+      TOPIC: {{ task.input.topic }}
+
+      Generate 20+ creative ideas. No filtering, no judgment.
+      Use techniques: reverse thinking, analogy transfer, extreme scenarios, technology injection.
+
+      Aim for QUANTITY. Crazy ideas welcome.
+
+      OUTPUT: Numbered list of 20+ ideas with one-sentence description each.
+
+  - name: industry_ideas
+    specialist: industry-expert
+    parallel: true
+    prompt: |
+      # Industry Expert Brainstorming
+
+      TOPIC: {{ task.input.topic }}
+
+      Generate 15+ ideas based on industry knowledge:
+      - What do top performers do?
+      - What trends are emerging?
+      - What gaps exist?
+      - What partnerships could help?
+
+      OUTPUT: Numbered list with idea + why it works in this industry.
+
+  - name: contrarian_ideas
+    specialist: contrarian-thinker
+    parallel: true
+    prompt: |
+      # Contrarian Brainstorming
+
+      TOPIC: {{ task.input.topic }}
+
+      Generate 10+ contrarian ideas that challenge assumptions:
+      - What would an outsider do?
+      - What's everyone afraid to try?
+      - What "stupid" idea might work?
+      - What constraints can become features?
+
+      OUTPUT: List of ideas + what assumption each breaks.
+
+  # ============================================
+  # PHASE 2: CROSS-POLLINATION (parallel)
+  # Each reads others' ideas, adds more
+  # ============================================
+
+  - name: divergent_builds
+    specialist: divergent-thinker
+    parallel: true
+    depends_on: [divergent_ideas, industry_ideas, contrarian_ideas]
+    prompt: |
+      # Build on Others' Ideas
+
+      YOUR INITIAL IDEAS:
+      {{ divergent_ideas.json }}
+
+      INDUSTRY IDEAS:
+      {{ industry_ideas.json }}
+
+      CONTRARIAN IDEAS:
+      {{ contrarian_ideas.json }}
+
+      Now use "Yes, and..." technique:
+      - Combine ideas from different lists
+      - Enhance promising concepts
+      - Add 10+ NEW ideas inspired by others
+
+      OUTPUT: 10+ new/combined ideas you didn't think of before.
+
+  - name: industry_builds
+    specialist: industry-expert
+    parallel: true
+    depends_on: [divergent_ideas, industry_ideas, contrarian_ideas]
+    prompt: |
+      # Industry Lens on All Ideas
+
+      DIVERGENT IDEAS:
+      {{ divergent_ideas.json }}
+
+      YOUR INITIAL IDEAS:
+      {{ industry_ideas.json }}
+
+      CONTRARIAN IDEAS:
+      {{ contrarian_ideas.json }}
+
+      Review all ideas through industry lens:
+      - Which crazy ideas could actually work?
+      - Which contrarian ideas have industry precedent?
+      - What combinations make sense?
+      - Add 10+ refined/new ideas
+
+      OUTPUT: 10+ industry-validated or enhanced ideas.
+
+  - name: contrarian_builds
+    specialist: contrarian-thinker
+    parallel: true
+    depends_on: [divergent_ideas, industry_ideas, contrarian_ideas]
+    prompt: |
+      # Challenge All Ideas
+
+      DIVERGENT IDEAS:
+      {{ divergent_ideas.json }}
+
+      INDUSTRY IDEAS:
+      {{ industry_ideas.json }}
+
+      YOUR INITIAL IDEAS:
+      {{ contrarian_ideas.json }}
+
+      Challenge and enhance:
+      - What's missing from all lists?
+      - What opposite approaches weren't considered?
+      - What combinations break more assumptions?
+      - Add 10+ ideas that others missed
+
+      OUTPUT: 10+ overlooked/contrarian additions.
+
+  # ============================================
+  # PHASE 3: SYNTHESIS
+  # Combine into actionable concepts
+  # ============================================
+
+  - name: final_synthesis
+    specialist: synthesizer
+    depends_on: [divergent_builds, industry_builds, contrarian_builds]
+    prompt: |
+      # Synthesize All Brainstorming
+
+      ORIGINAL IDEAS:
+
+      Divergent: {{ divergent_ideas.json }}
+      Industry: {{ industry_ideas.json }}
+      Contrarian: {{ contrarian_ideas.json }}
+
+      CROSS-POLLINATION:
+
+      Divergent builds: {{ divergent_builds.json }}
+      Industry builds: {{ industry_builds.json }}
+      Contrarian builds: {{ contrarian_builds.json }}
+
+      Create final synthesis:
+
+      1. **TOP 15 CONCEPTS** - best ideas refined and combined:
+         - Name
+         - Description (2-3 sentences)
+         - Why promising
+         - Effort: low/medium/high
+         - Priority: 1-5 (1=highest)
+
+      2. **HIDDEN GEMS** - overlooked ideas worth exploring
+
+      3. **PATTERNS** - themes across all ideas
+
+      4. **QUICK WINS** - what to try first (low effort, high impact)
+
+      5. **MOONSHOTS** - high effort but transformative
+
+      OUTPUT: Structured JSON with all sections.

@@ -1,0 +1,18 @@
+schema_version: "2.5.3"
+name: team-brainstorm
+description: Creative brainstorming team for generating new ideas
+
+collaboration_tone: |
+  You are part of a creative brainstorming session. NO JUDGMENT, no filtering.
+  Generate as many ideas as possible. Crazy ideas welcome.
+  Quantity over quality in early phases. Build on each other's ideas.
+
+specialists:
+  - role: divergent
+    specialist: divergent-thinker
+  - role: industry
+    specialist: industry-expert
+  - role: contrarian
+    specialist: contrarian-thinker
+  - role: synthesizer
+    specialist: synthesizer

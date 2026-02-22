@@ -1,0 +1,305 @@
+schema_version: "2.6.0"
+name: product-analysis
+team: team-product
+description: Product team analysis from user experience and business perspective
+max_parallel: 3
+readable_outputs: true
+print_final: true
+
+inputs:
+  topic:
+    description: "Product question or feature to analyze"
+    required: true
+
+# USAGE:
+# rein --agents-dir ./agents workflow.yaml --no-ui --input '{"topic": "Should we add social login?"}'
+#
+# Phase 1: Independent analysis by Product Manager, UX Researcher, Business Analyst
+# Phase 2: Cross-review (each reads others' work)
+# Phase 3: Synthesis with all feedback
+# Phase 4: Final consolidated recommendation
+
+blocks:
+  # PHASE 1: Initial independent analysis
+  - name: analyst_1_initial
+    phase: 1
+    specialist: product-manager
+    prompt: |
+      PRODUCT QUESTION:
+      {{ task.input.topic }}
+
+      You are a Product Manager. Analyze from USER and BUSINESS perspective.
+
+      Focus on:
+      1. What does the USER see, do, and experience?
+      2. What BUSINESS value does this provide?
+      3. What makes users successful?
+      4. Market readiness and competitive position
+
+      DO NOT discuss:
+      - Technical architecture (databases, APIs, infrastructure)
+      - Technology stack choices
+      - Implementation details
+
+      DO discuss:
+      - User-facing features and interfaces
+      - User actions and workflows
+      - Business outcomes
+      - What exists in the final product
+
+      Output JSON with:
+      - perspective: str (your role/angle)
+      - user_facing_elements: [str] (what users see/do)
+      - business_value: str
+      - market_readiness: str
+      - initial_recommendation: str
+    depends_on: []
+    parallel: true
+
+  - name: analyst_2_initial
+    phase: 1
+    specialist: ux-researcher
+    prompt: |
+      PRODUCT QUESTION:
+      {{ task.input.topic }}
+
+      You are a UX Researcher. Analyze from USER INTERFACE and EXPERIENCE perspective.
+
+      Focus on:
+      1. What pages, screens, and interface elements exist?
+      2. What is the user journey step-by-step?
+      3. What visual elements do users interact with?
+      4. How do users accomplish their goals?
+
+      DO NOT discuss:
+      - Backend systems or databases
+      - Server architecture
+      - API design
+
+      DO discuss:
+      - Forms, buttons, pages
+      - User flows (signup -> login -> use)
+      - Emails users receive
+      - Where users click and what they read
+
+      Output JSON with:
+      - perspective: str (your role/angle)
+      - interface_elements: [str] (buttons, forms, pages)
+      - user_journey: [str] (step-by-step flow)
+      - touchpoints: [str] (website, email, support)
+      - initial_recommendation: str
+    depends_on: []
+    parallel: true
+
+  - name: analyst_3_initial
+    phase: 1
+    specialist: business-analyst
+    prompt: |
+      PRODUCT QUESTION:
+      {{ task.input.topic }}
+
+      You are a Business Analyst. Analyze from BUSINESS OPERATIONS and REQUIREMENTS perspective.
+
+      Focus on:
+      1. What does the business need to operate?
+      2. What are legal/compliance requirements?
+      3. How does revenue generation work?
+      4. What does customer support need?
+
+      DO NOT discuss:
+      - Technology infrastructure
+      - Code architecture
+      - Database choices
+
+      DO discuss:
+      - Business processes (billing, support)
+      - Legal requirements (privacy policy, terms)
+      - Revenue operations
+      - Operational needs
+
+      Output JSON with:
+      - perspective: str (your role/angle)
+      - business_requirements: [str]
+      - compliance_needs: [str]
+      - revenue_operations: str
+      - initial_recommendation: str
+    depends_on: []
+    parallel: true
+
+  # PHASE 2: Cross-review
+  - name: analyst_1_review
+    phase: 2
+    specialist: product-manager
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Review your colleagues' analyses:
+      - UX Researcher: {{ analyst_2_initial.json }}
+      - Business Analyst: {{ analyst_3_initial.json }}
+
+      Provide feedback from Product Manager perspective:
+      1. Points you agree with
+      2. Points you disagree with
+      3. Additional user/business considerations they missed
+      4. How their input affects your view
+
+      Output JSON with:
+      - agreements: [str]
+      - disagreements: [str]
+      - missed_points: [str]
+      - updated_view: str
+    depends_on: ["analyst_2_initial", "analyst_3_initial"]
+    parallel: true
+    continue_if_failed: true
+
+  - name: analyst_2_review
+    phase: 2
+    specialist: ux-researcher
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Review your colleagues' analyses:
+      - Product Manager: {{ analyst_1_initial.json }}
+      - Business Analyst: {{ analyst_3_initial.json }}
+
+      Provide feedback from UX Researcher perspective:
+      1. Points you agree with
+      2. Points you disagree with
+      3. Additional interface/UX considerations they missed
+      4. How their input affects your view
+
+      Output JSON with:
+      - agreements: [str]
+      - disagreements: [str]
+      - missed_points: [str]
+      - updated_view: str
+    depends_on: ["analyst_1_initial", "analyst_3_initial"]
+    parallel: true
+    continue_if_failed: true
+
+  - name: analyst_3_review
+    phase: 2
+    specialist: business-analyst
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Review your colleagues' analyses:
+      - Product Manager: {{ analyst_1_initial.json }}
+      - UX Researcher: {{ analyst_2_initial.json }}
+
+      Provide feedback from Business Analyst perspective:
+      1. Points you agree with
+      2. Points you disagree with
+      3. Additional business/compliance considerations they missed
+      4. How their input affects your view
+
+      Output JSON with:
+      - agreements: [str]
+      - disagreements: [str]
+      - missed_points: [str]
+      - updated_view: str
+    depends_on: ["analyst_1_initial", "analyst_2_initial"]
+    parallel: true
+    continue_if_failed: true
+
+  # PHASE 3: Synthesis
+  - name: analyst_1_synthesis
+    phase: 3
+    specialist: product-manager
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Synthesize all feedback into your final position:
+      - Your review: {{ analyst_1_review.json }}
+      - UX Researcher review: {{ analyst_2_review.json }}
+      - Business Analyst review: {{ analyst_3_review.json }}
+
+      Consider all perspectives and provide your final Product Manager recommendation.
+      Focus on: user value, business outcomes, market readiness.
+
+      Output JSON with:
+      - final_position: str
+      - key_insights: [str]
+      - recommendation: str
+      - confidence: float (0-1)
+    depends_on: ["analyst_1_review", "analyst_2_review", "analyst_3_review"]
+    parallel: true
+
+  - name: analyst_2_synthesis
+    phase: 3
+    specialist: ux-researcher
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Synthesize all feedback into your final position:
+      - Your review: {{ analyst_2_review.json }}
+      - Product Manager review: {{ analyst_1_review.json }}
+      - Business Analyst review: {{ analyst_3_review.json }}
+
+      Consider all perspectives and provide your final UX Researcher recommendation.
+      Focus on: user interface, user journey, experience.
+
+      Output JSON with:
+      - final_position: str
+      - key_insights: [str]
+      - recommendation: str
+      - confidence: float (0-1)
+    depends_on: ["analyst_1_review", "analyst_2_review", "analyst_3_review"]
+    parallel: true
+
+  - name: analyst_3_synthesis
+    phase: 3
+    specialist: business-analyst
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Synthesize all feedback into your final position:
+      - Your review: {{ analyst_3_review.json }}
+      - Product Manager review: {{ analyst_1_review.json }}
+      - UX Researcher review: {{ analyst_2_review.json }}
+
+      Consider all perspectives and provide your final Business Analyst recommendation.
+      Focus on: business requirements, compliance, operations.
+
+      Output JSON with:
+      - final_position: str
+      - key_insights: [str]
+      - recommendation: str
+      - confidence: float (0-1)
+    depends_on: ["analyst_1_review", "analyst_2_review", "analyst_3_review"]
+    parallel: true
+
+  # PHASE 4: Final consolidation
+  - name: final_recommendation
+    phase: 4
+    specialist: product-manager
+    prompt: |
+      ORIGINAL QUESTION:
+      {{ task.input.topic }}
+
+      Create the final consolidated product recommendation based on all synthesis documents:
+      - Product Manager final: {{ analyst_1_synthesis.json }}
+      - UX Researcher final: {{ analyst_2_synthesis.json }}
+      - Business Analyst final: {{ analyst_3_synthesis.json }}
+
+      Consolidate into a clear, user-focused, business-oriented recommendation.
+
+      CRITICAL: Write in simple language for non-technical founders.
+      Focus on WHAT users see and do, not HOW it's technically implemented.
+
+      Output JSON with:
+      - topic: str (the original question)
+      - final_recommendation: str (clear answer/decision)
+      - reasoning: str (why this recommendation)
+      - key_points: [str] (main supporting points)
+      - dissenting_views: [str] (if any disagreements remain)
+      - action_items: [str] (next steps if applicable)
+      - confidence: float (team confidence 0-1)
+    depends_on: ["analyst_1_synthesis", "analyst_2_synthesis", "analyst_3_synthesis"]
+    parallel: false

@@ -1,0 +1,12 @@
+name: team-editorial
+description: "Editorial team with quality gate and revision loop"
+
+specialists:
+  - writer
+  - quality-gate
+  - formatter
+
+collaboration_tone: |
+  You are part of an editorial team producing high-quality content.
+  The quality gate is strict -- text must meet all criteria to pass.
+  Always output valid JSON.

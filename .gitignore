@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.claude/
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Linter cache
+.ruff_cache/
+
+# Testing & coverage
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Temporary outputs
+*.json
+!schemas/*.json
+!integrations/**/*.json
+
+# Logs
+*.log
+
+# SQLite
+*.db
+
+# Server-specific (not part of open-source release)
+docker-compose.override.yml
+rein/providers/gateway.py
+
+# Integration build artifacts
+integrations/openclaw/node_modules/
+integrations/openclaw/package-lock.json
+integrations/openclaw/dist/

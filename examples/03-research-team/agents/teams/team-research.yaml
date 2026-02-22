@@ -1,0 +1,13 @@
+name: team-research
+description: "Research team: 3 analysts explore in parallel, then synthesizer consolidates"
+
+specialists:
+  - market-analyst
+  - tech-analyst
+  - user-researcher
+  - synthesizer
+
+collaboration_tone: |
+  You are part of a research team evaluating a product idea.
+  Be thorough, evidence-based, and honest about uncertainty.
+  Always output valid JSON as specified in your specialist instructions.

@@ -1,0 +1,143 @@
+{
+  "current_version": "2.6.0",
+  "description": "Schema version registry and compatibility matrix",
+  "versions": {
+    "2.6.0": {
+      "released": "2026-02-20",
+      "description": "Declarative workflow input validation",
+      "features": [
+        "inputs: section for declaring expected workflow inputs",
+        "Pre-dispatch validation of task inputs (fast-fail on missing required)",
+        "Default value injection for optional inputs",
+        "Cross-check: prompts vs declared inputs at parse time",
+        "Unresolved placeholder detection as safety net"
+      ],
+      "backwards_compatible_with": ["2.5.5", "2.5.4", "2.5.3"],
+      "migration_required": false,
+      "breaking_changes": []
+    },
+    "2.5.5": {
+      "released": "2026-01-02",
+      "description": "Input directory architecture for dependency data flow",
+      "features": [
+        "inputs/<block>/ directory with symlinks to depends_on outputs",
+        "input_dir field in logic script context",
+        "block_config field in logic script context",
+        "Logic scripts no longer need to parse workflow YAML"
+      ],
+      "backwards_compatible_with": ["2.5.4", "2.5.3"],
+      "migration_required": false,
+      "breaking_changes": []
+    },
+    "2.5.4": {
+      "released": "2026-01-01",
+      "description": "State machine flow control with next field and revision loops",
+      "features": [
+        "next field for state machine transitions",
+        "Conditional transitions with if/else",
+        "max_runs for loop protection",
+        "Run count tracking per block",
+        "Backwards compatible with 2.5.3 workflows"
+      ],
+      "backwards_compatible_with": ["2.5.3"],
+      "migration_required": false,
+      "breaking_changes": []
+    },
+    "2.5.3": {
+      "released": "2026-01-01",
+      "description": "Workflow Generator support, flow control parameters, pre-flight validation",
+      "features": [
+        "JSON Schema validation",
+        "Pydantic models with business logic",
+        "Pre-flight validation pipeline",
+        "Circular dependency detection",
+        "Schema versioning with compatibility matrix",
+        "Flow control: skip_if_previous_failed, continue_if_failed"
+      ],
+      "backwards_compatible_with": ["2.5.2"],
+      "migration_required": false,
+      "breaking_changes": []
+    },
+    "2.5.2": {
+      "released": "2025-12-30",
+      "description": "Base version with flow control parameters",
+      "features": [
+        "skip_if_previous_failed block parameter",
+        "continue_if_failed block parameter",
+        "Parallel block execution with semaphores",
+        "Data substitution via {{ file.json }} placeholders"
+      ],
+      "backwards_compatible_with": ["2.5.1"],
+      "migration_required": false,
+      "breaking_changes": []
+    },
+    "2.5.1": {
+      "released": "2025-12-25",
+      "description": "Parallel execution and data flow",
+      "features": [
+        "Parallel block execution",
+        "Data substitution in prompts",
+        "Envelope pattern for responses"
+      ],
+      "breaking_changes": []
+    }
+  },
+  "compatibility_matrix": {
+    "2.6.0": {
+      "can_upgrade_from": ["2.5.5", "2.5.4", "2.5.3", "2.5.2", "2.5.1"],
+      "can_downgrade_to": ["2.5.5"],
+      "migration_script": null
+    },
+    "2.5.4": {
+      "can_upgrade_from": ["2.5.3", "2.5.2", "2.5.1"],
+      "can_downgrade_to": ["2.5.3"],
+      "migration_script": null
+    },
+    "2.5.3": {
+      "can_upgrade_from": ["2.5.2", "2.5.1"],
+      "can_downgrade_to": [],
+      "migration_script": null
+    },
+    "2.5.2": {
+      "can_upgrade_from": ["2.5.1"],
+      "can_downgrade_to": ["2.5.1"],
+      "migration_script": null
+    },
+    "2.5.1": {
+      "can_upgrade_from": [],
+      "can_downgrade_to": [],
+      "migration_script": null
+    }
+  },
+  "migration_scripts": {},
+  "deprecation_notices": {
+    "2.5.1": {
+      "deprecated_in": "2.5.2",
+      "removal_in": "3.0.0",
+      "message": "Version 2.5.1 is deprecated. Please upgrade to 2.5.3 for schema validation support."
+    }
+  },
+  "model_aliases": {
+    "anthropic/claude-sonnet-4": {
+      "full_name": "anthropic/claude-sonnet-4",
+      "provider": "OpenRouter",
+      "default": true
+    },
+    "anthropic/claude-opus-4": {
+      "full_name": "anthropic/claude-opus-4",
+      "provider": "OpenRouter"
+    },
+    "anthropic/claude-haiku-4": {
+      "full_name": "anthropic/claude-haiku-4",
+      "provider": "OpenRouter"
+    },
+    "openai/gpt-4o": {
+      "full_name": "openai/gpt-4o",
+      "provider": "OpenRouter"
+    },
+    "google/gemini-2.0-flash": {
+      "full_name": "google/gemini-2.0-flash",
+      "provider": "OpenRouter"
+    }
+  }
+}

@@ -1,0 +1,66 @@
+schema_version: "2.6.0"
+name: conditional-workflow
+description: "Demonstrates conditional branching, revision loops, and max_runs"
+team: team-editorial
+max_parallel: 1
+
+# Provider is auto-detected from environment variables.
+# Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY
+# Or override explicitly:
+#   provider: anthropic
+#   model: claude-sonnet-4-20250514
+
+blocks:
+  # Step 1: Write initial draft
+  - name: draft
+    specialist: writer
+    prompt: |
+      Write a short article (150-250 words) explaining why declarative
+      configuration (YAML/JSON) is better than imperative code for
+      defining AI agent workflows.
+
+      Include at least one concrete example.
+    depends_on: []
+
+  # Step 2: Quality gate -- approve or reject
+  - name: quality_check
+    specialist: quality-gate
+    prompt: |
+      Evaluate this article for quality:
+
+      {{ draft.json }}
+
+      Apply your quality criteria strictly. Score 1-10.
+      Set "approved": true only if score >= 7.
+    depends_on: [draft]
+    next:
+      - if: "{{ result.approved }}"
+        goto: format
+      - else: revision
+
+  # Step 3a: Revision (if rejected) -- loops back to quality_check
+  - name: revision
+    specialist: writer
+    prompt: |
+      Your article was rejected by the quality gate. Here is the feedback:
+
+      {{ quality_check.json }}
+
+      Original draft:
+      {{ draft.json }}
+
+      Revise the article to address ALL feedback. Keep it 150-250 words.
+    depends_on: [quality_check]
+    max_runs: 2
+    next: quality_check
+
+  # Step 3b: Format (if approved)
+  - name: format
+    specialist: formatter
+    prompt: |
+      Format this approved article for publication:
+
+      {{ draft.json }}
+
+      Add title, markdown formatting, tags, and estimated reading time.
+    depends_on: [quality_check]

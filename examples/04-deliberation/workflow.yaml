@@ -1,0 +1,169 @@
+schema_version: "2.6.0"
+name: deliberation
+description: "Multi-phase deliberation: independent analysis -> cross-review -> final recommendation"
+team: team-deliberation
+max_parallel: 3
+
+# Provider is auto-detected from environment variables.
+# Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY
+# Or override explicitly:
+#   provider: anthropic
+#   model: claude-sonnet-4-20250514
+
+blocks:
+  # ========== PHASE 1: Independent Analysis (parallel) ==========
+
+  - name: strategic_analysis
+    phase: 1
+    specialist: analyst-strategic
+    prompt: |
+      QUESTION: Should a small dev team (2-3 people) build their own AI agent
+      framework or use an existing one like LangChain/CrewAI?
+
+      Analyze from a STRATEGIC perspective. Consider long-term implications,
+      competitive advantage, and opportunity cost.
+
+      Output JSON:
+      {
+        "perspective": "strategic",
+        "key_arguments": ["arg1", "arg2", "arg3"],
+        "recommendation": "build|buy|hybrid",
+        "confidence": 0.8,
+        "reasoning": "why this recommendation"
+      }
+    depends_on: []
+
+  - name: technical_analysis
+    phase: 1
+    specialist: analyst-technical
+    prompt: |
+      QUESTION: Should a small dev team (2-3 people) build their own AI agent
+      framework or use an existing one like LangChain/CrewAI?
+
+      Analyze from a TECHNICAL perspective. Consider complexity, maintenance,
+      and architecture implications.
+
+      Output JSON:
+      {
+        "perspective": "technical",
+        "key_arguments": ["arg1", "arg2", "arg3"],
+        "recommendation": "build|buy|hybrid",
+        "confidence": 0.8,
+        "reasoning": "why this recommendation"
+      }
+    depends_on: []
+
+  - name: practical_analysis
+    phase: 1
+    specialist: analyst-practical
+    prompt: |
+      QUESTION: Should a small dev team (2-3 people) build their own AI agent
+      framework or use an existing one like LangChain/CrewAI?
+
+      Analyze from a PRACTICAL perspective. Consider timeline, resources,
+      and team capabilities.
+
+      Output JSON:
+      {
+        "perspective": "practical",
+        "key_arguments": ["arg1", "arg2", "arg3"],
+        "recommendation": "build|buy|hybrid",
+        "confidence": 0.8,
+        "reasoning": "why this recommendation"
+      }
+    depends_on: []
+
+  # ========== PHASE 2: Cross-Review (each reads the other two) ==========
+
+  - name: strategic_review
+    phase: 2
+    specialist: analyst-strategic
+    prompt: |
+      You previously analyzed the build-vs-buy question. Now review your
+      colleagues' analyses:
+
+      TECHNICAL ANALYSIS:
+      {{ technical_analysis.json }}
+
+      PRACTICAL ANALYSIS:
+      {{ practical_analysis.json }}
+
+      Respond with:
+      {
+        "agreements": ["points you agree with"],
+        "disagreements": ["points you challenge"],
+        "new_insights": ["things you hadn't considered"],
+        "updated_recommendation": "build|buy|hybrid",
+        "updated_confidence": 0.85
+      }
+    depends_on: [technical_analysis, practical_analysis]
+
+  - name: technical_review
+    phase: 2
+    specialist: analyst-technical
+    prompt: |
+      You previously analyzed the build-vs-buy question. Now review your
+      colleagues' analyses:
+
+      STRATEGIC ANALYSIS:
+      {{ strategic_analysis.json }}
+
+      PRACTICAL ANALYSIS:
+      {{ practical_analysis.json }}
+
+      Respond with:
+      {
+        "agreements": ["points you agree with"],
+        "disagreements": ["points you challenge"],
+        "new_insights": ["things you hadn't considered"],
+        "updated_recommendation": "build|buy|hybrid",
+        "updated_confidence": 0.85
+      }
+    depends_on: [strategic_analysis, practical_analysis]
+
+  - name: practical_review
+    phase: 2
+    specialist: analyst-practical
+    prompt: |
+      You previously analyzed the build-vs-buy question. Now review your
+      colleagues' analyses:
+
+      STRATEGIC ANALYSIS:
+      {{ strategic_analysis.json }}
+
+      TECHNICAL ANALYSIS:
+      {{ technical_analysis.json }}
+
+      Respond with:
+      {
+        "agreements": ["points you agree with"],
+        "disagreements": ["points you challenge"],
+        "new_insights": ["things you hadn't considered"],
+        "updated_recommendation": "build|buy|hybrid",
+        "updated_confidence": 0.85
+      }
+    depends_on: [strategic_analysis, technical_analysis]
+
+  # ========== PHASE 3: Final Consolidated Recommendation ==========
+
+  - name: final_recommendation
+    phase: 3
+    specialist: analyst-strategic
+    prompt: |
+      Create the FINAL team recommendation based on all analyses and reviews:
+
+      STRATEGIC REVIEW: {{ strategic_review.json }}
+      TECHNICAL REVIEW: {{ technical_review.json }}
+      PRACTICAL REVIEW: {{ practical_review.json }}
+
+      Consolidate into a clear decision:
+      {
+        "question": "Build vs buy AI agent framework for small team",
+        "decision": "build|buy|hybrid",
+        "reasoning": "clear explanation of why",
+        "consensus_points": ["what everyone agrees on"],
+        "dissenting_views": ["remaining disagreements"],
+        "action_items": ["next step 1", "next step 2"],
+        "team_confidence": 0.85
+      }
+    depends_on: [strategic_review, technical_review, practical_review]
