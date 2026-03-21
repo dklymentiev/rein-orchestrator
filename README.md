@@ -13,6 +13,16 @@ You describe *what* should happen in plain text files (YAML + Markdown). Rein fi
 
 Works with any LLM: Claude, GPT, Ollama (local/free), OpenRouter (100+ models). No Python code required.
 
+## The Problem
+
+You paste a 2000-word prompt into Claude. It researches, writes, edits, and fact-checks -- all in one shot. The result is mediocre at everything because one agent can't be an expert at everything simultaneously.
+
+You know the fix: break it into steps. But then you're manually copying outputs between chats, tracking what depends on what, restarting when something fails halfway through.
+
+Rein fixes this. You define specialists in Markdown, wire them together in YAML, and run a single command. Each agent focuses on what it does best, gets exactly the context it needs, and hands off to the next one automatically.
+
+## The Solution
+
 ```yaml
 # workflow.yaml
 provider: anthropic
@@ -28,7 +38,14 @@ blocks:
     specialist: writer
     depends_on: [research]
     prompt: "Write article based on: {{ research.json }}"
+
+  - name: edit
+    specialist: editor
+    depends_on: [write]
+    prompt: "Polish and fact-check: {{ write.json }}"
 ```
+
+No Python classes. No framework APIs. No graph DSLs. Just text files that describe what each agent does and how they connect.
 
 ## Quick Start
 
@@ -44,7 +61,14 @@ cd examples/01-hello-world
 rein --agents-dir ./agents workflow.yaml --no-ui
 ```
 
-Works with **any LLM**: Anthropic Claude, OpenAI GPT, Ollama local models, OpenRouter.
+```
+# Output:
+# [research]  done  3.2s  researcher  "Found 12 relevant sources on AI trends"
+# [write]     done  5.1s  writer      "Draft complete: 1,847 words"
+# [edit]      done  2.8s  editor      "Fixed 3 issues, polished to 1,923 words"
+#
+# Result: /tmp/rein-runs/run-20260321/write/outputs/result.json
+```
 
 For a step-by-step tutorial that walks you through creating specialists, teams, and workflows from scratch, see the **[Getting Started Guide](docs/getting-started.md)**.
 
@@ -92,6 +116,57 @@ blocks:
     specialist: code-improver
     depends_on: [review]
     prompt: "Fix issues found: {{ review.json }}"
+```
+
+## Who Is This For
+
+- **Solo developers** who want structured AI workflows without writing Python
+- **Teams** that need repeatable, auditable AI processes
+- **Anyone tired of copy-pasting between chat windows** to get multi-step work done
+
+If you can edit a YAML file, you can orchestrate a team of AI agents.
+
+## Comparison
+
+| | Rein | CrewAI | LangGraph | AutoGen |
+|---|---|---|---|---|
+| Config format | YAML + Markdown | Python classes | Python code | Python code |
+| Code required | No | Yes | Yes | Yes |
+| LLM providers | 4+ (Claude, GPT, Ollama, OpenRouter) | Limited | Limited | Limited |
+| Crash recovery | SQLite state | No | Checkpointing | No |
+| MCP server | Built-in | No | No | No |
+| Local/free models | Ollama | Limited | No | No |
+| Learning curve | Edit YAML files | Learn framework API | Learn graph DSL | Learn agent API |
+
+## Examples
+
+Ten progressive examples in the `examples/` directory:
+
+### Basics (01-05)
+
+| # | Example | Pattern | What you learn |
+|---|---------|---------|----------------|
+| 01 | [hello-world](examples/01-hello-world/) | 1 specialist | Basics: specialist, team, workflow |
+| 02 | [code-review](examples/02-code-review/) | 2 sequential | Dependencies and data flow |
+| 03 | [research-team](examples/03-research-team/) | 3 parallel + 1 | Fan-out / fan-in pattern |
+| 04 | [deliberation](examples/04-deliberation/) | 3-phase debate | Cross-review and multi-phase |
+| 05 | [conditional](examples/05-conditional/) | Branching + loops | if/else, revision loops, max_runs |
+
+### Advanced (06-10)
+
+| # | Example | Pattern | What you learn |
+|---|---------|---------|----------------|
+| 06 | [product-analysis](examples/06-product-analysis/) | 10 blocks, 4 phases | Multi-role product analysis (PM, UX, Business) |
+| 07 | [brainstorm](examples/07-brainstorm/) | 7 blocks, diverge/converge | Divergent ideation + cross-pollination + synthesis |
+| 08 | [generic-deliberation](examples/08-generic-deliberation/) | 7 blocks, 3 phases | Creator/Critic/Integrator -- reusable template |
+| 09 | [docs-architecture](examples/09-docs-architecture/) | 10 blocks, 4 phases | Architecture review (Architect, API, PM) |
+| 10 | [creative-writing](examples/10-creative-writing/) | 5 blocks, sequential | Logic scripts: validate, post-process, enrich |
+
+```bash
+# Try any example
+cd examples/03-research-team
+export ANTHROPIC_API_KEY=sk-...
+rein --agents-dir ./agents workflow.yaml --no-ui
 ```
 
 ## Installation
@@ -164,116 +239,6 @@ Copy `.env.example` to `.env` and fill in your preferred provider key:
 
 ```bash
 cp .env.example .env
-```
-
-## Examples
-
-Ten progressive examples in the `examples/` directory:
-
-### Basics (01-05)
-
-| # | Example | Pattern | What you learn |
-|---|---------|---------|----------------|
-| 01 | [hello-world](examples/01-hello-world/) | 1 specialist | Basics: specialist, team, workflow |
-| 02 | [code-review](examples/02-code-review/) | 2 sequential | Dependencies and data flow |
-| 03 | [research-team](examples/03-research-team/) | 3 parallel + 1 | Fan-out / fan-in pattern |
-| 04 | [deliberation](examples/04-deliberation/) | 3-phase debate | Cross-review and multi-phase |
-| 05 | [conditional](examples/05-conditional/) | Branching + loops | if/else, revision loops, max_runs |
-
-### Advanced (06-10)
-
-| # | Example | Pattern | What you learn |
-|---|---------|---------|----------------|
-| 06 | [product-analysis](examples/06-product-analysis/) | 10 blocks, 4 phases | Multi-role product analysis (PM, UX, Business) |
-| 07 | [brainstorm](examples/07-brainstorm/) | 7 blocks, diverge/converge | Divergent ideation + cross-pollination + synthesis |
-| 08 | [generic-deliberation](examples/08-generic-deliberation/) | 7 blocks, 3 phases | Creator/Critic/Integrator -- reusable template |
-| 09 | [docs-architecture](examples/09-docs-architecture/) | 10 blocks, 4 phases | Architecture review (Architect, API, PM) |
-| 10 | [creative-writing](examples/10-creative-writing/) | 5 blocks, sequential | Logic scripts: validate, post-process, enrich |
-
-```bash
-# Try any example
-cd examples/03-research-team
-export ANTHROPIC_API_KEY=sk-...
-rein --agents-dir ./agents workflow.yaml --no-ui
-```
-
-## CLI Reference
-
-```bash
-# Run a workflow file
-rein workflow.yaml --agents-dir ./agents
-
-# Run a named flow
-rein --flow deliberation --question question.txt
-
-# Run with JSON input
-rein --flow my-flow --input '{"topic": "AI trends", "style": "casual"}'
-
-# Check task status
-rein --status task-20260113-143022
-
-# Resume a failed run
-rein --resume 20260113-143022
-
-# Run without terminal UI
-rein workflow.yaml --no-ui
-
-# Daemon mode (watches for tasks)
-rein --daemon --agents-dir ./agents
-```
-
-All options:
-
-| Option | Description |
-|--------|-------------|
-| `config` | Path to workflow YAML file |
-| `--flow NAME` | Flow name (from agents/flows/) |
-| `--question FILE` | Question file path (used with --flow) |
-| `--input JSON` | JSON parameters for task.input |
-| `--task DIR` | Run existing task directory |
-| `--task-dir DIR` | Task directory with task.md (used with --flow) |
-| `--status ID` | Show task status |
-| `--resume ID` | Resume previous run |
-| `--pause` | Start in paused state |
-| `--no-ui` | Disable Rich terminal UI |
-| `--agents-dir PATH` | Custom agents directory |
-| `--daemon` | Run as daemon |
-| `--daemon-interval N` | Daemon check interval in seconds (default: 5) |
-| `--max-workflows N` | Max parallel workflows in daemon mode (default: 3) |
-| `--ws-port PORT` | WebSocket port (default: 8765) |
-| `-V, --version` | Show version and exit |
-
-## Directory Structure
-
-```
-my-project/
-  agents/
-    specialists/         # AI agent definitions (Markdown)
-      researcher.md
-      writer.md
-    teams/               # Team configurations (YAML)
-      my-team.yaml
-    flows/               # Workflow templates (YAML)
-      my-flow/
-        my-flow.yaml
-        logic/           # Optional Python scripts
-          pre.py
-          post.py
-```
-
-When a workflow runs, Rein creates a task directory with isolated block outputs:
-
-```
-/tmp/rein-runs/run-20260113-143022/
-  state/
-    rein.db              # SQLite state (crash recovery)
-    rein.log             # Execution log
-  research/
-    outputs/
-      result.json        # Block output
-  write/
-    outputs/
-      result.json
 ```
 
 ## Workflow Features
@@ -358,18 +323,6 @@ prompt: |
   Review: {{ review.json }}
 ```
 
-## Daemon Mode
-
-Run Rein as a background service that watches for tasks:
-
-```bash
-rein --daemon --agents-dir ./agents --ws-port 8765
-```
-
-The daemon monitors `agents/tasks/` for directories with `state/status = "pending"` and executes them automatically. Live updates are broadcast via WebSocket on the configured port.
-
-For systemd deployment, see `deploy/rein-daemon.service`.
-
 ## MCP Server
 
 Rein includes an MCP (Model Context Protocol) server, so you can run workflows directly from Claude Desktop, Cursor, Claude Code, or any MCP-compatible client.
@@ -421,6 +374,18 @@ rein-mcp --sse          # SSE transport
 rein-mcp --streamable-http  # HTTP streaming
 ```
 
+## Daemon Mode
+
+Run Rein as a background service that watches for tasks:
+
+```bash
+rein --daemon --agents-dir ./agents --ws-port 8765
+```
+
+The daemon monitors `agents/tasks/` for directories with `state/status = "pending"` and executes them automatically. Live updates are broadcast via WebSocket on the configured port.
+
+For systemd deployment, see `deploy/rein-daemon.service`.
+
 ## Terminal UI
 
 When running without `--no-ui`, Rein displays an htop-like interface:
@@ -430,6 +395,19 @@ When running without `--no-ui`, Rein displays an htop-like interface:
 - IN/OUT data sizes, elapsed time
 
 Runtime controls (via stdin): `p` = pause, `r` = resume, `q` = quit.
+
+## CLI and Directory Structure
+
+For the full CLI reference and directory layout, see [docs/cli-reference.md](docs/cli-reference.md).
+
+Quick reference:
+
+```bash
+rein workflow.yaml --agents-dir ./agents   # Run a workflow
+rein --flow deliberation --question q.txt  # Run a named flow
+rein --resume 20260113-143022              # Resume a failed run
+rein --daemon --agents-dir ./agents        # Daemon mode
+```
 
 ## Tech Stack
 
@@ -450,3 +428,7 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 ## License
 
 MIT
+
+---
+
+Created by [Dmytro Klymentiev](https://klymentiev.com)
