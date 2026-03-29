@@ -1,0 +1,395 @@
+schema_version: 2.6.0
+name: pin-pairing-security-review
+description: Security review of PIN-Based Agent Pairing Protocol for Flint
+team: team-security
+max_parallel: 2
+blocks:
+- name: security_architect
+  specialist: security-architect
+  depends_on: []
+  prompt: 'You are a Security Architect reviewing a proposed PIN-based agent pairing protocol BEFORE implementation.
+
+
+    Review the following protocol design for the Flint AI Agent. Analyze BOTH authentication modes (Spawn and Peer-to-Peer PIN Pairing). Evaluate the architecture, cryptographic choices, trust model, and
+    protocol flow. Identify design-level weaknesses.
+
+
+    Focus on:
+
+    1. Mode 1 (Spawn) -- Is stdin secret passing secure? What if child is compromised? Process isolation guarantees.
+
+    2. Mode 2 (PIN Pairing) -- Is the ECDH + PIN flow sound? Is 6-digit PIN sufficient entropy?
+
+    3. Cryptographic choices -- AES-256-GCM parameters, ECDH curve selection, key derivation method
+
+    4. PIN as entropy source -- Should PIN be used as PAKE input (SPAKE2/SRP) instead of plain verification?
+
+    5. Session management -- key lifetime, rekeying strategy, session teardown
+
+    6. Trust model -- what assumptions does each mode make? Are they valid?
+
+    7. Network threat model -- does Mode 2 hold up on untrusted networks (public internet)?
+
+    8. Missing security features -- what is the protocol NOT addressing?
+
+    9. Comparison with previous HTTP token approach -- is this actually better? Any regressions?
+
+    10. Answer each of the 10 Security Questions listed in the design document.
+
+
+    For each issue found, rate severity (Critical/High/Medium/Low) and provide a specific recommendation.
+
+
+    Output format: structured analysis with sections for each focus area, severity ratings, answers to all 10 security questions, and an overall protocol security rating (Strong/Adequate/Weak/Broken) for
+    each mode separately and combined.
+
+
+    PROTOCOL DESIGN TO REVIEW:
+
+
+    # PIN-Based Agent Pairing Protocol for Flint
+
+
+    ## Problem
+
+    Flint agents need to communicate securely -- both locally (parent spawning children) and remotely (peer terminals on different machines). Previous proposal (HTTP token handshake) got CRITICAL rating
+    from security review due to spoofable identity, plaintext tokens, localhost escape.
+
+
+    ## New Proposal: Two Authentication Modes
+
+
+    ### Mode 1: Spawn (Parent -> Child)
+
+    For agents that Flint itself launches as subprocesses.
+
+
+    Flow:
+
+    1. Parent generates random 256-bit shared secret
+
+    2. Parent spawns child process, passes secret via stdin (NOT env vars -- those leak to /proc)
+
+    3. Child reads secret from stdin on startup
+
+    4. All communication over stdin/stdout pipe (no network involved)
+
+    5. Messages encrypted with shared secret (AES-256-GCM)
+
+    6. Session ends when child process exits
+
+
+    Security properties:
+
+    - No network exposure at all
+
+    - Secret never touches filesystem or env vars
+
+    - Only parent and child know the secret
+
+    - Process isolation by OS
+
+
+    ### Mode 2: Pair (Peer-to-Peer via PIN)
+
+    For connecting to another Flint instance on same or different machine. Similar to Bluetooth pairing.
+
+
+    Flow:
+
+    1. Agent A calls POST /pair/request to Agent B
+
+    2. Agent B generates 6-digit PIN, displays it in terminal UI
+
+    3. Agent B returns a pairing session ID + ECDH public key
+
+    4. User reads PIN from Agent B screen
+
+    5. User types PIN into Agent A terminal
+
+    6. Agent A sends POST /pair/confirm { session_id, pin, ecdh_public_key }
+
+    7. Agent B verifies PIN matches, derives shared key via ECDH + PIN as additional entropy
+
+    8. Both sides now have a shared symmetric key
+
+    9. All subsequent messages encrypted with AES-256-GCM using the shared key
+
+    10. Session key stored in memory only (not on disk)
+
+
+    Security properties:
+
+    - Human-in-the-loop verification (PIN on screen)
+
+    - ECDH key exchange -- forward secrecy
+
+    - PIN adds protection against MITM on ECDH
+
+    - No persistent tokens on disk
+
+    - No certificates or PKI needed
+
+    - Works across network (not just localhost)
+
+
+    ## Security Questions for Review:
+
+    1. Is 6-digit PIN sufficient? Should it be longer?
+
+    2. PIN brute force -- need rate limiting + attempt counter?
+
+    3. ECDH variant -- which curve? X25519?
+
+    4. Should PIN be used as PAKE input (like SRP/SPAKE2) instead of plain verification?
+
+    5. Session key lifetime -- timeout? Rekeying?
+
+    6. What if network is untrusted (public internet)? Is ECDH + PIN enough?
+
+    7. Replay attacks on /pair/confirm?
+
+    8. Should we support "remember this peer" for trusted networks?
+
+    9. Child process stdin -- what if child is compromised and leaks secret?
+
+    10. How to handle connection drops / reconnection?
+
+
+    ## Comparison with Previous Proposal (HTTP Token)
+
+    | Aspect | HTTP Token (old) | PIN Pairing (new) |
+
+    |--------|-----------------|-------------------|
+
+    | Identity | Self-declared string | Human verified PIN |
+
+    | Encryption | None (plaintext HTTP) | ECDH + AES-256-GCM |
+
+    | Tokens on disk | Yes (Always Allow) | No (memory only) |
+
+    | Spoofing | Trivial | Requires physical access |
+
+    | Remote support | No (localhost only) | Yes (any network) |
+
+    | Complexity | Low | Medium |
+
+
+    ## Files to Implement
+
+    - src/security/pairing.js (NEW) -- PIN generation, ECDH, session management
+
+    - src/security/spawn-auth.js (NEW) -- child process secret passing
+
+    - src/api/server.js (MODIFY) -- /pair/request, /pair/confirm endpoints
+
+    - src/components/App.js (MODIFY) -- PIN display overlay
+
+    - src/crypto/channel.js (NEW) -- AES-256-GCM encrypted message channel
+
+    '
+- name: red_teamer
+  specialist: red-teamer
+  depends_on: []
+  prompt: 'You are a Red Team specialist. Your job is to find concrete attack vectors against a proposed PIN-based agent pairing protocol for Flint AI Agent.
+
+
+    Think like an attacker. For each attack vector: describe the attack step by step, explain prerequisites, rate exploitability (Easy/Medium/Hard), rate impact (Critical/High/Medium/Low), suggest specific
+    mitigation.
+
+
+    Attack BOTH modes. Consider these attack categories:
+
+
+    MODE 1 (Spawn) ATTACKS:
+
+    1. Child process compromise -- reading secret from memory, leaking via side channels
+
+    2. stdin interception -- ptrace, /proc/PID/fd, strace on the child
+
+    3. Parent process impersonation -- can a malicious process spawn a child pretending to be Flint?
+
+    4. Pipe hijacking -- can another process read/write to the stdin/stdout pipe?
+
+    5. Secret extraction from memory -- /proc/PID/mem, core dumps, swap
+
+
+    MODE 2 (PIN Pairing) ATTACKS:
+
+    6. PIN brute force -- 6 digits = 1M combinations, how fast can an attacker try?
+
+    7. PIN shoulder surfing / screen capture -- the PIN is displayed on screen
+
+    8. MITM on ECDH -- can an attacker intercept the key exchange before PIN verification?
+
+    9. Replay attacks on /pair/confirm -- replaying a captured confirmation request
+
+    10. Session hijacking after pairing -- stealing the derived symmetric key
+
+    11. Race condition -- two agents trying to pair simultaneously, session ID collision
+
+    12. Denial of service -- flooding /pair/request to exhaust resources or lock out legitimate users
+
+    13. Downgrade attacks -- forcing fallback to weaker auth
+
+    14. PIN prediction -- is the PIN truly random? PRNG weaknesses?
+
+    15. Network-level attacks -- ARP spoofing, DNS poisoning to redirect /pair/request
+
+
+    CROSS-MODE ATTACKS:
+
+    16. Mode confusion -- can an attacker trick a spawn-mode child into accepting a network pairing?
+
+    17. Social engineering -- misleading IP address display, fake pairing requests
+
+    18. Timing attacks -- can an attacker determine PIN digits from response timing?
+
+
+    Output format: numbered attack vectors with fields (name, mode_targeted, attack_steps, prerequisites, exploitability, impact, mitigation). End with top 5 most critical findings and an overall assessment.
+
+
+    PROTOCOL DESIGN TO ATTACK:
+
+
+    # PIN-Based Agent Pairing Protocol for Flint
+
+
+    ## Problem
+
+    Flint agents need to communicate securely -- both locally (parent spawning children) and remotely (peer terminals on different machines). Previous proposal (HTTP token handshake) got CRITICAL rating
+    from security review due to spoofable identity, plaintext tokens, localhost escape.
+
+
+    ## New Proposal: Two Authentication Modes
+
+
+    ### Mode 1: Spawn (Parent -> Child)
+
+    For agents that Flint itself launches as subprocesses.
+
+
+    Flow:
+
+    1. Parent generates random 256-bit shared secret
+
+    2. Parent spawns child process, passes secret via stdin (NOT env vars -- those leak to /proc)
+
+    3. Child reads secret from stdin on startup
+
+    4. All communication over stdin/stdout pipe (no network involved)
+
+    5. Messages encrypted with shared secret (AES-256-GCM)
+
+    6. Session ends when child process exits
+
+
+    Security properties:
+
+    - No network exposure at all
+
+    - Secret never touches filesystem or env vars
+
+    - Only parent and child know the secret
+
+    - Process isolation by OS
+
+
+    ### Mode 2: Pair (Peer-to-Peer via PIN)
+
+    For connecting to another Flint instance on same or different machine. Similar to Bluetooth pairing.
+
+
+    Flow:
+
+    1. Agent A calls POST /pair/request to Agent B
+
+    2. Agent B generates 6-digit PIN, displays it in terminal UI
+
+    3. Agent B returns a pairing session ID + ECDH public key
+
+    4. User reads PIN from Agent B screen
+
+    5. User types PIN into Agent A terminal
+
+    6. Agent A sends POST /pair/confirm { session_id, pin, ecdh_public_key }
+
+    7. Agent B verifies PIN matches, derives shared key via ECDH + PIN as additional entropy
+
+    8. Both sides now have a shared symmetric key
+
+    9. All subsequent messages encrypted with AES-256-GCM using the shared key
+
+    10. Session key stored in memory only (not on disk)
+
+
+    Security properties:
+
+    - Human-in-the-loop verification (PIN on screen)
+
+    - ECDH key exchange -- forward secrecy
+
+    - PIN adds protection against MITM on ECDH
+
+    - No persistent tokens on disk
+
+    - No certificates or PKI needed
+
+    - Works across network (not just localhost)
+
+
+    ## Security Questions for Review:
+
+    1. Is 6-digit PIN sufficient? Should it be longer?
+
+    2. PIN brute force -- need rate limiting + attempt counter?
+
+    3. ECDH variant -- which curve? X25519?
+
+    4. Should PIN be used as PAKE input (like SRP/SPAKE2) instead of plain verification?
+
+    5. Session key lifetime -- timeout? Rekeying?
+
+    6. What if network is untrusted (public internet)? Is ECDH + PIN enough?
+
+    7. Replay attacks on /pair/confirm?
+
+    8. Should we support "remember this peer" for trusted networks?
+
+    9. Child process stdin -- what if child is compromised and leaks secret?
+
+    10. How to handle connection drops / reconnection?
+
+
+    ## Comparison with Previous Proposal (HTTP Token)
+
+    | Aspect | HTTP Token (old) | PIN Pairing (new) |
+
+    |--------|-----------------|-------------------|
+
+    | Identity | Self-declared string | Human verified PIN |
+
+    | Encryption | None (plaintext HTTP) | ECDH + AES-256-GCM |
+
+    | Tokens on disk | Yes (Always Allow) | No (memory only) |
+
+    | Spoofing | Trivial | Requires physical access |
+
+    | Remote support | No (localhost only) | Yes (any network) |
+
+    | Complexity | Low | Medium |
+
+
+    ## Files to Implement
+
+    - src/security/pairing.js (NEW) -- PIN generation, ECDH, session management
+
+    - src/security/spawn-auth.js (NEW) -- child process secret passing
+
+    - src/api/server.js (MODIFY) -- /pair/request, /pair/confirm endpoints
+
+    - src/components/App.js (MODIFY) -- PIN display overlay
+
+    - src/crypto/channel.js (NEW) -- AES-256-GCM encrypted message channel
+
+    '

@@ -204,6 +204,61 @@ class WorkflowConfig(BaseModel):
                     )
         return blocks
 
+    @field_validator('blocks')
+    @classmethod
+    def validate_block_placeholders(cls, blocks):
+        """Validate {{ block_name.format }} placeholders in prompts reference valid blocks and use supported formats"""
+        all_names = {block.name for block in blocks}
+        block_deps = {block.name: set(block.depends_on) for block in blocks}
+
+        # Build transitive dependency sets (all ancestors, not just direct)
+        def get_all_ancestors(name: str, visited: set = None) -> set:
+            if visited is None:
+                visited = set()
+            for dep in block_deps.get(name, set()):
+                if dep not in visited:
+                    visited.add(dep)
+                    get_all_ancestors(dep, visited)
+            return visited
+
+        transitive_deps = {name: get_all_ancestors(name) for name in all_names}
+
+        # Match {{ word.word }} patterns, capturing the two parts
+        placeholder_re = re.compile(r'\{\{\s*(\w+)\.(\w+)\s*\}\}')
+
+        for block in blocks:
+            if not block.prompt:
+                continue
+            for match in placeholder_re.finditer(block.prompt):
+                ref_name = match.group(1)
+                ref_format = match.group(2)
+
+                # Skip task.input.X placeholders (handled by validate_inputs_match_prompts)
+                if ref_name == 'task':
+                    continue
+                # Skip result.X placeholders (state machine conditions)
+                if ref_name == 'result':
+                    continue
+                # Only validate placeholders where ref_name matches an existing block
+                if ref_name not in all_names:
+                    continue
+
+                # Validate format -- only .json is supported
+                if ref_format != 'json':
+                    raise ValueError(
+                        f"Block '{block.name}' uses '{{{{ {ref_name}.{ref_format} }}}}' -- "
+                        f"'.{ref_format}' is not supported. Use '.json' instead."
+                    )
+
+                # Validate that referenced block is reachable via depends_on (direct or transitive)
+                if ref_name not in transitive_deps.get(block.name, set()):
+                    raise ValueError(
+                        f"Block '{block.name}' references '{{{{ {ref_name}.json }}}}' "
+                        f"but '{ref_name}' is not reachable via its depends_on chain."
+                    )
+
+        return blocks
+
     def get_execution_order(self) -> List[List[str]]:
         """
         Compute optimal execution order (phases) respecting dependencies.

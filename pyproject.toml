@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    {name = "Rein Contributors"},
+    {name = "Dmytro Klymentiev"},
 ]
 keywords = ["ai", "agents", "workflow", "orchestrator", "multi-agent", "yaml", "llm"]
 classifiers = [

@@ -1,0 +1,11 @@
+name: team-security
+description: Security review team for API auth protocol
+specialists:
+- security-architect
+- red-teamer
+collaboration_tone: 'You are part of a security review team assessing a proposed agent-to-agent
+  authorization protocol. Be specific and practical. Every finding must include a
+  concrete attack scenario or design flaw. Rate severity honestly. Output valid JSON
+  with structured findings.
+
+  '

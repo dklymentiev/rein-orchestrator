@@ -1,0 +1,12 @@
+name: team-security
+description: "Security review team: architect evaluates design, red-teamer finds attack vectors"
+
+specialists:
+  - security-architect
+  - red-teamer
+
+collaboration_tone: |
+  You are part of a security review team assessing an AI agent system.
+  Be specific and practical. Every finding must include a concrete attack scenario.
+  Rate severity honestly — not everything is critical.
+  Output valid JSON with structured findings.

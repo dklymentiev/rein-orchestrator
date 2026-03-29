@@ -157,8 +157,20 @@ class ConfigLoader:
             True if env file was loaded, False otherwise
         """
         try:
-            env_file = os.path.join(workflow_dir, '.env')
-            if os.path.exists(env_file):
+            # Search workflow dir and parent directories for .env
+            search_dir = workflow_dir
+            env_file = None
+            for _ in range(3):
+                candidate = os.path.join(search_dir, '.env')
+                if os.path.exists(candidate):
+                    env_file = candidate
+                    break
+                parent = os.path.dirname(search_dir)
+                if parent == search_dir:
+                    break
+                search_dir = parent
+
+            if env_file:
                 with open(env_file) as f:
                     for line in f:
                         line = line.strip()

@@ -31,6 +31,7 @@ import tempfile
 from datetime import datetime, timezone
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.server import TransportSecuritySettings
 
 from rein.config import ConfigLoader, DEFAULT_AGENTS_DIR
 
@@ -44,6 +45,10 @@ mcp = FastMCP(
     instructions=(
         "Rein is a workflow orchestrator for multi-agent AI. "
         "Use these tools to list, run, and monitor AI workflows."
+    ),
+    port=int(os.environ.get("REIN_MCP_PORT", "8300")),
+    transport_security=TransportSecuritySettings(
+        allowed_hosts=["rein-mcp.sf.vpn", "10.86.45.1", "10.86.45.1:8300", "localhost", "localhost:8300"],
     ),
 )
 
@@ -485,10 +490,18 @@ def list_tasks(
 
 def main():
     transport = "stdio"
+    port = int(os.environ.get("REIN_MCP_PORT", "8300"))
     if "--sse" in sys.argv:
         transport = "sse"
     if "--streamable-http" in sys.argv:
         transport = "streamable-http"
+    if "--port" in sys.argv:
+        idx = sys.argv.index("--port")
+        if idx + 1 < len(sys.argv):
+            port = int(sys.argv[idx + 1])
+    if transport in ("sse", "streamable-http"):
+        mcp.settings.host = "10.86.45.1"
+        mcp.settings.port = port
     mcp.run(transport=transport)
 
 
