@@ -1,5 +1,5 @@
 {
-  "current_version": "2.6.0",
+  "current_version": "3.3.0",
   "description": "Schema version registry and compatibility matrix",
   "versions": {
     "2.6.0": {
@@ -12,7 +12,11 @@
         "Cross-check: prompts vs declared inputs at parse time",
         "Unresolved placeholder detection as safety net"
       ],
-      "backwards_compatible_with": ["2.5.5", "2.5.4", "2.5.3"],
+      "backwards_compatible_with": [
+        "2.5.5",
+        "2.5.4",
+        "2.5.3"
+      ],
       "migration_required": false,
       "breaking_changes": []
     },
@@ -25,7 +29,10 @@
         "block_config field in logic script context",
         "Logic scripts no longer need to parse workflow YAML"
       ],
-      "backwards_compatible_with": ["2.5.4", "2.5.3"],
+      "backwards_compatible_with": [
+        "2.5.4",
+        "2.5.3"
+      ],
       "migration_required": false,
       "breaking_changes": []
     },
@@ -39,7 +46,9 @@
         "Run count tracking per block",
         "Backwards compatible with 2.5.3 workflows"
       ],
-      "backwards_compatible_with": ["2.5.3"],
+      "backwards_compatible_with": [
+        "2.5.3"
+      ],
       "migration_required": false,
       "breaking_changes": []
     },
@@ -54,7 +63,9 @@
         "Schema versioning with compatibility matrix",
         "Flow control: skip_if_previous_failed, continue_if_failed"
       ],
-      "backwards_compatible_with": ["2.5.2"],
+      "backwards_compatible_with": [
+        "2.5.2"
+      ],
       "migration_required": false,
       "breaking_changes": []
     },
@@ -67,7 +78,9 @@
         "Parallel block execution with semaphores",
         "Data substitution via {{ file.json }} placeholders"
       ],
-      "backwards_compatible_with": ["2.5.1"],
+      "backwards_compatible_with": [
+        "2.5.1"
+      ],
       "migration_required": false,
       "breaking_changes": []
     },
@@ -80,32 +93,94 @@
         "Envelope pattern for responses"
       ],
       "breaking_changes": []
+    },
+    "3.3.0": {
+      "released": "2026-04-02",
+      "description": "Async step mode, agent routing, error handlers, per-block logging",
+      "features": [
+        "agent: field for per-block agent identity and --agent-id filtering",
+        "routing: field for tag-based block routing (deterministic)",
+        "on_error: global error handler script",
+        "logic.error: per-block error handler script",
+        "on_error priority: logic.error > on_error (per-block overrides global)",
+        "--step N: execute up to N blocks per invocation",
+        "--agent-id NAME: filter blocks by agent",
+        "Step resume: --step + --task-dir (continue from SQLite)",
+        "File lock: fcntl.flock prevents concurrent step execution",
+        "Per-run structured logs: task_dir/{block}/runs/run-NNN.log",
+        "run_count persistence in SQLite with schema migration",
+        "agent.yaml v2.0 config loading (linux_user, permissions, tools)",
+        "summary.json with per-block stats on flow completion"
+      ],
+      "backwards_compatible_with": [
+        "2.6.0",
+        "2.5.5",
+        "2.5.4",
+        "2.5.3"
+      ],
+      "migration_required": false,
+      "breaking_changes": []
     }
   },
   "compatibility_matrix": {
     "2.6.0": {
-      "can_upgrade_from": ["2.5.5", "2.5.4", "2.5.3", "2.5.2", "2.5.1"],
-      "can_downgrade_to": ["2.5.5"],
+      "can_upgrade_from": [
+        "2.5.5",
+        "2.5.4",
+        "2.5.3",
+        "2.5.2",
+        "2.5.1"
+      ],
+      "can_downgrade_to": [
+        "2.5.5"
+      ],
       "migration_script": null
     },
     "2.5.4": {
-      "can_upgrade_from": ["2.5.3", "2.5.2", "2.5.1"],
-      "can_downgrade_to": ["2.5.3"],
+      "can_upgrade_from": [
+        "2.5.3",
+        "2.5.2",
+        "2.5.1"
+      ],
+      "can_downgrade_to": [
+        "2.5.3"
+      ],
       "migration_script": null
     },
     "2.5.3": {
-      "can_upgrade_from": ["2.5.2", "2.5.1"],
+      "can_upgrade_from": [
+        "2.5.2",
+        "2.5.1"
+      ],
       "can_downgrade_to": [],
       "migration_script": null
     },
     "2.5.2": {
-      "can_upgrade_from": ["2.5.1"],
-      "can_downgrade_to": ["2.5.1"],
+      "can_upgrade_from": [
+        "2.5.1"
+      ],
+      "can_downgrade_to": [
+        "2.5.1"
+      ],
       "migration_script": null
     },
     "2.5.1": {
       "can_upgrade_from": [],
       "can_downgrade_to": [],
+      "migration_script": null
+    },
+    "3.3.0": {
+      "can_upgrade_from": [
+        "2.6.0",
+        "2.5.5",
+        "2.5.4",
+        "2.5.3",
+        "2.5.2",
+        "2.5.1"
+      ],
+      "can_downgrade_to": [
+        "2.6.0"
+      ],
       "migration_script": null
     }
   },

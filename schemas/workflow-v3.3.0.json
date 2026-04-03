@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Rein Workflow Schema v2.6.0",
-  "description": "Schema for Rein v2.6.0 workflow definitions with declarative input validation",
+  "title": "Rein Workflow Schema v3.3.0",
+  "description": "Schema for Rein v3.3.0 with async step mode, agent routing, error handlers, and per-block logging",
   "type": "object",
   "required": [
     "schema_version",
@@ -17,7 +17,8 @@
         "2.5.3",
         "2.5.4",
         "2.5.5",
-        "2.6.0"
+        "2.6.0",
+        "3.3.0"
       ],
       "description": "Schema version identifier"
     },

@@ -57,7 +57,7 @@ class ValidationEngine:
     def _load_schemas(self):
         """Load all JSON schemas from schemas directory"""
         schema_files = {
-            "workflow": "workflow-v2.6.0.json",
+            "workflow": "workflow-v3.3.0.json",
             "team": "team-v2.5.3.json"
         }
 

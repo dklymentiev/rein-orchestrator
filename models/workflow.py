@@ -17,6 +17,7 @@ class LogicConfig(BaseModel):
 
     pre: Optional[str] = None
     post: Optional[str] = None
+    error: Optional[str] = None  # Per-block error handler script (v3.3)
     validate_script: Optional[str] = Field(None, alias="validate")
     custom: Optional[Union[bool, str]] = None  # True = skip Claude API, str = custom script path
 
@@ -97,7 +98,7 @@ class InputFieldConfig(BaseModel):
 
 class WorkflowConfig(BaseModel):
     """Complete workflow configuration with validation"""
-    schema_version: str = Field(default="2.5.3")
+    schema_version: str = Field(default="3.3.0")
     name: str = Field(..., pattern=r'^[a-z0-9-]+$', min_length=1, max_length=100)
     team: str = Field(..., pattern=r'^team-[a-z0-9-]+$')
     description: Optional[str] = Field(default="", max_length=1000)
@@ -110,6 +111,7 @@ class WorkflowConfig(BaseModel):
     max_tokens: Optional[int] = Field(None, ge=1, le=200000)
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
     inputs: Optional[Dict[str, InputFieldConfig]] = None
+    on_error: Optional[str] = Field(None, description="Global error handler script path (v3.3)")
     blocks: List[BlockConfig] = Field(..., min_length=1, max_length=100)
 
     model_config = ConfigDict(extra="forbid")
@@ -323,7 +325,7 @@ class SpecialistMapping(BaseModel):
 
 class TeamConfig(BaseModel):
     """Team configuration"""
-    schema_version: str = Field(default="2.5.3")
+    schema_version: str = Field(default="3.3.0")
     name: str = Field(..., pattern=r'^team-[a-z0-9-]+$', min_length=6, max_length=100)
     description: Optional[str] = Field(default="", max_length=1000)
     metadata: Optional[Dict] = None

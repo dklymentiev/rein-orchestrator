@@ -152,15 +152,13 @@ Ten progressive examples in the `examples/` directory:
 | 04 | [deliberation](examples/04-deliberation/) | 3-phase debate | Cross-review and multi-phase |
 | 05 | [conditional](examples/05-conditional/) | Branching + loops | if/else, revision loops, max_runs |
 
-### Advanced (06-10)
+### Advanced (06-08)
 
 | # | Example | Pattern | What you learn |
 |---|---------|---------|----------------|
-| 06 | [product-analysis](examples/06-product-analysis/) | 10 blocks, 4 phases | Multi-role product analysis (PM, UX, Business) |
-| 07 | [brainstorm](examples/07-brainstorm/) | 7 blocks, diverge/converge | Divergent ideation + cross-pollination + synthesis |
-| 08 | [generic-deliberation](examples/08-generic-deliberation/) | 7 blocks, 3 phases | Creator/Critic/Integrator -- reusable template |
-| 09 | [docs-architecture](examples/09-docs-architecture/) | 10 blocks, 4 phases | Architecture review (Architect, API, PM) |
-| 10 | [creative-writing](examples/10-creative-writing/) | 5 blocks, sequential | Logic scripts: validate, post-process, enrich |
+| 06 | [security-review](examples/06-security-review/) | Multi-specialist audit | Parallel security analysis with synthesis |
+| 07 | [api-auth-review](examples/07-api-auth-review/) | Focused code review | API authentication flow analysis |
+| 08 | [pin-pairing-review](examples/08-pin-pairing-review/) | Paired review | Two reviewers + synthesis pattern |
 
 ```bash
 # Try any example

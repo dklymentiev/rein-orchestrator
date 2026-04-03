@@ -133,12 +133,12 @@ def _resolve_agent_yaml(agent_ref: str, agents_dir: str = None) -> Optional[str]
 
     # Relative to agents_dir
     if agents_dir:
-        # Try agents_dir directly (e.g. /server/agents/smm/agent.yaml)
+        # Try agents_dir directly (e.g. {agents_dir}/smm/agent.yaml)
         yaml_path = os.path.join(agents_dir, agent_ref, "agent.yaml")
         if os.path.isfile(yaml_path):
             return yaml_path
 
-        # Try parent of agents_dir (agents_dir might be /server/agents/flows/../)
+        # Try parent of agents_dir (agents_dir might be {agents_dir}/flows/../)
         parent = os.path.dirname(agents_dir)
         yaml_path = os.path.join(parent, agent_ref, "agent.yaml")
         if os.path.isfile(yaml_path):
