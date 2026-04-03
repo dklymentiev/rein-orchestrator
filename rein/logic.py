@@ -2,9 +2,13 @@
 Rein Logic Runner - Execute logic scripts (Python/Shell) for workflow blocks
 """
 import os
+import re
 import json
 import subprocess
 from typing import Optional, Callable, Dict, Any, List
+
+# linux_user must be a safe username: alphanumeric, hyphens, underscores
+SAFE_LINUX_USER = re.compile(r'^[a-zA-Z0-9_-]+$')
 
 
 class LogicRunner:
@@ -87,6 +91,12 @@ class LogicRunner:
                 return False
 
             if linux_user:
+                if not SAFE_LINUX_USER.match(linux_user):
+                    self.logger(f"LOGIC ERROR | unsafe linux_user rejected: {linux_user}")
+                    return False
+                if linux_user == "root":
+                    self.logger(f"LOGIC ERROR | sudo to root is forbidden")
+                    return False
                 cmd = ['sudo', '-u', linux_user] + cmd
                 self.logger(f"LOGIC SUDO | running as {linux_user}")
 

@@ -158,6 +158,8 @@ async def ws_handler(websocket):
         await websocket.send(json.dumps({"type": "connected", "message": "Rein Daemon"}))
 
         for task_id in get_running_tasks():
+            if not SAFE_TASK_NAME.match(task_id):
+                continue
             snapshot = get_task_state_snapshot(task_id)
             await websocket.send(json.dumps(snapshot))
             logger.info("[WS] Sent state snapshot for %s", task_id)
@@ -166,9 +168,13 @@ async def ws_handler(websocket):
             try:
                 msg = json.loads(message)
                 if msg.get("type") == "subscribe" and msg.get("task_id"):
-                    snapshot = get_task_state_snapshot(msg["task_id"])
+                    sub_id = msg["task_id"]
+                    if not SAFE_TASK_NAME.match(sub_id):
+                        await websocket.send(json.dumps({"error": "Invalid task_id"}))
+                        continue
+                    snapshot = get_task_state_snapshot(sub_id)
                     await websocket.send(json.dumps(snapshot))
-                    logger.info("[WS] Sent snapshot for subscribed task %s", msg['task_id'])
+                    logger.info("[WS] Sent snapshot for subscribed task %s", sub_id)
             except Exception:
                 pass
     except Exception as e:
@@ -339,7 +345,8 @@ def run_daemon(agents_dir: str, interval: int = 5, max_workflows: int = 3, ws_po
     async def main():
         try:
             import websockets
-            ws_server = await websockets.serve(ws_handler, "127.0.0.1", ws_port)
+            ws_host = os.environ.get("REIN_WS_HOST", "0.0.0.0")
+            ws_server = await websockets.serve(ws_handler, ws_host, ws_port)
             logger.info("[DAEMON] WebSocket server started on port %d", ws_port)
         except ImportError:
             logger.warning("[DAEMON] WebSocket disabled (pip install websockets)")

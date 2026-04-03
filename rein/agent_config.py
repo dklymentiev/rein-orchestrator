@@ -16,8 +16,10 @@ logger = get_logger(__name__)
 
 # Default search paths for agent directories (in priority order)
 AGENT_SEARCH_PATHS = [
-    "/srv/agents",
-    "/server/agents",
+    p for p in [
+        os.environ.get("REIN_AGENTS_DIR", ""),
+        "./agents",
+    ] if p
 ]
 
 

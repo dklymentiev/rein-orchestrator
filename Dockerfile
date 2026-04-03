@@ -15,4 +15,8 @@ COPY schemas/ schemas/
 # Reinstall with source present (picks up the package itself)
 RUN pip install --no-cache-dir ".[all,daemon,mcp]"
 
+# Run as non-root user
+RUN useradd -r -u 1001 -m rein && chown -R rein:rein /app
+USER rein
+
 ENTRYPOINT ["rein"]
