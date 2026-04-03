@@ -50,6 +50,8 @@ def main():
                         help='Step mode: execute up to N ready blocks then exit (0=unlimited)')
     parser.add_argument('--agent-id', metavar='NAME', default=None,
                         help='Agent identity for step mode: only execute blocks matching this agent')
+    parser.add_argument('--state', metavar='TASK_DIR',
+                        help='Print full workflow state as JSON (blocks, edges, events)')
     parser.add_argument('--run-task', metavar='TASK_ID',
                         help='Execute specific task (used internally by daemon)')
 
@@ -70,6 +72,13 @@ def main():
     if args.daemon:
         from rein.daemon import run_daemon
         run_daemon(args.agents_dir, args.daemon_interval, args.max_workflows, args.ws_port, args.no_ui)
+        sys.exit(0)
+
+    # Handle --state command (full workflow state as JSON)
+    if args.state:
+        from rein.flow_state import get_flow_state
+        state = get_flow_state(args.state, agents_dir=args.agents_dir)
+        print(json.dumps(state, indent=2, default=str))
         sys.exit(0)
 
     # Handle --status command

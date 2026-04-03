@@ -437,6 +437,33 @@ def task_status(
 
 
 @mcp.tool()
+def flow_state(
+    task_id: str,
+) -> str:
+    """Get complete workflow state with blocks, edges, layout coordinates, and events.
+
+    Returns full state suitable for visualization: block positions (x,y),
+    dependency edges, per-block status/agent/specialist, and recent events.
+
+    Args:
+        task_id: Task ID (e.g. task-20260402-170000).
+    """
+    from rein.flow_state import get_flow_state
+
+    agents = _get_agents_dir()
+    tasks_root = os.path.join(agents, "tasks")
+    task_dir = os.path.join(tasks_root, task_id)
+
+    try:
+        _validate_path_containment(task_dir, tasks_root, "task_id")
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+
+    result = get_flow_state(task_dir, agents_dir=agents)
+    return json.dumps(result, indent=2, default=str)
+
+
+@mcp.tool()
 def list_tasks(
     agents_dir: str = "",
     limit: int = 20,
