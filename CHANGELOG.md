@@ -5,21 +5,127 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.3.0] - 2026-04-02
+## [3.3.0] - 2026-04-03
 
-### Added
-- **Async step mode** (`--step N`): execute up to N ready blocks per invocation, persist state to SQLite, exit. Enables cron-driven incremental workflow execution.
-- **Agent routing** (`--agent-id NAME`): filter block execution by agent identity. Blocks with `agent:` field only run when matching agent calls. Blocks without `agent:` run for anyone.
-- **Step resume** (`--step N --task-dir PATH`): resume workflow from existing task directory without specifying `--flow`. Flow name inferred from `input/task.json`.
-- **File lock** (`state/rein.lock`): exclusive `fcntl.flock` prevents concurrent step invocations on the same task directory. Second caller exits cleanly (code 0).
-- **`run_count` persistence**: `run_count` column added to SQLite `processes` table with automatic schema migration for existing databases. `max_runs` loop protection now works across step invocations.
-- **Step exit codes**: 0 = workflow complete, 2 = more steps remain, 1 = error.
-- **Comprehensive test suite** (`tests/test_step_mode.py`): 37 tests covering functional, integration, infrastructure, e2e, run_count persistence, file locking, and agent routing.
+### Step Mode -- Run Workflows Incrementally
 
-### Changed
-- `ProcessManager.run_step()` is a new public method (separate from `run_workflow()`) with bounded execution lifecycle, no UI, no signal handlers.
-- `_initialize_all_processes()` now restores `run_counts` from SQLite on resume.
-- Stuck detection improved: step mode exits when no blocks can be spawned (agent filter, deps blocked) instead of looping indefinitely.
+Rein can now execute workflows **one step at a time** instead of running everything in one blocking process. This is the major feature of v3.3.
+
+**Before (v3.2):** `rein --flow my-flow` runs all blocks, blocks the terminal for minutes, and if it crashes halfway -- you restart from scratch.
+
+**Now (v3.3):** `rein --step 1 --flow my-flow` runs one block, saves progress to SQLite, and exits. Run it again -- it picks up where it left off.
+
+```bash
+# First call: run 1 block
+rein --flow product-eval --step 1 --input '{"product":"Rein"}'
+# Exit code 2 = more steps remain
+
+# Next calls: resume and run more blocks
+rein --step 13 --task-dir /agents/tasks/task-20260402-170000
+# Runs up to 13 blocks (parallel if dependencies allow)
+
+# Run everything remaining
+rein --step 0 --task-dir /agents/tasks/task-20260402-170000
+# Exit code 0 = workflow complete
+```
+
+**Exit codes:** `0` = workflow complete, `2` = more steps remain, `1` = error.
+
+**Why this matters:**
+- Cron jobs can drive workflows: one block per tick, predictable resource usage
+- Different agents can run different blocks (see Agent Routing below)
+- Workflows can pause for hours/days between steps (human review, approvals)
+- Crash recovery is automatic -- SQLite tracks which blocks are done
+
+### Agent Routing -- Different Agents Per Block
+
+Blocks can now specify **who** should run them with the `agent:` field:
+
+```yaml
+blocks:
+  - name: draft
+    agent: smm           # Only the SMM agent runs this block
+    prompt: "Write a social media post..."
+  - name: review
+    agent: editor         # Only the editor agent runs this
+    depends_on: [draft]
+    prompt: "Review: {{ draft.json }}"
+```
+
+Use `--agent-id` to tell Rein which agent you are:
+
+```bash
+# SMM agent's cron job -- only runs "draft"
+rein --step 1 --task-dir task-2000 --agent-id smm
+
+# Editor's cron job -- only runs "review"
+rein --step 1 --task-dir task-2000 --agent-id editor
+```
+
+Blocks without `agent:` run for anyone. Without `--agent-id`, all blocks run (backward compatible).
+
+### Agent Config (agent.yaml)
+
+Rein now reads `agent.yaml` from agent directories when a block has `agent:` field. This provides model overrides, security constraints, and OS user isolation.
+
+```yaml
+# /agents/smm/agent.yaml
+name: smm
+model: claude-sonnet-4-20250514    # Overrides flow-level model
+linux_user: agent-smm              # Run logic scripts as this OS user
+department: marketing
+forbidden_behavior:
+  - modify_other_agents
+  - access_credentials
+```
+
+### Error Handlers
+
+Two levels of error handling for workflow blocks:
+
+```yaml
+# Flow-level (catches any block failure)
+on_error: scripts/notify-telegram.sh
+
+blocks:
+  - name: critical-step
+    prompt: "..."
+    logic:
+      error: scripts/rollback.sh    # Block-level (specific handler)
+```
+
+Priority: `logic.error` (per-block) runs first. If it succeeds, `on_error` (global) is skipped. If `logic.error` fails, `on_error` runs as fallback. Handlers receive JSON context on stdin: `{block_name, error, task_dir, task_id, flow_name}`.
+
+### Per-Run Structured Logs
+
+Each block execution now creates a detailed log at `task_dir/{block}/runs/run-NNN.log`:
+
+```
+17:24:01.123 | BLOCK START | run=0 agent=smm phase=1
+17:24:01.456 | PROMPT | chars=1847 preview="You are a social media..."
+17:24:05.789 | LLM RESPONSE | chars=2341 duration=4.3s
+17:24:06.012 | LOGIC.POST START | script=scripts/save-draft.sh
+17:24:06.234 | LOGIC.POST OK | script=scripts/save-draft.sh
+17:24:06.345 | BLOCK DONE | status=done saved=outputs/result.json
+```
+
+Revision loops create `run-001.log`, `run-002.log`, etc. -- full history of every attempt.
+
+### Security Fixes
+
+- Removed hardcoded internal IP addresses from source code
+- Added path traversal protection (realpath containment checks)
+- Task directory names validated against safe character set
+- API keys scrubbed from log files (sk-*, anthropic-*, Bearer tokens)
+- MCP server `agents_dir` pinned to environment variable (callers cannot override)
+
+### Other Changes
+
+- `run_count` now persists in SQLite across step invocations (existing databases auto-migrate)
+- File lock prevents concurrent step invocations on the same task directory
+- `summary.json` now includes per-block stats (runs, status, phase, duration)
+- `linux_user` from agent config: logic scripts run as specified OS user via `sudo -u`
+- 57 new tests (step mode, agent config, error handlers)
 
 ## [3.2.0] - 2026-02-20
 

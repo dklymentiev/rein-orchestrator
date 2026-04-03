@@ -396,16 +396,70 @@ When running without `--no-ui`, Rein displays an htop-like interface:
 
 Runtime controls (via stdin): `p` = pause, `r` = resume, `q` = quit.
 
+## Step Mode (v3.3)
+
+By default, `rein` runs all blocks in one process. **Step mode** runs a fixed number of blocks per invocation, saves progress, and exits. This enables cron-driven execution, multi-agent pipelines, and human review between steps.
+
+```bash
+# Run 1 block at a time
+rein --flow my-flow --step 1 --input '{"topic":"AI"}'
+# Exit code: 0 = done, 2 = more steps remain
+
+# Resume -- runs next block
+rein --step 1 --task-dir /agents/tasks/task-20260402-170000
+
+# Run up to 5 blocks (parallel if dependencies allow)
+rein --step 5 --task-dir /agents/tasks/task-20260402-170000
+
+# Run all remaining blocks
+rein --step 0 --task-dir /agents/tasks/task-20260402-170000
+```
+
+### Multi-Agent Routing
+
+Different agents can execute different blocks. Add `agent:` to your workflow blocks:
+
+```yaml
+blocks:
+  - name: draft
+    agent: smm
+    prompt: "Write a post about {{ task.input.topic }}"
+  - name: review
+    agent: editor
+    depends_on: [draft]
+    prompt: "Review: {{ draft.json }}"
+```
+
+Each agent uses `--agent-id` to identify itself:
+
+```bash
+# SMM agent's cron -- only runs blocks with agent: smm
+rein --step 1 --task-dir task-2000 --agent-id smm
+
+# Editor's cron -- only runs blocks with agent: editor
+rein --step 1 --task-dir task-2000 --agent-id editor
+```
+
+Blocks without `agent:` run for any agent. Without `--agent-id`, all blocks run.
+
 ## CLI and Directory Structure
 
-For the full CLI reference and directory layout, see [docs/cli-reference.md](docs/cli-reference.md).
+For the full CLI reference and directory layout, see [docs/getting-started.md](docs/getting-started.md).
 
 Quick reference:
 
 ```bash
+# Continuous mode (run all blocks)
 rein workflow.yaml --agents-dir ./agents   # Run a workflow
 rein --flow deliberation --question q.txt  # Run a named flow
 rein --resume 20260113-143022              # Resume a failed run
+
+# Step mode (run N blocks, save state, exit)
+rein --flow my-flow --step 1               # First invocation
+rein --step 3 --task-dir /path/to/task     # Resume, run 3 blocks
+rein --step 1 --task-dir /path --agent-id smm  # Agent-specific
+
+# Background
 rein --daemon --agents-dir ./agents        # Daemon mode
 ```
 
