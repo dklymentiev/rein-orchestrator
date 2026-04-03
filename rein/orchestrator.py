@@ -1165,6 +1165,9 @@ class ProcessManager:
 
                         if current_runs >= max_runs_val:
                             self._write_rein_log(f"ROUTING BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs_val}")
+                            with self.lock:
+                                self.completed.add(next_block_name)
+                                self._write_rein_log(f"ROUTING FORCED COMPLETE | {next_block_name} | max_runs exhausted")
                         else:
                             self.run_counts[next_block_name] = current_runs + 1
                             with self.lock:
@@ -1245,8 +1248,11 @@ class ProcessManager:
 
                         if current_runs >= max_runs:
                             self._write_rein_log(f"NEXT BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs}")
-                            # Routing was blocked by max_runs -- did NOT go backward.
-                            # Gate should be marked as completed so dependents can proceed.
+                            # Loop exhausted: force the blocked target into completed
+                            # so its dependents can proceed (loop is over).
+                            with self.lock:
+                                self.completed.add(next_block_name)
+                                self._write_rein_log(f"NEXT FORCED COMPLETE | {next_block_name} | max_runs exhausted, marking completed")
                         else:
                             # Increment run count and add to next queue
                             self.run_counts[next_block_name] = current_runs + 1
