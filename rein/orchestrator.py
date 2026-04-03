@@ -890,7 +890,7 @@ class ProcessManager:
 
         return current
 
-    def spawn_process(self, block: dict, team_tone: str = "") -> Optional[Process]:
+    def spawn_process(self, block: dict, team_tone: str = "", from_next_queue: bool = False) -> Optional[Process]:
         """Spawn a new block execution (PHASE 2.5: Claude API instead of subprocess)"""
         name = block.get('name') or block.get('stage', 'unknown')
 
@@ -902,7 +902,8 @@ class ProcessManager:
         depends_on = block.get('depends_on', [])
 
         # Check if dependencies are met and not blocking-paused
-        if depends_on:
+        # Skip dep check for blocks triggered via next_queue (routing already validated)
+        if depends_on and not from_next_queue:
             missing = [dep for dep in depends_on if dep not in self.completed]
             if missing:
                 return None  # Dependencies not ready
@@ -1113,7 +1114,11 @@ class ProcessManager:
 
             self._write_rein_log(f"BLOCK COMPLETED | {name}[{uid}] | saved={save_file}")
             run_log.write("BLOCK DONE", f"status=done saved={save_file}")
-            self.completed.add(name)
+
+            # NOTE: completed.add(name) is DEFERRED until after routing evaluation.
+            # This prevents a race condition where downstream blocks see this gate
+            # as "completed" before routing decides to send workflow backward.
+            routing_went_backward = False
 
             # Event marker for WebSocket broadcast (must be stdout for daemon parsing)
             console.info("[BLOCK_DONE] task=%s block=%s", self.task_id, name)
@@ -1197,6 +1202,7 @@ class ProcessManager:
                                 if cascade:
                                     self._write_rein_log(f"ROUTING CASCADE | invalidated: {cascade}")
                                 self.next_queue.append((next_block_name, {}))
+                                routing_went_backward = True
                             self._write_rein_log(f"ROUTING | {name} -> {next_block_name} | signal={matched_signal} | run={self.run_counts[next_block_name]}/{max_runs_val}")
                             run_log.write("ROUTING", f"-> {next_block_name} signal={matched_signal}")
 
@@ -1274,11 +1280,18 @@ class ProcessManager:
 
                                 # Add to next queue
                                 self.next_queue.append((next_block_name, result_data))
+                                routing_went_backward = True
 
                             self._write_rein_log(f"NEXT QUEUED | {name} -> {next_block_name} | run={self.run_counts[next_block_name]}/{max_runs}")
                             run_log.write("NEXT", f"-> {next_block_name} run={self.run_counts[next_block_name]}/{max_runs}")
                 except Exception as e:
                     self._write_rein_log(f"NEXT EVAL ERROR | {name} | {str(e)}")
+
+            # Deferred completion: only mark as completed if routing didn't send backward
+            if routing_went_backward:
+                self._write_rein_log(f"GATE DEFERRED | {name} | not marking completed (routing went backward)")
+            else:
+                self.completed.add(name)
 
         except Exception as e:
             self._write_rein_log(f"BLOCK FAILED | {name}[{uid}] | {str(e)}")
@@ -1614,7 +1627,7 @@ class ProcessManager:
                     self._write_rein_log(f"STEP NEXT ERROR | block not found: {next_block_name}")
                     continue
 
-                result = self.spawn_process(block_config, team_tone)
+                result = self.spawn_process(block_config, team_tone, from_next_queue=True)
                 if result and result != "skipped":
                     steps_used += 1
                     spawned_this_round = True
@@ -1775,9 +1788,9 @@ class ProcessManager:
                         self._write_rein_log(f"NEXT TIMEOUT | stopping new spawns at {elapsed:.1f}s")
                         break
 
-                # Spawn the next block
+                # Spawn the next block (skip dep check -- routing already validated)
                 self._write_rein_log(f"NEXT SPAWN | {next_block_name} | triggered by state machine")
-                result = self.spawn_process(block_config, team_tone)
+                result = self.spawn_process(block_config, team_tone, from_next_queue=True)
                 if result and result != "skipped":
                     # Block was spawned successfully
                     pass
