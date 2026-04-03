@@ -1176,13 +1176,23 @@ class ProcessManager:
                                 dependents_map = self._get_dependents_map()
                                 cascade = self._cascade_invalidation({next_block_name}, dependents_map)
                                 cascade.discard(next_block_name)  # already reset above
+
+                                # Gate fix: also invalidate blocks that depend on THIS gate block
+                                # (except the routing target). Prevents race condition where
+                                # downstream blocks see gate as "completed" before routing
+                                # sends workflow backward for revision.
+                                gate_dependents = set(dependents_map.get(name, []))
+                                gate_dependents.discard(next_block_name)  # target proceeds normally
+                                cascade.update(gate_dependents)
+
                                 for dep_name in cascade:
                                     self.completed.discard(dep_name)
                                     for proc_uid, proc in self.processes.items():
                                         if proc.name == dep_name:
-                                            proc.status = "waiting"
-                                            proc.progress = 0
-                                            self.state.save_process(proc)
+                                            if proc.status != "running":  # don't reset already-running
+                                                proc.status = "waiting"
+                                                proc.progress = 0
+                                                self.state.save_process(proc)
                                             break
                                 if cascade:
                                     self._write_rein_log(f"ROUTING CASCADE | invalidated: {cascade}")
@@ -1244,6 +1254,24 @@ class ProcessManager:
                                         proc.run_count = self.run_counts[next_block_name]
                                         self.state.save_process(proc)
                                         break
+
+                                # Gate fix: invalidate blocks depending on this gate
+                                # (except routing target) to prevent race condition
+                                dependents_map = self._get_dependents_map()
+                                gate_deps = set(dependents_map.get(name, []))
+                                gate_deps.discard(next_block_name)
+                                for dep_name in gate_deps:
+                                    self.completed.discard(dep_name)
+                                    for proc_uid, proc in self.processes.items():
+                                        if proc.name == dep_name:
+                                            if proc.status != "running":
+                                                proc.status = "waiting"
+                                                proc.progress = 0
+                                                self.state.save_process(proc)
+                                            break
+                                if gate_deps:
+                                    self._write_rein_log(f"GATE CASCADE | {name} | invalidated: {gate_deps}")
+
                                 # Add to next queue
                                 self.next_queue.append((next_block_name, result_data))
 
