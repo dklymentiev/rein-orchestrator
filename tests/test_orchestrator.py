@@ -713,3 +713,63 @@ class TestGetPreviousBlocksStatus(TestProcessManagerFixture):
         block = {"name": "d"}
         failed = manager._get_previous_blocks_status(block)
         assert set(failed) == {"a", "b"}
+
+
+class TestRunStep(TestProcessManagerFixture):
+    """Tests for run_step() method -- async step-by-step execution"""
+
+    def _setup_blocks(self, manager, blocks):
+        """Helper: load blocks into manager and initialize processes."""
+        config = {"blocks": blocks}
+        manager.load_config(config)
+
+    def test_empty_workflow_returns_true(self, manager):
+        """Empty workflow (no blocks) is immediately complete"""
+        self._setup_blocks(manager, [])
+        result = manager.run_step(1)
+        assert result is True
+
+    def test_already_complete_returns_true(self, manager):
+        """If all blocks already completed, run_step returns True"""
+        blocks = [{"name": "a", "prompt": "test", "depends_on": []}]
+        self._setup_blocks(manager, blocks)
+        # Manually mark as completed
+        manager.completed.add("a")
+        for p in manager.processes.values():
+            p.status = "done"
+        result = manager.run_step(1)
+        assert result is True
+
+    def test_has_running_processes(self, manager):
+        """_has_running_processes returns True when blocks are running"""
+        manager.processes["uid-1"] = Process(
+            pid=None, name="a", status="running",
+            start_time=0, command=""
+        )
+        assert manager._has_running_processes() is True
+
+    def test_has_no_running_processes(self, manager):
+        """_has_running_processes returns False when no blocks running"""
+        manager.processes["uid-1"] = Process(
+            pid=None, name="a", status="done",
+            start_time=0, command=""
+        )
+        assert manager._has_running_processes() is False
+
+    def test_wait_for_inflight_returns_immediately_when_none_running(self, manager):
+        """_wait_for_inflight returns immediately if no running processes"""
+        manager.processes["uid-1"] = Process(
+            pid=None, name="a", status="done",
+            start_time=0, command=""
+        )
+        start = time.time()
+        manager._wait_for_inflight(timeout=5.0)
+        elapsed = time.time() - start
+        assert elapsed < 1.0  # Should return nearly instantly
+
+    def test_step_budget_zero_means_unlimited(self, manager):
+        """run_step(0) should not be limited by step budget"""
+        # With 0 blocks, should just return True (complete)
+        self._setup_blocks(manager, [])
+        result = manager.run_step(0)
+        assert result is True

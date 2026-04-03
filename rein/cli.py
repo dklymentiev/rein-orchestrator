@@ -46,10 +46,19 @@ def main():
                         help='Maximum parallel workflows in daemon mode (default: 3)')
     parser.add_argument('--ws-port', type=int, default=8765,
                         help='WebSocket server port for live updates (default: 8765)')
+    parser.add_argument('--step', type=int, default=None, metavar='N',
+                        help='Step mode: execute up to N ready blocks then exit (0=unlimited)')
+    parser.add_argument('--agent-id', metavar='NAME', default=None,
+                        help='Agent identity for step mode: only execute blocks matching this agent')
     parser.add_argument('--run-task', metavar='TASK_ID',
                         help='Execute specific task (used internally by daemon)')
 
     args = parser.parse_args()
+
+    # Validate --step
+    if args.step is not None and args.step < 0:
+        print("[ERROR] --step must be >= 0")
+        sys.exit(1)
 
     # Handle --run-task mode (subprocess spawned by daemon)
     if args.run_task:
@@ -68,8 +77,12 @@ def main():
         _handle_status(args)
         sys.exit(0)
 
+    # Handle --step resume (--step + --task-dir without --flow)
+    if args.step is not None and args.task_dir and not args.flow:
+        manager = _handle_step_resume(args)
+
     # Handle --flow mode
-    if args.flow:
+    elif args.flow:
         manager = _handle_flow(args)
 
     # Handle --task mode
@@ -85,6 +98,21 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    # Step mode: bounded execution, no UI, no signal handlers
+    if args.step is not None:
+        budget_str = str(args.step) if args.step > 0 else "unlimited"
+        print(f"\n[STEP] Budget: {budget_str}")
+        if args.agent_id:
+            print(f"[STEP] Agent: {args.agent_id}")
+        print(f"[DIR] Task Directory: {manager.task_dir}")
+        print(f"[DB] Database: {manager.db_path}")
+        print()
+
+        workflow_done = manager.run_step(args.step, agent_id=args.agent_id)
+        manager.running = False
+        sys.exit(0 if workflow_done else 2)
+
+    # Continuous mode: full lifecycle
     # Pause workflow if --pause flag provided
     if args.pause:
         manager.pause_workflow()
@@ -133,6 +161,67 @@ def main():
 
     manager.running = False
     sys.exit(0)
+
+
+def _handle_step_resume(args):
+    """Handle step mode resume: --step N --task-dir /path (no --flow).
+
+    Reads input/task.json to infer the flow name, then sets up
+    ProcessManager with resume against the existing task directory.
+    """
+    from rein.orchestrator import ProcessManager
+    from rein.tasks import load_config
+
+    task_dir = args.task_dir.rstrip('/')
+    task_json_path = os.path.join(task_dir, 'input', 'task.json')
+
+    if not os.path.exists(task_json_path):
+        print(f"[ERROR] No task.json found in: {task_dir}/input/")
+        print("[HINT] Use --flow to create a new task, or check the --task-dir path")
+        sys.exit(1)
+
+    with open(task_json_path) as f:
+        task_data = json.load(f)
+
+    flow_name = task_data.get('flow')
+    if not flow_name:
+        print("[ERROR] task.json missing 'flow' field")
+        sys.exit(1)
+
+    agents_dir = args.agents_dir
+    flow_path = os.path.join(agents_dir, 'flows', flow_name, f'{flow_name}.yaml')
+
+    if not os.path.exists(flow_path):
+        print(f"[ERROR] Flow not found: {flow_path}")
+        sys.exit(1)
+
+    config = load_config(flow_path)
+    task_input = task_data.get('input', {})
+
+    manager = ProcessManager(
+        max_parallel=config.get('semaphore', 3),
+        flow_name=flow_name,
+        task_input=task_input,
+        agents_dir=agents_dir
+    )
+
+    task_id = os.path.basename(task_dir)
+    manager.task_id = task_id
+    manager.task_dir = task_dir
+    manager.run_dir = task_dir
+    manager.log_dir = os.path.join(task_dir, "state")
+    manager.rein_log_file = os.path.join(task_dir, "state", "rein.log")
+    manager.db_path = os.path.join(task_dir, "state", "rein.db")
+    os.makedirs(manager.log_dir, exist_ok=True)
+
+    # Resume from existing DB
+    manager.state = ReinState(manager.db_path, resume=True)
+    manager.load_config(config, workflow_file=flow_path)
+
+    print(f"\n[STEP RESUME] Task: {task_id}")
+    print(f"[STEP RESUME] Flow: {flow_name}")
+
+    return manager
 
 
 def _handle_status(args):

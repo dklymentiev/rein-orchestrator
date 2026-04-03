@@ -3,12 +3,22 @@
   "title": "Rein Workflow Schema v2.6.0",
   "description": "Schema for Rein v2.6.0 workflow definitions with declarative input validation",
   "type": "object",
-  "required": ["schema_version", "name", "team", "blocks"],
+  "required": [
+    "schema_version",
+    "name",
+    "team",
+    "blocks"
+  ],
   "additionalProperties": true,
   "properties": {
     "schema_version": {
       "type": "string",
-      "enum": ["2.5.3", "2.5.4", "2.5.5", "2.6.0"],
+      "enum": [
+        "2.5.3",
+        "2.5.4",
+        "2.5.5",
+        "2.6.0"
+      ],
       "description": "Schema version identifier"
     },
     "name": {
@@ -105,7 +115,9 @@
     },
     "block": {
       "type": "object",
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "additionalProperties": false,
       "properties": {
         "name": {
@@ -220,13 +232,28 @@
             },
             "custom": {
               "oneOf": [
-                { "type": "boolean" },
-                { "type": "string" }
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string"
+                }
               ],
               "description": "If true, skip Claude API call (pre script handles everything). If string, path to custom script."
             }
           },
           "description": "Logic phase scripts"
+        },
+        "agent": {
+          "type": "string",
+          "description": "Agent identity for async step mode routing"
+        },
+        "routing": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Tag-based routing: {tag: next_block_name, _default: fallback}"
         }
       }
     },

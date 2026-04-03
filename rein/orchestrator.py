@@ -16,6 +16,7 @@ import re
 import uuid
 import socket
 import select
+import fcntl
 from dataclasses import asdict
 from typing import List, Dict, Optional, Set
 from datetime import datetime
@@ -32,6 +33,8 @@ from rein import (
 )
 from rein.providers import create_provider
 from rein.providers.base import UsageStats
+from rein.agent_config import load_agent_config, validate_forbidden_behavior, AgentConfig
+from rein.run_log import RunLogger
 from rein.tasks import update_task_status as _update_task_status
 from rein.tasks import save_task_to_memory as _save_task_to_memory
 from rein.log import get_logger, get_console
@@ -208,6 +211,7 @@ class ProcessManager:
         self.all_blocks = config.get('blocks', [])
         self.timeout = config.get('timeout', None)  # timeout in seconds
         self.team_name = config.get('team', None)  # PHASE 2.5: team name
+        self.on_error = config.get('on_error', None)  # Global error handler script
 
         # Extract workflow directory from file path (for relative logic paths)
         if workflow_file:
@@ -469,8 +473,14 @@ class ProcessManager:
         except ValueError:
             raise
 
-    def call_claude(self, prompt: str, stage: str) -> str:
+    def call_claude(self, prompt: str, stage: str, model_override: str = None) -> str:
         """Call LLM provider and track usage (backward-compatible name).
+
+        Args:
+            prompt: The assembled prompt text.
+            stage: Block name for tracking.
+            model_override: Optional model name (from agent config) that takes
+                            precedence over the flow-level model.
 
         Returns only the text; usage is accumulated internally.
         """
@@ -478,7 +488,17 @@ class ProcessManager:
             # Late init with empty config - will auto-detect from env
             self._init_provider({})
 
-        text, usage = self._provider.call(prompt, stage)
+        if model_override and hasattr(self._provider, 'model'):
+            original_model = self._provider.model
+            self._provider.model = model_override
+            self._write_rein_log(f"MODEL OVERRIDE | {stage} | {original_model} -> {model_override}")
+            try:
+                text, usage = self._provider.call(prompt, stage)
+            finally:
+                self._provider.model = original_model
+        else:
+            text, usage = self._provider.call(prompt, stage)
+
         self._accumulate_usage(stage, usage)
         return text
 
@@ -510,7 +530,8 @@ class ProcessManager:
         return input_dir
 
     def _run_logic(self, script_path: str, data_file: str, workflow_dir: str,
-                   input_dir: str = None, block_config: dict = None) -> bool:
+                   input_dir: str = None, block_config: dict = None,
+                   linux_user: str = None) -> bool:
         """Run logic script (delegates to LogicRunner)"""
         block_name = block_config.get('name') if block_config else None
         block_dir = self._get_block_dir(block_name) if block_name and self.task_dir else None
@@ -532,7 +553,8 @@ class ProcessManager:
             block_dir=block_dir,
             input_dir=input_dir,
             depends_on=depends_on,
-            block_config=block_config
+            block_config=block_config,
+            linux_user=linux_user
         )
 
     def _load_state_from_db(self):
@@ -607,6 +629,9 @@ class ProcessManager:
         try:
             for db_proc in self.state.get_all_processes():
                 existing_status[db_proc.name] = db_proc.status
+                # Restore run_counts from DB for step mode persistence
+                if db_proc.run_count > 0:
+                    self.run_counts[db_proc.name] = db_proc.run_count
         except Exception:
             pass
 
@@ -925,10 +950,32 @@ class ProcessManager:
         name = process.name
         block_failed = False
 
+        # Create per-run log
+        run_log = RunLogger(self.task_dir, name, process.run_count)
+        run_log.write("BLOCK START", f"run={process.run_count} agent={process.agent or 'default'} phase={process.phase}")
+
         # Event marker for WebSocket broadcast (must be stdout for daemon parsing)
         console.info("[BLOCK_START] task=%s block=%s", self.task_id, name)
 
         try:
+            # Load agent config if block has agent: field
+            agent_ref = block.get('agent', '')
+            agent_cfg = None
+            if agent_ref:
+                agent_cfg = load_agent_config(agent_ref, self.agents_dir)
+                if agent_cfg:
+                    self._write_rein_log(
+                        f"AGENT CONFIG | {name} | agent={agent_cfg.name} | "
+                        f"model={agent_cfg.model or 'default'} | "
+                        f"linux_user={agent_cfg.linux_user or 'current'}"
+                    )
+                    # Validate forbidden_behavior before execution
+                    violation = validate_forbidden_behavior(agent_cfg, block)
+                    if violation:
+                        raise Exception(f"Agent policy violation: {violation}")
+                else:
+                    self._write_rein_log(f"AGENT CONFIG | {name} | agent={agent_ref} | not found, using defaults")
+
             process.progress = 25
             self.state.save_process(process)
 
@@ -947,10 +994,16 @@ class ProcessManager:
             depends_on = block.get('depends_on', [])
             input_dir = self._prepare_input_dir(name, depends_on)
 
+            # Resolve linux_user from agent config
+            agent_linux_user = agent_cfg.linux_user if agent_cfg and agent_cfg.linux_user else None
+
             # PRE-PHASE: Run pre-processing logic (before Claude)
             if logic_config.get('pre'):
-                if not self._run_logic(logic_config['pre'], save_file, workflow_dir, input_dir, block):
+                run_log.write("LOGIC.PRE START", f"script={logic_config['pre']}")
+                if not self._run_logic(logic_config['pre'], save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user):
+                    run_log.write("LOGIC.PRE FAILED", f"script={logic_config['pre']}")
                     raise Exception(f"Pre-phase logic failed: {logic_config['pre']}")
+                run_log.write("LOGIC.PRE OK", f"script={logic_config['pre']}")
 
             # CLAUDE-PHASE: Call Claude API or run custom script
             custom_script = logic_config.get('custom')
@@ -960,7 +1013,7 @@ class ProcessManager:
                 # If custom is True (boolean) - skip Claude, pre script already did everything
                 if isinstance(custom_script, str):
                     self._write_rein_log(f"CUSTOM SCRIPT | {name} | script={custom_script}")
-                    if not self._run_logic(custom_script, save_file, workflow_dir, input_dir, block):
+                    if not self._run_logic(custom_script, save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user):
                         raise Exception(f"Custom logic failed: {custom_script}")
                 else:
                     self._write_rein_log(f"CUSTOM SKIP | {name} | pre script handled Claude call")
@@ -973,11 +1026,17 @@ class ProcessManager:
                 if has_agents_or_specialist and has_prompt and team_tone:
                     # PHASE 2.5: Claude API execution
                     prompt = self.assemble_prompt(block, team_tone)
+                    run_log.write("PROMPT", f"chars={len(prompt)} preview={prompt[:200]!r}")
                     process.progress = 50
                     self.state.save_process(process)
 
-                    # Call Claude
-                    result = self.call_claude(prompt, name)
+                    # Call Claude (with optional agent model override)
+                    agent_model = agent_cfg.model if agent_cfg and agent_cfg.model else None
+                    import time as _time
+                    _call_start = _time.time()
+                    result = self.call_claude(prompt, name, model_override=agent_model)
+                    _call_dur = _time.time() - _call_start
+                    run_log.write("LLM RESPONSE", f"chars={len(result)} duration={_call_dur:.1f}s")
                     process.progress = 75
                 else:
                     # FALLBACK: Old system (shell execution)
@@ -1018,12 +1077,15 @@ class ProcessManager:
 
             # POST-PHASE: Run post-processing logic (after Claude)
             if logic_config.get('post'):
-                if not self._run_logic(logic_config['post'], save_file, workflow_dir, input_dir, block):
+                run_log.write("LOGIC.POST START", f"script={logic_config['post']}")
+                if not self._run_logic(logic_config['post'], save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user):
+                    run_log.write("LOGIC.POST FAILED", f"script={logic_config['post']}")
                     raise Exception(f"Post-phase logic failed: {logic_config['post']}")
+                run_log.write("LOGIC.POST OK", f"script={logic_config['post']}")
 
             # VALIDATE-PHASE: Run validation logic
             if logic_config.get('validate'):
-                if not self._run_logic(logic_config['validate'], save_file, workflow_dir, input_dir, block):
+                if not self._run_logic(logic_config['validate'], save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user):
                     raise Exception(f"Validate-phase logic failed: {logic_config['validate']}")
 
             process.progress = 100
@@ -1042,13 +1104,92 @@ class ProcessManager:
                     self._write_rein_log(f"READABLE OUTPUT ERROR | {name} | {str(e)}")
 
             self._write_rein_log(f"BLOCK COMPLETED | {name}[{uid}] | saved={save_file}")
+            run_log.write("BLOCK DONE", f"status=done saved={save_file}")
             self.completed.add(name)
 
             # Event marker for WebSocket broadcast (must be stdout for daemon parsing)
             console.info("[BLOCK_DONE] task=%s block=%s", self.task_id, name)
 
+            # ROUTING: Tag-based routing from block output (v3.3)
+            if block.get('routing'):
+                try:
+                    routing = block['routing']
+                    # Read result text to detect verdict/signals
+                    result_text = ""
+                    if os.path.exists(save_file):
+                        with open(save_file) as f:
+                            saved_data = json.load(f)
+                            inner = saved_data.get('result', saved_data.get('response', ''))
+                            result_text = inner if isinstance(inner, str) else json.dumps(inner)
+
+                    # Extract signals from result text (VERDICT: PASS, VERDICT: REVISE, etc.)
+                    signals = set()
+                    for line in result_text.upper().split('\n'):
+                        line = line.strip()
+                        if line.startswith('VERDICT:'):
+                            verdict = line.split(':', 1)[1].strip()
+                            if verdict == 'PASS' or verdict == 'APPROVED':
+                                signals.add('needs-review')
+                            elif verdict == 'REVISE':
+                                signals.add('revise')
+
+                    # Match signals against routing rules
+                    next_block_name = None
+                    matched_signal = None
+                    for signal in signals:
+                        if signal in routing:
+                            next_block_name = routing[signal]
+                            matched_signal = signal
+                            break
+                    if not next_block_name:
+                        next_block_name = routing.get('_default')
+                        matched_signal = '_default'
+
+                    if next_block_name and next_block_name != '_stop':
+                        current_runs = self.run_counts.get(next_block_name, 0)
+                        next_block_config = self.block_configs.get(next_block_name)
+                        max_runs_val = next_block_config.get('max_runs', 1) if next_block_config else 1
+
+                        if current_runs >= max_runs_val:
+                            self._write_rein_log(f"ROUTING BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs_val}")
+                        else:
+                            self.run_counts[next_block_name] = current_runs + 1
+                            with self.lock:
+                                self.completed.discard(next_block_name)
+                                # Reset the target block
+                                for proc_uid, proc in self.processes.items():
+                                    if proc.name == next_block_name:
+                                        proc.status = "waiting"
+                                        proc.progress = 0
+                                        proc.run_count = self.run_counts[next_block_name]
+                                        self.state.save_process(proc)
+                                        break
+                                # Cascade: invalidate all blocks that depend on the reset block
+                                dependents_map = self._get_dependents_map()
+                                cascade = self._cascade_invalidation({next_block_name}, dependents_map)
+                                cascade.discard(next_block_name)  # already reset above
+                                for dep_name in cascade:
+                                    self.completed.discard(dep_name)
+                                    for proc_uid, proc in self.processes.items():
+                                        if proc.name == dep_name:
+                                            proc.status = "waiting"
+                                            proc.progress = 0
+                                            self.state.save_process(proc)
+                                            break
+                                if cascade:
+                                    self._write_rein_log(f"ROUTING CASCADE | invalidated: {cascade}")
+                                self.next_queue.append((next_block_name, {}))
+                            self._write_rein_log(f"ROUTING | {name} -> {next_block_name} | signal={matched_signal} | run={self.run_counts[next_block_name]}/{max_runs_val}")
+                            run_log.write("ROUTING", f"-> {next_block_name} signal={matched_signal}")
+
+                    elif next_block_name == '_stop':
+                        self._write_rein_log(f"ROUTING STOP | {name} | signal={matched_signal}")
+
+                except Exception as e:
+                    self._write_rein_log(f"ROUTING ERROR | {name} | {str(e)}")
+
             # STATE MACHINE: Evaluate and trigger next block (Phase 2.5.4)
-            if block.get('next'):
+            if block.get('next') and not block.get('routing'):
                 try:
                     # Parse result data for condition evaluation
                     result_data = {}
@@ -1099,16 +1240,21 @@ class ProcessManager:
                                 self.next_queue.append((next_block_name, result_data))
 
                             self._write_rein_log(f"NEXT QUEUED | {name} -> {next_block_name} | run={self.run_counts[next_block_name]}/{max_runs}")
+                            run_log.write("NEXT", f"-> {next_block_name} run={self.run_counts[next_block_name]}/{max_runs}")
                 except Exception as e:
                     self._write_rein_log(f"NEXT EVAL ERROR | {name} | {str(e)}")
 
         except Exception as e:
             self._write_rein_log(f"BLOCK FAILED | {name}[{uid}] | {str(e)}")
+            run_log.write("BLOCK FAILED", f"error={str(e)}")
             process.status = "failed"
             process.exit_code = 1
             block_failed = True
             self.state.save_process(process)
             self.completed.add(name)
+
+            # Run error handlers: logic.error (per-block) > on_error (global)
+            self._run_error_handlers(block, name, str(e), run_log)
 
             # Check continue_if_failed flag (FLOW CONTROL)
             if not self._should_continue_after_failure(block, block_failed):
@@ -1117,7 +1263,93 @@ class ProcessManager:
                     self.stop_workflow = True
                     self.stop_reason = f"Critical failure in block '{name}' (continue_if_failed=false)"
         finally:
+            run_log.close()
             self.semaphore.release()
+
+    def _run_error_handlers(self, block: dict, block_name: str, error_msg: str, run_log=None):
+        """Run error handlers: per-block logic.error first, then global on_error.
+
+        Error context is passed via stdin JSON to the handler script:
+        {block_name, error, task_dir, task_id, flow_name}
+        """
+        error_context = json.dumps({
+            "block_name": block_name,
+            "error": error_msg,
+            "task_dir": self.task_dir,
+            "task_id": self.task_id or "",
+            "flow_name": self.flow_name or "",
+        })
+
+        logic_config = block.get("logic", {})
+        error_script = logic_config.get("error")
+        handled = False
+
+        # Priority 1: per-block logic.error
+        if error_script:
+            self._write_rein_log(f"ERROR HANDLER | {block_name} | logic.error={error_script}")
+            if run_log:
+                run_log.write("LOGIC.ERROR START", f"script={error_script}")
+            try:
+                script_path = os.path.join(self.workflow_dir, error_script)
+                if not os.path.isfile(script_path):
+                    script_path = error_script  # Try as absolute path
+
+                result = subprocess.run(
+                    ["bash", script_path] if script_path.endswith(".sh") else ["python3", script_path],
+                    input=error_context,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=self.workflow_dir,
+                )
+                if result.returncode == 0:
+                    self._write_rein_log(f"ERROR HANDLER OK | {block_name} | logic.error")
+                    if run_log:
+                        run_log.write("LOGIC.ERROR OK", f"script={error_script}")
+                        if result.stdout:
+                            for line in result.stdout.strip().splitlines()[:20]:
+                                run_log.write("LOGIC.ERROR STDOUT", line)
+                    handled = True
+                else:
+                    self._write_rein_log(
+                        f"ERROR HANDLER FAILED | {block_name} | logic.error | "
+                        f"exit={result.returncode} | stderr={result.stderr[:200]}"
+                    )
+                    if run_log:
+                        run_log.write("LOGIC.ERROR FAILED", f"exit={result.returncode}")
+                        if result.stderr:
+                            for line in result.stderr.strip().splitlines()[:20]:
+                                run_log.write("LOGIC.ERROR STDERR", line)
+            except Exception as handler_err:
+                self._write_rein_log(f"ERROR HANDLER EXCEPTION | {block_name} | logic.error | {handler_err}")
+                if run_log:
+                    run_log.write("LOGIC.ERROR EXCEPTION", str(handler_err))
+
+        # Priority 2: global on_error (only if logic.error didn't handle it)
+        if not handled and self.on_error:
+            self._write_rein_log(f"ERROR HANDLER | {block_name} | on_error={self.on_error}")
+            try:
+                script_path = os.path.join(self.workflow_dir, self.on_error)
+                if not os.path.isfile(script_path):
+                    script_path = self.on_error
+
+                result = subprocess.run(
+                    ["bash", script_path] if script_path.endswith(".sh") else ["python3", script_path],
+                    input=error_context,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=self.workflow_dir,
+                )
+                if result.returncode == 0:
+                    self._write_rein_log(f"ERROR HANDLER OK | {block_name} | on_error")
+                else:
+                    self._write_rein_log(
+                        f"ERROR HANDLER FAILED | {block_name} | on_error | "
+                        f"exit={result.returncode} | stderr={result.stderr[:200]}"
+                    )
+            except Exception as handler_err:
+                self._write_rein_log(f"ERROR HANDLER EXCEPTION | {block_name} | on_error | {handler_err}")
 
     def _monitor_process(self, uid: str, proc: subprocess.Popen, process: Process):
         """Monitor process and collect metrics"""
@@ -1220,6 +1452,206 @@ class ProcessManager:
             self._write_rein_log(f"PROCESS ERROR | {name}[{uid}] | exception={str(e)}")
         finally:
             self.semaphore.release()
+
+    def run_step(self, max_steps: int = 1, agent_id: str = None) -> bool:
+        """Execute up to max_steps ready blocks, then return.
+
+        Designed for cron-based async execution: each invocation runs a bounded
+        number of blocks, persists state to SQLite, and exits. The next invocation
+        resumes from where it left off.
+
+        Args:
+            max_steps: Maximum blocks to execute. 0 means unlimited (run to completion).
+            agent_id: If set, only execute blocks whose agent field matches (or is empty).
+
+        Returns:
+            True if workflow is fully complete, False if more steps remain.
+        """
+        # Acquire exclusive file lock to prevent concurrent step invocations
+        lock_path = os.path.join(self.task_dir, "state", "rein.lock")
+        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+        self._step_lock_fd = open(lock_path, "w")
+        try:
+            fcntl.flock(self._step_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, OSError):
+            self._step_lock_fd.close()
+            self._write_rein_log("STEP LOCKED | another instance is running, skipping")
+            print("[STEP] Another instance is running on this task. Skipping.")
+            return False
+
+        try:
+            return self._run_step_inner(max_steps, agent_id)
+        finally:
+            fcntl.flock(self._step_lock_fd, fcntl.LOCK_UN)
+            self._step_lock_fd.close()
+
+    def _run_step_inner(self, max_steps: int, agent_id: str = None) -> bool:
+        """Inner step execution (called while holding file lock)."""
+        unlimited = (max_steps == 0)
+        steps_used = 0
+
+        # Build pending set, excluding already-completed blocks
+        pending = {}
+        for block in self.all_blocks:
+            name = block.get('name') or block.get('stage', 'unknown')
+            if name not in self.completed:
+                pending[name] = block
+
+        # Load team tone
+        team_tone = ""
+        if self.team_name:
+            team_tone = self.load_team(self.team_name)
+
+        start_time = time.time() if self.timeout else None
+
+        agent_str = f" | agent_id={agent_id}" if agent_id else ""
+        self._write_rein_log(
+            f"STEP MODE | budget={max_steps} | pending={len(pending)} | "
+            f"completed={len(self.completed)} | total={len(self.all_blocks)}{agent_str}"
+        )
+
+        # If nothing to do, workflow is already complete
+        if not pending and not self.next_queue:
+            self._write_rein_log("STEP NOOP | workflow already complete")
+            self._finalize_run()
+            return True
+
+        while pending or self._has_running_processes() or self.next_queue:
+            # Check stop conditions
+            if self.stop_workflow:
+                self._write_rein_log(f"STEP STOP | reason={self.stop_reason}")
+                self._kill_remaining_processes(self.stop_reason or "workflow stop")
+                break
+
+            if self.timeout and start_time:
+                if time.time() - start_time > self.timeout:
+                    self._write_rein_log("STEP TIMEOUT")
+                    break
+
+            # Budget exhausted: wait for in-flight blocks, then exit
+            if not unlimited and steps_used >= max_steps:
+                self._wait_for_inflight()
+                break
+
+            # Find ready blocks (dependencies satisfied + agent filter)
+            ready = []
+            for name, block in pending.items():
+                depends_on = block.get('depends_on', [])
+                if not (not depends_on or all(dep in self.completed for dep in depends_on)):
+                    continue  # deps not met
+
+                # Agent routing: if agent_id set, skip blocks assigned to other agents
+                if agent_id:
+                    block_agent = block.get('agent', '')
+                    if block_agent and block_agent != agent_id:
+                        continue  # not my block
+
+                ready.append(name)
+
+            # Spawn ready blocks up to remaining budget
+            spawned_this_round = False
+            for name in ready:
+                if not unlimited and steps_used >= max_steps:
+                    break
+
+                result = self.spawn_process(pending[name], team_tone)
+                if result == "skipped":
+                    del pending[name]
+                    self.completed.add(name)
+                elif result:
+                    del pending[name]
+                    steps_used += 1
+                    spawned_this_round = True
+
+            # Process next_queue (state machine triggers), counting against budget
+            while self.next_queue:
+                if not unlimited and steps_used >= max_steps:
+                    break
+
+                with self.lock:
+                    if not self.next_queue:
+                        break
+                    next_block_name, trigger_data = self.next_queue.pop(0)
+
+                block_config = self.block_configs.get(next_block_name)
+                if not block_config:
+                    self._write_rein_log(f"STEP NEXT ERROR | block not found: {next_block_name}")
+                    continue
+
+                result = self.spawn_process(block_config, team_tone)
+                if result and result != "skipped":
+                    steps_used += 1
+                    spawned_this_round = True
+                elif result == "skipped":
+                    pass
+                else:
+                    # Failed to spawn - put back for retry
+                    with self.lock:
+                        self.next_queue.insert(0, (next_block_name, trigger_data))
+                    break
+
+            time.sleep(0.5)
+
+            # Check if all done
+            if not pending and self.all_completed() and not self.next_queue:
+                break
+
+            # Stuck check: nothing spawned, nothing running, nothing in queue
+            if not spawned_this_round and not self._has_running_processes() and not self.next_queue:
+                break
+
+        # Determine completion status
+        all_done = all(
+            name in self.completed
+            for block in self.all_blocks
+            for name in [block.get('name') or block.get('stage', 'unknown')]
+        ) and self.all_completed() and not self.next_queue
+
+        if all_done:
+            self._finalize_run()
+            self._write_rein_log(f"STEP COMPLETE | workflow done | steps_used={steps_used}")
+        else:
+            remaining = sum(
+                1 for block in self.all_blocks
+                if (block.get('name') or block.get('stage', 'unknown')) not in self.completed
+            )
+            self._write_rein_log(
+                f"STEP YIELDING | steps_used={steps_used} | remaining={remaining}"
+            )
+
+        # Print summary
+        completed_count = len(self.completed)
+        total = len(self.all_blocks)
+        failed = sum(1 for p in self.processes.values() if p.status == "failed")
+        print(f"[STEP] Executed: {steps_used} block(s)")
+        print(f"[STEP] Progress: {completed_count}/{total} blocks ({failed} failed)")
+        if all_done:
+            print("[STEP] Workflow: COMPLETE")
+        else:
+            print("[STEP] Workflow: IN PROGRESS (more steps remain)")
+
+        return all_done
+
+    def _wait_for_inflight(self, timeout: float = 300.0):
+        """Wait for currently running blocks to finish before returning.
+
+        Called when step budget is exhausted but blocks are still executing
+        in background threads. Must wait for them to complete so SQLite state
+        is consistent before the process exits.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            with self.lock:
+                running = [p for p in self.processes.values() if p.status == "running"]
+            if not running:
+                return
+            time.sleep(0.5)
+        self._write_rein_log(f"WAIT TIMEOUT | {len(running)} blocks still running after {timeout}s")
+
+    def _has_running_processes(self) -> bool:
+        """Check if any processes are currently running."""
+        with self.lock:
+            return any(p.status == "running" for p in self.processes.values())
 
     def run_workflow(self):
         """Execute workflow with dependency management"""
@@ -1352,6 +1784,17 @@ class ProcessManager:
                 "failed": failed,
                 "log_dir": self.log_dir
             }
+
+            # Per-block stats
+            block_stats = {}
+            for uid, proc in self.processes.items():
+                block_stats[proc.name] = {
+                    "status": proc.status,
+                    "runs": proc.run_count + 1,  # run_count is 0-indexed
+                    "phase": proc.phase,
+                    "duration_sec": round(time.time() - proc.start_time, 1) if proc.start_time else 0,
+                }
+            summary["blocks"] = block_stats
 
             # Add usage/cost data to summary
             if self._total_usage.total_tokens > 0:

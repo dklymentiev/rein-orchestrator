@@ -47,6 +47,9 @@ class BlockConfig(BaseModel):
     )
     save_as: Optional[str] = Field(None, pattern=r'^[a-z0-9_.-]+\.json$')
     logic: Optional[LogicConfig] = None
+    # Agent routing for async step mode (v3.3)
+    agent: Optional[str] = Field(None, description="Agent identity for step mode routing")
+    routing: Optional[Dict[str, str]] = Field(None, description="Tag-based routing: tag -> next block name")
     # State machine flow control (v2.5.4)
     next: Optional[Union[str, List[NextCondition]]] = None
     max_runs: int = Field(default=1, ge=1, le=10)

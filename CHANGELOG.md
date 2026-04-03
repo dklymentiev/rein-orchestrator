@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-04-02
+
+### Added
+- **Async step mode** (`--step N`): execute up to N ready blocks per invocation, persist state to SQLite, exit. Enables cron-driven incremental workflow execution.
+- **Agent routing** (`--agent-id NAME`): filter block execution by agent identity. Blocks with `agent:` field only run when matching agent calls. Blocks without `agent:` run for anyone.
+- **Step resume** (`--step N --task-dir PATH`): resume workflow from existing task directory without specifying `--flow`. Flow name inferred from `input/task.json`.
+- **File lock** (`state/rein.lock`): exclusive `fcntl.flock` prevents concurrent step invocations on the same task directory. Second caller exits cleanly (code 0).
+- **`run_count` persistence**: `run_count` column added to SQLite `processes` table with automatic schema migration for existing databases. `max_runs` loop protection now works across step invocations.
+- **Step exit codes**: 0 = workflow complete, 2 = more steps remain, 1 = error.
+- **Comprehensive test suite** (`tests/test_step_mode.py`): 37 tests covering functional, integration, infrastructure, e2e, run_count persistence, file locking, and agent routing.
+
+### Changed
+- `ProcessManager.run_step()` is a new public method (separate from `run_workflow()`) with bounded execution lifecycle, no UI, no signal handlers.
+- `_initialize_all_processes()` now restores `run_counts` from SQLite on resume.
+- Stuck detection improved: step mode exits when no blocks can be spawned (agent filter, deps blocked) instead of looping indefinitely.
+
 ## [3.2.0] - 2026-02-20
 
 ### Added

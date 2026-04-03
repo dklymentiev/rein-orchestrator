@@ -34,7 +34,8 @@ class LogicRunner:
         block_dir: Optional[str] = None,
         input_dir: Optional[str] = None,
         depends_on: Optional[List[str]] = None,
-        block_config: Optional[Dict] = None
+        block_config: Optional[Dict] = None,
+        linux_user: Optional[str] = None
     ) -> bool:
         """
         Run logic script (Python or Shell)
@@ -76,29 +77,29 @@ class LogicRunner:
 
             self.logger(f"LOGIC RUN | {script_path} | output={output_file} | task={self.task_id}")
 
-            # Run script based on type
+            # Build command with optional sudo -u for linux_user isolation
             if script_path.endswith('.py'):
-                result = subprocess.run(
-                    ['python3', full_path],
-                    input=context_json,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                    cwd=self.task_dir
-                )
+                cmd = ['python3', full_path]
             elif script_path.endswith('.sh'):
-                result = subprocess.run(
-                    ['bash', full_path],
-                    input=context_json,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                    cwd=self.task_dir
-                )
+                cmd = ['bash', full_path]
             else:
                 self.logger(f"LOGIC ERROR | unknown script type: {script_path}")
                 return False
 
+            if linux_user:
+                cmd = ['sudo', '-u', linux_user] + cmd
+                self.logger(f"LOGIC SUDO | running as {linux_user}")
+
+            # Run script
+            if True:  # Keep indent level for minimal diff
+                result = subprocess.run(
+                    cmd,
+                    input=context_json,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout,
+                    cwd=self.task_dir
+                )
             # Log output
             if result.stdout:
                 for line in result.stdout.strip().split('\n'):

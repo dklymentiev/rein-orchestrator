@@ -8,7 +8,7 @@ import yaml
 
 from unittest.mock import patch, MagicMock
 
-from rein.cli import main, _handle_status, _handle_flow, _handle_task, _handle_config
+from rein.cli import main, _handle_status, _handle_flow, _handle_task, _handle_config, _handle_step_resume
 
 
 class TestArgumentParsing:
@@ -845,3 +845,126 @@ class TestMainNoArgs:
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
+
+
+class TestStepMode:
+    """Tests for --step argument parsing and step mode dispatch"""
+
+    def test_step_argument_parsing(self):
+        """Test --step parses integer correctly"""
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--step', type=int, default=None, metavar='N')
+        args = parser.parse_args(["--step", "3"])
+        assert args.step == 3
+
+    def test_step_zero_means_unlimited(self):
+        """Test --step 0 parses correctly (unlimited mode)"""
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--step', type=int, default=None, metavar='N')
+        args = parser.parse_args(["--step", "0"])
+        assert args.step == 0
+
+    def test_step_default_is_none(self):
+        """Test --step defaults to None (continuous mode)"""
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--step', type=int, default=None, metavar='N')
+        args = parser.parse_args([])
+        assert args.step is None
+
+    def test_step_negative_exits_with_error(self):
+        """Test --step with negative value exits with code 1"""
+        with patch("sys.argv", ["rein", "--step", "-1", "--agents-dir", "/tmp/agents"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+
+    def test_step_exit_code_0_when_complete(self):
+        """Test exit code 0 when run_step returns True (workflow complete)"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            agents_dir = os.path.join(tmpdir, "agents")
+            flow_dir = os.path.join(agents_dir, "flows", "test-flow")
+            os.makedirs(os.path.join(agents_dir, "tasks"), exist_ok=True)
+            os.makedirs(flow_dir, exist_ok=True)
+
+            flow_yaml = os.path.join(flow_dir, "test-flow.yaml")
+            with open(flow_yaml, "w") as f:
+                yaml.dump({"blocks": [], "team": "t"}, f)
+
+            with patch("sys.argv", ["rein", "--flow", "test-flow", "--step", "1",
+                                    "--agents-dir", agents_dir]):
+                with patch("rein.orchestrator.ProcessManager") as MockPM:
+                    mock_manager = MagicMock()
+                    mock_manager.tasks_root = os.path.join(agents_dir, "tasks")
+                    mock_manager.task_dir = os.path.join(agents_dir, "tasks", "t1")
+                    mock_manager.db_path = "/tmp/rein.db"
+                    mock_manager.run_step.return_value = True  # workflow complete
+                    MockPM.return_value = mock_manager
+
+                    with patch("rein.tasks.load_config", return_value={"blocks": []}):
+                        with pytest.raises(SystemExit) as exc_info:
+                            main()
+                        assert exc_info.value.code == 0
+
+    def test_step_exit_code_2_when_more_steps(self):
+        """Test exit code 2 when run_step returns False (more steps remain)"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            agents_dir = os.path.join(tmpdir, "agents")
+            flow_dir = os.path.join(agents_dir, "flows", "test-flow")
+            os.makedirs(os.path.join(agents_dir, "tasks"), exist_ok=True)
+            os.makedirs(flow_dir, exist_ok=True)
+
+            flow_yaml = os.path.join(flow_dir, "test-flow.yaml")
+            with open(flow_yaml, "w") as f:
+                yaml.dump({"blocks": [], "team": "t"}, f)
+
+            with patch("sys.argv", ["rein", "--flow", "test-flow", "--step", "1",
+                                    "--agents-dir", agents_dir]):
+                with patch("rein.orchestrator.ProcessManager") as MockPM:
+                    mock_manager = MagicMock()
+                    mock_manager.tasks_root = os.path.join(agents_dir, "tasks")
+                    mock_manager.task_dir = os.path.join(agents_dir, "tasks", "t1")
+                    mock_manager.db_path = "/tmp/rein.db"
+                    mock_manager.run_step.return_value = False  # more steps
+                    MockPM.return_value = mock_manager
+
+                    with patch("rein.tasks.load_config", return_value={"blocks": []}):
+                        with pytest.raises(SystemExit) as exc_info:
+                            main()
+                        assert exc_info.value.code == 2
+
+    def test_step_resume_from_task_dir(self):
+        """Test --step with --task-dir (no --flow) reads task.json to infer flow"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            agents_dir = os.path.join(tmpdir, "agents")
+            task_dir = os.path.join(agents_dir, "tasks", "task-001")
+            flow_dir = os.path.join(agents_dir, "flows", "my-flow")
+            os.makedirs(os.path.join(task_dir, "input"), exist_ok=True)
+            os.makedirs(os.path.join(task_dir, "state"), exist_ok=True)
+            os.makedirs(flow_dir, exist_ok=True)
+
+            # Create task.json with flow reference
+            with open(os.path.join(task_dir, "input", "task.json"), "w") as f:
+                json.dump({"flow": "my-flow", "input": {"topic": "test"}}, f)
+
+            # Create flow YAML
+            with open(os.path.join(flow_dir, "my-flow.yaml"), "w") as f:
+                yaml.dump({"blocks": [], "team": "t"}, f)
+
+            with patch("rein.orchestrator.ProcessManager") as MockPM:
+                mock_manager = MagicMock()
+                mock_manager.task_dir = task_dir
+                mock_manager.db_path = os.path.join(task_dir, "state", "rein.db")
+                mock_manager.run_step.return_value = True
+                MockPM.return_value = mock_manager
+
+                with patch("rein.tasks.load_config", return_value={"blocks": []}):
+                    args = argparse.Namespace(
+                        step=1, task_dir=task_dir, flow=None,
+                        agents_dir=agents_dir,
+                    )
+                    manager = _handle_step_resume(args)
+
+                # Verify ProcessManager was created with correct params
+                call_kwargs = MockPM.call_args[1]
+                assert call_kwargs["flow_name"] == "my-flow"
+                assert call_kwargs["task_input"] == {"topic": "test"}
