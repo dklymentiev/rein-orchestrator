@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rein -- Flow Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/flow-board.css">
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <span class="logo">REIN</span>
+  <div class="controls">
+    <select id="flowSel"></select>
+    <select id="runSel"><option value="">--</option></select>
+    <button class="btn" onclick="viewRun()">View</button>
+    <input type="text" id="topicIn" placeholder="topic / question...">
+    <button class="btn btn-run" onclick="runFlow()">Run</button>
+    <button class="btn" onclick="testWater()">Test</button>
+    <span class="badge" id="badge">IDLE</span>
+  </div>
+  <div class="status-bar">
+    <span id="wsBar">WS: --</span>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <div class="canvas-wrap"><canvas id="cv"></canvas></div>
+  <div class="side" id="panel">
+    <h3>EVENTS</h3>
+    <div id="events"></div>
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tip">
+  <div class="tt-name" id="tip-name"></div>
+  <div class="tt-info" id="tip-info"></div>
+</div>
+
+<script src="vendor/dagre.min.js"></script>
+<script src="js/flow-board.js"></script>
+</body>
+</html>
