@@ -51,6 +51,7 @@ def _make_flow(agents_dir, flow_name, blocks, team_name="team-test"):
         "schema_version": "2.6.0",
         "name": flow_name,
         "team": team_name,
+        "default_max_runs": 2,
         "blocks": blocks,
     }
     flow_path = os.path.join(flow_dir, f"{flow_name}.yaml")
@@ -1011,29 +1012,31 @@ class TestRevisionLoops:
     """Tests for next: routing, gate deferred completion, and max_runs loops."""
 
     def test_simple_loop_with_max_runs(self):
-        """Block A -> B with B.next: A (loop). max_runs=2 stops after 2 iterations."""
+        """Revision loop terminates when max_runs is reached."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
                 {"name": "gate", "specialist": "spec-a",
                  "prompt": "check", "depends_on": [],
-                 "next": "revision", "max_runs": 2},
+                 "next": [
+                     {"if": "{{ result.impossible }}", "goto": "downstream"},
+                     {"else": "revision"},
+                 ], "max_runs": 2},
                 {"name": "revision", "specialist": "spec-a",
                  "prompt": "fix", "depends_on": ["gate"],
-                 "next": "gate"},
+                 "next": "gate", "max_runs": 1},
                 {"name": "downstream", "specialist": "spec-a",
                  "prompt": "go", "depends_on": ["gate"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 
-            # Run to completion (unlimited steps)
             result = manager.run_step(0)
 
             assert result is True
             assert "gate" in manager.completed
             assert "downstream" in manager.completed
 
-    def test_gate_deferred_blocks_downstream(self):
-        """When gate routes backward, downstream blocks must NOT start."""
+    def test_gate_first_run_completes_forward(self):
+        """First routing (current_runs=0) is forward -- gate completes."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
                 {"name": "gate", "specialist": "spec-a",
@@ -1041,19 +1044,17 @@ class TestRevisionLoops:
                  "next": "revision"},
                 {"name": "revision", "specialist": "spec-a",
                  "prompt": "fix", "depends_on": ["gate"],
-                 "max_runs": 1},  # will run once, then loop blocked
+                 "max_runs": 1},
                 {"name": "downstream", "specialist": "spec-a",
                  "prompt": "go", "depends_on": ["gate"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 
-            # Step 1: gate runs, routes to revision (deferred)
+            # Step 1: gate runs, routes to revision (forward, first time)
             manager.run_step(1)
 
-            # Gate should NOT be in completed (routed backward)
-            assert "gate" not in manager.completed
-            # Downstream should NOT have started
-            assert "downstream" not in manager.completed
+            # Gate IS completed (forward routing on first run)
+            assert "gate" in manager.completed
 
     def test_max_runs_exhausted_unblocks_downstream(self):
         """When loop exhausts max_runs, gate completes and downstream proceeds."""
@@ -1080,15 +1081,18 @@ class TestRevisionLoops:
             assert "downstream" in manager.completed
 
     def test_loop_does_not_run_forever(self):
-        """Revision loop with max_runs=3 terminates after 3 iterations."""
+        """Revision loop terminates and run_counts stay within limits."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
                 {"name": "gate", "specialist": "spec-a",
                  "prompt": "check", "depends_on": [],
-                 "next": "revision", "max_runs": 3},
+                 "next": [
+                     {"if": "{{ result.impossible }}", "goto": "done"},
+                     {"else": "revision"},
+                 ], "max_runs": 2},
                 {"name": "revision", "specialist": "spec-a",
                  "prompt": "fix", "depends_on": ["gate"],
-                 "next": "gate", "max_runs": 3},
+                 "next": "gate", "max_runs": 1},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -1098,7 +1102,7 @@ class TestRevisionLoops:
             # Check run counts -- should not exceed max_runs
             gate_runs = manager.run_counts.get("gate", 0)
             revision_runs = manager.run_counts.get("revision", 0)
-            assert gate_runs <= 3
+            assert gate_runs <= 2
             assert revision_runs <= 3
 
     def test_conditional_next_else_routes_to_revision(self):
@@ -1120,11 +1124,10 @@ class TestRevisionLoops:
             manager = _make_manager(tmpdir, blocks)
 
             # Step 1: gate runs, condition fails, else -> revision
+            # This is first run (current_runs=0) so it's forward -- gate completes
             manager.run_step(1)
 
-            # Gate should be deferred (routed to revision)
-            assert "gate" not in manager.completed
-            assert "downstream" not in manager.completed
+            assert "gate" in manager.completed  # forward routing on first run
 
     def test_from_next_queue_bypasses_depends_on(self):
         """Blocks spawned via next_queue skip depends_on check."""
@@ -1144,3 +1147,74 @@ class TestRevisionLoops:
 
             # Target should have run even though gate is not in completed
             assert "target" in manager.completed
+
+
+class TestForwardRouting:
+    """Tests for forward routing via next:/routing -- gate should complete."""
+
+    def test_forward_next_gate_completes(self):
+        """Gate with next: forward_target (first run) should complete normally."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            blocks = [
+                {"name": "review", "specialist": "spec-a",
+                 "prompt": "review", "depends_on": [],
+                 "next": "generate"},  # forward: generate hasn't run yet
+                {"name": "generate", "specialist": "spec-a",
+                 "prompt": "generate", "depends_on": ["review"]},
+                {"name": "publish", "specialist": "spec-a",
+                 "prompt": "publish", "depends_on": ["review"]},
+            ]
+            manager = _make_manager(tmpdir, blocks)
+
+            # Step 1: review runs, routes to generate (forward)
+            manager.run_step(1)
+
+            # Review should be completed (forward routing, not backward)
+            assert "review" in manager.completed
+
+    def test_forward_routing_allows_downstream_in_step_mode(self):
+        """After forward routing, other dependents of gate can start in next step."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            blocks = [
+                {"name": "review", "specialist": "spec-a",
+                 "prompt": "review", "depends_on": [],
+                 "next": "generate"},
+                {"name": "generate", "specialist": "spec-a",
+                 "prompt": "generate", "depends_on": ["review"]},
+                {"name": "publish", "specialist": "spec-a",
+                 "prompt": "publish", "depends_on": ["review"]},
+            ]
+            manager = _make_manager(tmpdir, blocks)
+
+            # Step 1: review runs + generate via next_queue
+            manager.run_step(2)
+            assert "review" in manager.completed
+            assert "generate" in manager.completed
+
+            # Step 2: publish should start (review is completed)
+            manager.run_step(1)
+            assert "publish" in manager.completed
+
+    def test_forward_vs_backward_distinction(self):
+        """Forward routing (current_runs=0) completes gate, backward (>0) defers."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            blocks = [
+                {"name": "gate", "specialist": "spec-a",
+                 "prompt": "check", "depends_on": [],
+                 "next": "target"},
+                {"name": "target", "specialist": "spec-a",
+                 "prompt": "do", "depends_on": ["gate"]},
+                {"name": "other", "specialist": "spec-a",
+                 "prompt": "go", "depends_on": ["gate"]},
+            ]
+            manager = _make_manager(tmpdir, blocks)
+
+            # Step 1: gate routes to target (forward, first run)
+            # Gate should be completed, other should be able to proceed
+            manager.run_step(1)
+
+            assert "gate" in manager.completed  # forward: gate completes
+            # Other can now see gate as completed in next step
+            manager.run_step(2)
+            assert "target" in manager.completed
+            assert "other" in manager.completed

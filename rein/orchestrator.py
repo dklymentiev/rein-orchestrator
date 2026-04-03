@@ -1207,7 +1207,10 @@ class ProcessManager:
                                 if cascade:
                                     self._write_rein_log(f"ROUTING CASCADE | invalidated: {cascade}")
                                 self.next_queue.append((next_block_name, {}))
-                                routing_went_backward = True
+                                # Only defer gate if this is a backward loop (re-run).
+                                # Forward routing (first run of target) should let gate complete.
+                                if current_runs > 0:
+                                    routing_went_backward = True
                             self._write_rein_log(f"ROUTING | {name} -> {next_block_name} | signal={matched_signal} | run={self.run_counts[next_block_name]}/{max_runs_val}")
                             run_log.write("ROUTING", f"-> {next_block_name} signal={matched_signal}")
 
@@ -1290,7 +1293,8 @@ class ProcessManager:
 
                                 # Add to next queue
                                 self.next_queue.append((next_block_name, result_data))
-                                routing_went_backward = True
+                                if current_runs > 0:
+                                    routing_went_backward = True
 
                             self._write_rein_log(f"NEXT QUEUED | {name} -> {next_block_name} | run={self.run_counts[next_block_name]}/{max_runs}")
                             run_log.write("NEXT", f"-> {next_block_name} run={self.run_counts[next_block_name]}/{max_runs}")
