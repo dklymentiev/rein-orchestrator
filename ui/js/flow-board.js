@@ -1,12 +1,14 @@
 /* Rein Flow Board -- Canvas visualization engine
+ * Version: 2.0.0
  * Reads theme colors from CSS variables so styling is fully controlled by CSS.
  * API endpoint is configurable via REIN_API global or auto-detected.
  */
 'use strict';
+const FLOW_BOARD_VERSION = '2.0.0';
 
 // ---- Configuration ----
 const API = window.REIN_API || '/api-flow.php';
-const WS_URL = window.REIN_WS || 'wss://rein-ws.sf.vpn';
+const WS_URL = window.REIN_WS || `ws://${location.hostname}:8765`;
 const SPEED = 1.8;
 
 // ---- Theme colors (read from CSS variables) ----
