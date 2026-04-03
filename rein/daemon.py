@@ -7,6 +7,7 @@ Broadcasts live updates via WebSocket to connected clients.
 import os
 import sys
 import json
+import re
 import yaml
 import sqlite3
 import asyncio
@@ -14,6 +15,9 @@ from typing import Set, Dict
 
 from rein.config import DEFAULT_AGENTS_DIR
 from rein.log import get_logger
+
+# Task directory name must be alphanumeric with hyphens, dots, underscores
+SAFE_TASK_NAME = re.compile(r'^[a-zA-Z0-9._-]+$')
 
 logger = get_logger(__name__)
 
@@ -110,6 +114,9 @@ def get_running_tasks(tasks_root: str = "") -> list:
     running = []
     if os.path.exists(tasks_root):
         for task_id in os.listdir(tasks_root):
+            if not SAFE_TASK_NAME.match(task_id):
+                logger.warning("Skipping unsafe task name: %s", task_id)
+                continue
             task_dir = os.path.join(tasks_root, task_id)
             rein_db = os.path.join(task_dir, "state", "rein.db")
             if os.path.exists(rein_db):
@@ -239,6 +246,8 @@ async def run_daemon_async(agents_dir: str, interval: int, max_workflows: int, w
             # Find and spawn pending tasks
             if os.path.exists(tasks_dir):
                 for task_name in sorted(os.listdir(tasks_dir)):
+                    if not SAFE_TASK_NAME.match(task_name):
+                        continue
                     if len(active) >= max_workflows:
                         break
                     if task_name in active:

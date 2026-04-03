@@ -152,12 +152,20 @@ class ProcessManager:
             }
             self._write_rein_log(f"REIN STARTED | run_id={timestamp} | db={self.db_path} | max_parallel={max_parallel}")
 
+    # Patterns for sensitive data scrubbing in logs
+    _SECRET_PATTERNS = re.compile(
+        r'(sk-[a-zA-Z0-9]{20,}|anthropic-[a-zA-Z0-9]{20,}|'
+        r'ANTHROPIC_API_KEY=[^\s]+|OPENAI_API_KEY=[^\s]+|'
+        r'OPENROUTER_API_KEY=[^\s]+|Bearer\s+[a-zA-Z0-9._-]{20,})'
+    )
+
     def _write_rein_log(self, message):
-        """Write to rein's own log file"""
+        """Write to rein's own log file (with sensitive data scrubbing)"""
         try:
+            clean_message = self._SECRET_PATTERNS.sub('[REDACTED]', str(message))
             with open(self.rein_log_file, 'a') as f:
                 timestamp = datetime.now().isoformat()
-                f.write(f"{timestamp} | {message}\n")
+                f.write(f"{timestamp} | {clean_message}\n")
                 f.flush()
         except Exception as e:
             logger.error("Log write failed: %s", e)

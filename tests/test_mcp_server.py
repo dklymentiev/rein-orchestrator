@@ -18,8 +18,8 @@ from rein.mcp_server import (
 
 
 @pytest.fixture
-def agents_dir(tmp_path):
-    """Create a minimal agents directory structure."""
+def agents_dir(tmp_path, monkeypatch):
+    """Create a minimal agents directory structure and set REIN_AGENTS_DIR."""
     flows_dir = tmp_path / "flows"
     specs_dir = tmp_path / "specialists"
     teams_dir = tmp_path / "teams"
@@ -29,6 +29,9 @@ def agents_dir(tmp_path):
     specs_dir.mkdir()
     teams_dir.mkdir()
     tasks_dir.mkdir()
+
+    # Pin REIN_AGENTS_DIR so MCP tools use this temp dir
+    monkeypatch.setenv("REIN_AGENTS_DIR", str(tmp_path))
 
     # Create a flow
     flow_dir = flows_dir / "test-flow"
@@ -82,9 +85,10 @@ class TestListFlows:
         assert flow["blocks"] == 2
         assert flow["team"] == "test-team"
 
-    def test_empty_dir(self, tmp_path):
+    def test_empty_dir(self, tmp_path, monkeypatch):
         flows_dir = tmp_path / "flows"
         flows_dir.mkdir()
+        monkeypatch.setenv("REIN_AGENTS_DIR", str(tmp_path))
         result = json.loads(list_flows(agents_dir=str(tmp_path)))
         assert result["flows"] == []
 
@@ -92,10 +96,11 @@ class TestListFlows:
         result = json.loads(list_flows(agents_dir=str(tmp_path / "nope")))
         assert "error" in result
 
-    def test_malformed_yaml(self, tmp_path):
+    def test_malformed_yaml(self, tmp_path, monkeypatch):
         flows_dir = tmp_path / "flows" / "bad"
         flows_dir.mkdir(parents=True)
         (flows_dir / "bad.yaml").write_text(": invalid: yaml: [")
+        monkeypatch.setenv("REIN_AGENTS_DIR", str(tmp_path))
         result = json.loads(list_flows(agents_dir=str(tmp_path)))
         assert len(result["flows"]) == 1
         assert "error" in result["flows"][0]

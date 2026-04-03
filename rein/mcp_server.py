@@ -40,6 +40,15 @@ def _get_agents_dir() -> str:
     return os.environ.get("REIN_AGENTS_DIR", DEFAULT_AGENTS_DIR)
 
 
+def _validate_path_containment(path: str, allowed_root: str, label: str = "path") -> str:
+    """Validate that resolved path is within allowed_root. Returns realpath or raises."""
+    real_path = os.path.realpath(path)
+    real_root = os.path.realpath(allowed_root)
+    if not real_path.startswith(real_root + os.sep) and real_path != real_root:
+        raise ValueError(f"{label} escapes allowed directory: {path}")
+    return real_path
+
+
 mcp = FastMCP(
     "Rein",
     instructions=(
@@ -48,7 +57,10 @@ mcp = FastMCP(
     ),
     port=int(os.environ.get("REIN_MCP_PORT", "8300")),
     transport_security=TransportSecuritySettings(
-        allowed_hosts=["rein-mcp.sf.vpn", "10.86.45.1", "10.86.45.1:8300", "localhost", "localhost:8300"],
+        allowed_hosts=[h.strip() for h in os.environ.get(
+            "REIN_MCP_ALLOWED_HOSTS",
+            "localhost,localhost:8300"
+        ).split(",")],
     ),
 )
 
@@ -62,9 +74,9 @@ def list_flows(agents_dir: str = "") -> str:
     """List available workflows (flows) with their descriptions and block counts.
 
     Args:
-        agents_dir: Path to agents directory. Uses REIN_AGENTS_DIR env or default if empty.
+        agents_dir: Ignored (pinned to REIN_AGENTS_DIR for security).
     """
-    agents = agents_dir or _get_agents_dir()
+    agents = _get_agents_dir()
     flows_dir = os.path.join(agents, "flows")
 
     if not os.path.isdir(flows_dir):
@@ -190,10 +202,17 @@ def run_workflow(
         agents_dir: Path to agents directory. Uses REIN_AGENTS_DIR env or default if empty.
         input_json: Optional JSON string with input parameters for the workflow.
     """
+    # Pin agents_dir to configured value (ignore caller-supplied path)
+    agents = _get_agents_dir()
+
     if not os.path.isfile(workflow_path):
         return json.dumps({"error": f"Workflow file not found: {workflow_path}"})
 
-    agents = agents_dir or _get_agents_dir()
+    # Path containment: workflow must be within agents_dir
+    try:
+        _validate_path_containment(workflow_path, agents, "workflow_path")
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
 
     cmd = [sys.executable, "-m", "rein", workflow_path, "--agents-dir", agents, "--no-ui"]
     if input_json:
@@ -267,7 +286,7 @@ def create_task(
         agents_dir: Path to agents directory. Uses REIN_AGENTS_DIR env or default if empty.
         input_json: Optional JSON string with structured input parameters for the workflow.
     """
-    agents = agents_dir or _get_agents_dir()
+    agents = _get_agents_dir()
     loader = ConfigLoader(agents_dir=agents)
 
     if not loader.flow_exists(flow):
@@ -328,9 +347,15 @@ def task_status(
         task_id: Task ID (e.g. task-20260220-143022).
         agents_dir: Path to agents directory. Uses REIN_AGENTS_DIR env or default if empty.
     """
-    agents = agents_dir or _get_agents_dir()
+    agents = _get_agents_dir()
     tasks_root = os.path.join(agents, "tasks")
     task_dir = os.path.join(tasks_root, task_id)
+
+    # Path containment: task_dir must be within tasks_root
+    try:
+        _validate_path_containment(task_dir, tasks_root, "task_id")
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
 
     if not os.path.isdir(task_dir):
         return json.dumps({"error": f"Task not found: {task_id}"})
@@ -500,7 +525,7 @@ def main():
         if idx + 1 < len(sys.argv):
             port = int(sys.argv[idx + 1])
     if transport in ("sse", "streamable-http"):
-        mcp.settings.host = "10.86.45.1"
+        mcp.settings.host = os.environ.get("REIN_MCP_HOST", "0.0.0.0")
         mcp.settings.port = port
     mcp.run(transport=transport)
 

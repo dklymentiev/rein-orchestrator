@@ -227,8 +227,14 @@ def _handle_step_resume(args):
 def _handle_status(args):
     """Handle --status command: show task status and outputs."""
     agents_dir = args.agents_dir
-    tasks_root = os.path.join(agents_dir, "tasks")
-    task_dir = os.path.join(tasks_root, args.status)
+    tasks_root = os.path.realpath(os.path.join(agents_dir, "tasks"))
+    task_dir = os.path.realpath(os.path.join(tasks_root, args.status))
+
+    # Path traversal protection: task_dir must be inside tasks_root
+    if not task_dir.startswith(tasks_root + os.sep) and task_dir != tasks_root:
+        print(f"[ERROR] Invalid task ID: {args.status}")
+        sys.exit(1)
+
     task_json_path = os.path.join(task_dir, "input", "task.json")
     status_path = os.path.join(task_dir, "state", "status")
 
