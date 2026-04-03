@@ -14,13 +14,9 @@ from rein.log import get_logger
 
 logger = get_logger(__name__)
 
-# Default search paths for agent directories (in priority order)
-AGENT_SEARCH_PATHS = [
-    p for p in [
-        os.environ.get("REIN_AGENTS_DIR", ""),
-        "./agents",
-    ] if p
-]
+# No fallback paths. Agent resolution requires explicit agents_dir parameter.
+# If not provided, only REIN_AGENTS_DIR env var is checked.
+AGENT_SEARCH_PATHS = []
 
 
 @dataclass
@@ -54,7 +50,7 @@ def load_agent_config(agent_ref: str, agents_dir: str = None) -> Optional[AgentC
     3. Search AGENT_SEARCH_PATHS/{agent_ref}/agent.yaml
 
     Args:
-        agent_ref: Agent name or path (e.g. "smm", "/srv/agents/smm")
+        agent_ref: Agent name or path (e.g. "smm", "/path/to/agents/smm")
         agents_dir: Base directory for agent lookup
 
     Returns:
