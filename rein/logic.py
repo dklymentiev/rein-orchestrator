@@ -39,7 +39,8 @@ class LogicRunner:
         input_dir: Optional[str] = None,
         depends_on: Optional[List[str]] = None,
         block_config: Optional[Dict] = None,
-        linux_user: Optional[str] = None
+        linux_user: Optional[str] = None,
+        run_count: int = 0
     ) -> bool:
         """
         Run logic script (Python or Shell)
@@ -75,7 +76,8 @@ class LogicRunner:
                 "outputs_dir": os.path.join(block_dir, "outputs") if block_dir else self.task_dir,
                 "input_dir": input_dir,
                 "depends_on": depends_on or [],
-                "block_config": block_config
+                "block_config": block_config,
+                "run_count": run_count,
             }
             context_json = json.dumps(context)
 

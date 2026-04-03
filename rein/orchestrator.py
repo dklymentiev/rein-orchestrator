@@ -220,6 +220,7 @@ class ProcessManager:
         self.timeout = config.get('timeout', None)  # timeout in seconds
         self.team_name = config.get('team', None)  # PHASE 2.5: team name
         self.on_error = config.get('on_error', None)  # Global error handler script
+        self.default_max_runs = config.get('default_max_runs', 3)  # Default loop limit
 
         # Extract workflow directory from file path (for relative logic paths)
         if workflow_file:
@@ -539,7 +540,7 @@ class ProcessManager:
 
     def _run_logic(self, script_path: str, data_file: str, workflow_dir: str,
                    input_dir: str = None, block_config: dict = None,
-                   linux_user: str = None) -> bool:
+                   linux_user: str = None, run_count: int = 0) -> bool:
         """Run logic script (delegates to LogicRunner)"""
         block_name = block_config.get('name') if block_config else None
         block_dir = self._get_block_dir(block_name) if block_name and self.task_dir else None
@@ -562,7 +563,8 @@ class ProcessManager:
             input_dir=input_dir,
             depends_on=depends_on,
             block_config=block_config,
-            linux_user=linux_user
+            linux_user=linux_user,
+            run_count=run_count,
         )
 
     def _load_state_from_db(self):
@@ -677,7 +679,7 @@ class ProcessManager:
 
             # STATE MACHINE: read next and max_runs from config (Phase 2.5.4)
             next_spec = block.get('next')
-            max_runs = block.get('max_runs', 1)
+            max_runs = block.get('max_runs', self.default_max_runs)
 
             # Check if block already completed and not invalidated - skip reinitializing
             prev_status = existing_status.get(name)
@@ -1009,7 +1011,7 @@ class ProcessManager:
             # PRE-PHASE: Run pre-processing logic (before Claude)
             if logic_config.get('pre'):
                 run_log.write("LOGIC.PRE START", f"script={logic_config['pre']}")
-                if not self._run_logic(logic_config['pre'], save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user):
+                if not self._run_logic(logic_config['pre'], save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user, run_count=process.run_count):
                     run_log.write("LOGIC.PRE FAILED", f"script={logic_config['pre']}")
                     raise Exception(f"Pre-phase logic failed: {logic_config['pre']}")
                 run_log.write("LOGIC.PRE OK", f"script={logic_config['pre']}")
@@ -1022,7 +1024,7 @@ class ProcessManager:
                 # If custom is True (boolean) - skip Claude, pre script already did everything
                 if isinstance(custom_script, str):
                     self._write_rein_log(f"CUSTOM SCRIPT | {name} | script={custom_script}")
-                    if not self._run_logic(custom_script, save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user):
+                    if not self._run_logic(custom_script, save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user, run_count=process.run_count):
                         raise Exception(f"Custom logic failed: {custom_script}")
                 else:
                     self._write_rein_log(f"CUSTOM SKIP | {name} | pre script handled Claude call")
@@ -1087,14 +1089,14 @@ class ProcessManager:
             # POST-PHASE: Run post-processing logic (after Claude)
             if logic_config.get('post'):
                 run_log.write("LOGIC.POST START", f"script={logic_config['post']}")
-                if not self._run_logic(logic_config['post'], save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user):
+                if not self._run_logic(logic_config['post'], save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user, run_count=process.run_count):
                     run_log.write("LOGIC.POST FAILED", f"script={logic_config['post']}")
                     raise Exception(f"Post-phase logic failed: {logic_config['post']}")
                 run_log.write("LOGIC.POST OK", f"script={logic_config['post']}")
 
             # VALIDATE-PHASE: Run validation logic
             if logic_config.get('validate'):
-                if not self._run_logic(logic_config['validate'], save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user):
+                if not self._run_logic(logic_config['validate'], save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user, run_count=process.run_count):
                     raise Exception(f"Validate-phase logic failed: {logic_config['validate']}")
 
             process.progress = 100
@@ -1161,7 +1163,7 @@ class ProcessManager:
                     if next_block_name and next_block_name != '_stop':
                         current_runs = self.run_counts.get(next_block_name, 0)
                         next_block_config = self.block_configs.get(next_block_name)
-                        max_runs_val = next_block_config.get('max_runs', 1) if next_block_config else 1
+                        max_runs_val = next_block_config.get('max_runs', self.default_max_runs) if next_block_config else self.default_max_runs
 
                         if current_runs >= max_runs_val:
                             self._write_rein_log(f"ROUTING BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs_val}")
@@ -1244,7 +1246,7 @@ class ProcessManager:
                         # Check max_runs for loop protection
                         current_runs = self.run_counts.get(next_block_name, 0)
                         next_block_config = self.block_configs.get(next_block_name)
-                        max_runs = next_block_config.get('max_runs', 1) if next_block_config else 1
+                        max_runs = next_block_config.get('max_runs', self.default_max_runs) if next_block_config else self.default_max_runs
 
                         if current_runs >= max_runs:
                             self._write_rein_log(f"NEXT BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs}")
