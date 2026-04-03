@@ -1245,6 +1245,8 @@ class ProcessManager:
 
                         if current_runs >= max_runs:
                             self._write_rein_log(f"NEXT BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs}")
+                            # Routing was blocked by max_runs -- did NOT go backward.
+                            # Gate should be marked as completed so dependents can proceed.
                         else:
                             # Increment run count and add to next queue
                             self.run_counts[next_block_name] = current_runs + 1
