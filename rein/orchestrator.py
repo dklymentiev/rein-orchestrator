@@ -43,6 +43,7 @@ from rein import block_resolver
 from rein import process_control
 from rein import routing_engine
 from rein import error_handlers
+from rein import run_summary
 
 logger = get_logger(__name__)
 console = get_console()
@@ -1568,123 +1569,51 @@ class ProcessManager:
     def _finalize_run(self):
         """Save metadata and summary after workflow completion"""
         try:
-            # Update metadata
-            self.metadata["end_time"] = datetime.now().isoformat()
-            self.metadata["total_agents"] = len(self.processes)
+            # Build and persist summary (delegates to run_summary module)
+            summary = run_summary.build_summary(
+                self.metadata, self.processes, self.log_dir,
+                self._total_usage, self._block_usage,
+            )
+            run_summary.write_summary_files(self.run_dir, self.metadata, summary)
 
-            # Calculate summary
-            completed = sum(1 for p in self.processes.values() if p.status == "done")
-            failed = sum(1 for p in self.processes.values() if p.status == "failed")
+            completed = summary["completed"]
+            failed = summary["failed"]
 
-            summary = {
-                "run_id": self.metadata.get("run_id"),
-                "start_time": self.metadata.get("start_time"),
-                "end_time": self.metadata.get("end_time"),
-                "total_agents": len(self.processes),
-                "completed": completed,
-                "failed": failed,
-                "log_dir": self.log_dir
-            }
+            self._write_rein_log(
+                f"REIN FINISHED | completed={completed} | failed={failed} | total={len(self.processes)}"
+            )
 
-            # Per-block stats
-            block_stats = {}
-            for uid, proc in self.processes.items():
-                block_stats[proc.name] = {
-                    "status": proc.status,
-                    "runs": proc.run_count + 1,  # run_count is 0-indexed
-                    "phase": proc.phase,
-                    "duration_sec": round(time.time() - proc.start_time, 1) if proc.start_time else 0,
-                }
-            summary["blocks"] = block_stats
-
-            # Add usage/cost data to summary
+            # Cost summary
             if self._total_usage.total_tokens > 0:
-                summary["usage"] = self._total_usage.to_dict()
-                summary["block_usage"] = {
-                    name: u.to_dict() for name, u in self._block_usage.items()
-                }
-
-            # Save metadata
-            with open(os.path.join(self.run_dir, "metadata.json"), 'w') as f:
-                json.dump(self.metadata, f, indent=2)
-
-            # Save summary
-            with open(os.path.join(self.run_dir, "summary.json"), 'w') as f:
-                json.dump(summary, f, indent=2)
-
-            # Log completion
-            self._write_rein_log(f"REIN FINISHED | completed={completed} | failed={failed} | total={len(self.processes)}")
-
-            # Log cost summary
-            if self._total_usage.total_tokens > 0:
-                cost_line = (
-                    f"[COST] Total: ${self._total_usage.cost:.4f} | "
-                    f"Tokens: {self._total_usage.total_tokens:,} "
-                    f"(in:{self._total_usage.input_tokens:,} out:{self._total_usage.output_tokens:,}) | "
-                    f"Provider: {self._total_usage.provider} | Model: {self._total_usage.model}"
-                )
+                cost_line = run_summary.format_cost_line(self._total_usage)
                 self._write_rein_log(cost_line)
                 console.info(cost_line)
 
             # v3.0: Update task status file and task.json
             if self.task_dir:
-                status = "completed" if failed == 0 else "failed"
-                # Update status file (v3.0: state/status)
-                with open(os.path.join(self.task_dir, "state", "status"), "w") as f:
-                    f.write(f"{status}\n")
-                # Update task.json (v3.0: input/task.json)
-                task_json_path = os.path.join(self.task_dir, "input", "task.json")
-                if os.path.exists(task_json_path):
-                    with open(task_json_path) as f:
-                        task_data = json.load(f)
-                    task_data["status"] = status
-                    task_data["completed"] = datetime.now().isoformat()
-                    task_data["blocks_completed"] = completed
-                    task_data["blocks_failed"] = failed
-                    task_data["blocks_total"] = len(self.processes)
-                    with open(task_json_path, "w") as f:
-                        json.dump(task_data, f, indent=2, ensure_ascii=False)
-                self._write_rein_log(f"TASK STATUS | {self.task_id} | status={status}")
+                run_summary.update_task_status_file(
+                    self.task_dir, completed, failed, len(self.processes),
+                    self._write_rein_log, self.task_id,
+                )
 
-            # Handle task output (copy results to task output_dir)
+            # Handle task output (copy results to output_dir)
             output_dir = self.all_blocks[0].get('output_dir') if hasattr(self, 'all_blocks') and self.all_blocks else None
             if not output_dir:
-                # Try to get from config
                 output_dir = self.config.get('output_dir') if hasattr(self, 'config') else None
 
             if output_dir:
-                try:
-                    os.makedirs(output_dir, exist_ok=True)
-                    # Copy workflow files (YAML, .env, logs) from workflow directory
-                    workflow_dir = os.path.dirname(self.workflow_file) if hasattr(self, 'workflow_file') else None
-                    if workflow_dir:
-                        for f in os.listdir(workflow_dir):
-                            if f.endswith(('.json', '.yaml', '.env')):
-                                src = os.path.join(workflow_dir, f)
-                                dst = os.path.join(output_dir, f)
-                                if os.path.isfile(src):
-                                    import shutil
-                                    try:
-                                        shutil.copy2(src, dst)
-                                    except (OSError, IOError, shutil.Error):
-                                        pass
-                    self._write_rein_log(f"OUTPUT SAVED | {output_dir}")
-                except Exception as e:
-                    self._write_rein_log(f"OUTPUT SAVE ERROR | {str(e)}")
+                workflow_file = getattr(self, 'workflow_file', None)
+                run_summary.copy_workflow_output_files(output_dir, workflow_file, self._write_rein_log)
 
-            # Update task status if task_dir is set
+            # Update task status via tasks module if status_path is set
             if hasattr(self, 'config') and 'status_path' in self.config:
                 status = 'completed' if failed == 0 else 'failed'
                 _update_task_status(
-                    self.config['status_path'],
-                    status,
-                    progress=100,
-                    blocks_completed=completed,
-                    blocks_total=len(self.processes)
+                    self.config['status_path'], status,
+                    progress=100, blocks_completed=completed,
+                    blocks_total=len(self.processes),
                 )
-
-                # Handle callback to memory (if configured)
-                if hasattr(self, 'config') and 'task_config' in self.config:
+                if 'task_config' in self.config:
                     task_config = self.config['task_config']
                     if task_config.get('callback', {}).get('save_to_memory'):
                         _save_task_to_memory(
