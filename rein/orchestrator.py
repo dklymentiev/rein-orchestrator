@@ -42,6 +42,7 @@ from rein import state_machine
 from rein import block_resolver
 from rein import process_control
 from rein import routing_engine
+from rein import error_handlers
 
 logger = get_logger(__name__)
 console = get_console()
@@ -1114,89 +1115,19 @@ class ProcessManager:
             self.semaphore.release()
 
     def _run_error_handlers(self, block: dict, block_name: str, error_msg: str, run_log=None):
-        """Run error handlers: per-block logic.error first, then global on_error.
-
-        Error context is passed via stdin JSON to the handler script:
-        {block_name, error, task_dir, task_id, flow_name}
-        """
-        error_context = json.dumps({
-            "block_name": block_name,
-            "error": error_msg,
-            "task_dir": self.task_dir,
-            "task_id": self.task_id or "",
-            "flow_name": self.flow_name or "",
-        })
-
-        logic_config = block.get("logic", {})
-        error_script = logic_config.get("error")
-        handled = False
-
-        # Priority 1: per-block logic.error
-        if error_script:
-            self._write_rein_log(f"ERROR HANDLER | {block_name} | logic.error={error_script}")
-            if run_log:
-                run_log.write("LOGIC.ERROR START", f"script={error_script}")
-            try:
-                script_path = os.path.join(self.workflow_dir, error_script)
-                if not os.path.isfile(script_path):
-                    script_path = error_script  # Try as absolute path
-
-                result = subprocess.run(
-                    ["bash", script_path] if script_path.endswith(".sh") else ["python3", script_path],
-                    input=error_context,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    cwd=self.workflow_dir,
-                )
-                if result.returncode == 0:
-                    self._write_rein_log(f"ERROR HANDLER OK | {block_name} | logic.error")
-                    if run_log:
-                        run_log.write("LOGIC.ERROR OK", f"script={error_script}")
-                        if result.stdout:
-                            for line in result.stdout.strip().splitlines()[:20]:
-                                run_log.write("LOGIC.ERROR STDOUT", line)
-                    handled = True
-                else:
-                    self._write_rein_log(
-                        f"ERROR HANDLER FAILED | {block_name} | logic.error | "
-                        f"exit={result.returncode} | stderr={result.stderr[:200]}"
-                    )
-                    if run_log:
-                        run_log.write("LOGIC.ERROR FAILED", f"exit={result.returncode}")
-                        if result.stderr:
-                            for line in result.stderr.strip().splitlines()[:20]:
-                                run_log.write("LOGIC.ERROR STDERR", line)
-            except Exception as handler_err:
-                self._write_rein_log(f"ERROR HANDLER EXCEPTION | {block_name} | logic.error | {handler_err}")
-                if run_log:
-                    run_log.write("LOGIC.ERROR EXCEPTION", str(handler_err))
-
-        # Priority 2: global on_error (only if logic.error didn't handle it)
-        if not handled and self.on_error:
-            self._write_rein_log(f"ERROR HANDLER | {block_name} | on_error={self.on_error}")
-            try:
-                script_path = os.path.join(self.workflow_dir, self.on_error)
-                if not os.path.isfile(script_path):
-                    script_path = self.on_error
-
-                result = subprocess.run(
-                    ["bash", script_path] if script_path.endswith(".sh") else ["python3", script_path],
-                    input=error_context,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    cwd=self.workflow_dir,
-                )
-                if result.returncode == 0:
-                    self._write_rein_log(f"ERROR HANDLER OK | {block_name} | on_error")
-                else:
-                    self._write_rein_log(
-                        f"ERROR HANDLER FAILED | {block_name} | on_error | "
-                        f"exit={result.returncode} | stderr={result.stderr[:200]}"
-                    )
-            except Exception as handler_err:
-                self._write_rein_log(f"ERROR HANDLER EXCEPTION | {block_name} | on_error | {handler_err}")
+        """Delegate to error_handlers module."""
+        error_handlers.run_error_handlers(
+            block=block,
+            block_name=block_name,
+            error_msg=error_msg,
+            workflow_dir=self.workflow_dir,
+            task_dir=self.task_dir,
+            task_id=self.task_id or "",
+            flow_name=self.flow_name or "",
+            global_on_error=self.on_error,
+            log_fn=self._write_rein_log,
+            run_log=run_log,
+        )
 
     def _monitor_process(self, uid: str, proc: subprocess.Popen, process: Process):
         """Monitor process and collect metrics"""
