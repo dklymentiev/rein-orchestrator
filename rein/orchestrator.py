@@ -254,98 +254,22 @@ class ProcessManager:
             self._load_state_from_db()
 
     def _run_preflight_validation(self, workflow_file: str):
-        """Run schema validation before workflow execution"""
-        try:
-            engine = ValidationEngine()
-            result = engine.validate_workflow(Path(workflow_file), cross_reference_check=True)
-
-            if result.is_valid:
-                self._write_rein_log(f"VALIDATE OK | schema_version={result.metadata.get('schema_version')} | blocks={result.metadata.get('blocks_count')} | phases={result.metadata.get('phases')}")
-                console.info("")
-                console.info("[VALIDATE] Workflow: %s", result.metadata.get('name'))
-                console.info("[VALIDATE] Team: %s", result.metadata.get('team'))
-                console.info("[VALIDATE] Schema Version: %s", result.metadata.get('schema_version'))
-                console.info("[VALIDATE] Blocks: %s", result.metadata.get('blocks_count'))
-                console.info("[VALIDATE] Execution Phases: %s", result.metadata.get('phases'))
-                console.info("[VALIDATE] Flow Control Blocks: %s", result.metadata.get('flow_control_blocks'))
-                console.info("[VALIDATE] Status: OK\n")
-            else:
-                self._write_rein_log(f"VALIDATE FAILED | errors={len(result.errors)} | warnings={len(result.warnings)}")
-                console.error("\n[ERROR] Workflow validation failed!")
-                console.error(result.format_report())
-                console.info("")
-                sys.exit(1)
-
-            if result.warnings:
-                logger.warning("%d validation warnings:", len(result.warnings))
-                for warning in result.warnings:
-                    logger.warning("  - %s: %s", warning.field, warning.message)
-
-        except Exception as e:
-            self._write_rein_log(f"VALIDATE ERROR | {str(e)}")
-            logger.warning("Validation engine error (continuing anyway): %s", e)
+        """Schema validation (delegates to ConfigLoader)"""
+        self.config_loader.run_preflight_validation(
+            workflow_file,
+            console_info=console.info,
+            console_error=console.error,
+            pkg_logger=logger,
+        )
 
     def _validate_task_inputs(self, config: dict):
-        """Validate task inputs against declarative inputs: section (v2.6.0).
-
-        - If no inputs: section, skip entirely (backward compat).
-        - For each declared required field: check if present in self.task_input.
-        - For optional fields with default: inject into self.task_input if missing.
-        - Log warning for extra (undeclared) inputs.
-        - On errors: print, log, sys.exit(1).
-        """
-        inputs_spec = config.get('inputs')
-        if not inputs_spec:
-            return  # No inputs declared - backward compatible
-
-        errors = []
-        declared = set(inputs_spec.keys())
-        provided = set(self.task_input.keys())
-
-        for field_name, field_config in inputs_spec.items():
-            # field_config can be a dict (from YAML) or InputFieldConfig (from models.workflow)
-            if isinstance(field_config, dict):
-                is_required = field_config.get('required', True)
-                default_val = field_config.get('default')
-            else:
-                is_required = field_config.required
-                default_val = field_config.default
-
-            if field_name not in self.task_input:
-                if is_required:
-                    desc = ""
-                    if isinstance(field_config, dict):
-                        desc = field_config.get('description', '')
-                    elif hasattr(field_config, 'description'):
-                        desc = field_config.description or ''
-                    hint = f" ({desc})" if desc else ""
-                    errors.append(f"  - '{field_name}'{hint}")
-                elif default_val is not None:
-                    # Inject default value
-                    self.task_input[field_name] = default_val
-                    self._write_rein_log(f"INPUT DEFAULT | {field_name} = {default_val}")
-
-        # Warn about extra (undeclared) inputs
-        extra = provided - declared
-        if extra:
-            self._write_rein_log(f"INPUT WARNING | Extra undeclared inputs: {sorted(extra)}")
-            logger.warning("Extra inputs not declared in workflow: %s", sorted(extra))
-
-        if errors:
-            workflow_name = config.get('name', 'unknown')
-            msg = (
-                f"\n[ERROR] Missing required inputs for workflow '{workflow_name}':\n"
-                + "\n".join(errors)
-                + f"\n\nDeclared inputs: {sorted(declared)}"
-                + f"\nProvided inputs: {sorted(provided)}"
-                + "\n\nProvide inputs via --input '{\"field\": \"value\"}' or task.input.json\n"
-            )
-            console.error(msg)
-            missing_names = [e.strip().lstrip("- '").split("'")[0] for e in errors]
-            self._write_rein_log(f"INPUT VALIDATION FAILED | missing: {missing_names}")
-            sys.exit(1)
-
-        self._write_rein_log(f"INPUT VALIDATION OK | declared={sorted(declared)} | provided={sorted(provided)}")
+        """Validate task inputs (delegates to ConfigLoader)"""
+        self.config_loader.validate_task_inputs(
+            config,
+            self.task_input,
+            console_error=console.error,
+            pkg_logger=logger,
+        )
 
     def _load_env_file(self, workflow_dir: str):
         """Load .env file from flow directory (delegates to ConfigLoader)"""
