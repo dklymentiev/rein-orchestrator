@@ -40,6 +40,7 @@ from rein.tasks import save_task_to_memory as _save_task_to_memory
 from rein.log import get_logger, get_console
 from rein import state_machine
 from rein import block_resolver
+from rein import process_control
 
 logger = get_logger(__name__)
 console = get_console()
@@ -1838,133 +1839,40 @@ class ProcessManager:
                         self._write_rein_log(f"KILL FAILED | {name} | {str(e)}")
 
     def pause_single(self, identifier: str) -> bool:
-        """Pause a single process by UID or name"""
-        with self.lock:
-            # Try to find by UID first, then by name
-            process = None
-            process_id = identifier
-
-            if identifier in self.processes:
-                # Direct UID match
-                process = self.processes[identifier]
-            else:
-                # Try to find by name
-                for uid, proc in self.processes.items():
-                    if proc.name == identifier:
-                        process = proc
-                        process_id = uid
-                        break
-
-            if not process:
-                return False
-
-            # Only pause if not already done/failed
-            if process.status in ("done", "failed"):
-                return False
-
-            # Store previous status to restore on resume
-            if not hasattr(process, '_previous_status'):
-                process._previous_status = process.status
-
-            process.status = "paused"
-
-        self.state.save_process(process)
-        self._write_rein_log(f"PAUSE_SINGLE | {process.name}[{process_id}] | previous_status={process._previous_status}")
-        return True
+        return process_control.pause_single(
+            self.processes, identifier, self.lock,
+            self.state.save_process, self._write_rein_log
+        )
 
     def resume_single(self, identifier: str) -> bool:
-        """Resume a paused process by UID or name"""
-        with self.lock:
-            # Try to find by UID first, then by name
-            process = None
-            process_id = identifier
-
-            if identifier in self.processes:
-                # Direct UID match
-                process = self.processes[identifier]
-            else:
-                # Try to find by name
-                for uid, proc in self.processes.items():
-                    if proc.name == identifier:
-                        process = proc
-                        process_id = uid
-                        break
-
-            if not process:
-                return False
-
-            if process.status != "paused":
-                return False
-
-            # Restore previous status (running or waiting)
-            previous = getattr(process, '_previous_status', 'waiting')
-            process.status = previous
-            if hasattr(process, '_previous_status'):
-                delattr(process, '_previous_status')
-
-        self.state.save_process(process)
-        self._write_rein_log(f"RESUME_SINGLE | {process.name}[{process_id}] | resumed_to={process.status}")
-        return True
+        return process_control.resume_single(
+            self.processes, identifier, self.lock,
+            self.state.save_process, self._write_rein_log
+        )
 
     def cancel_single(self, identifier: str) -> bool:
-        """Cancel a single process - kill it and mark as cancelled (won't restart)"""
-        with self.lock:
-            # Try to find by UID first, then by name
-            process = None
-            process_id = identifier
-
-            if identifier in self.processes:
-                # Direct UID match
-                process = self.processes[identifier]
-            else:
-                # Try to find by name
-                for uid, proc in self.processes.items():
-                    if proc.name == identifier:
-                        process = proc
-                        process_id = uid
-                        break
-
-            if not process:
-                return False
-
-            # Kill process if running
-            if process.status == "running" and process.pid:
-                try:
-                    os.kill(process.pid, signal.SIGTERM)
-                    self._write_rein_log(f"KILL SENT | {process.name}[{process_id}] | pid={process.pid}")
-                except Exception as e:
-                    self._write_rein_log(f"KILL FAILED | {process.name}[{process_id}] | {str(e)}")
-
-            # Mark as cancelled (won't restart on resume)
-            process.status = "cancelled"
-            self.state.save_process(process)
-            self._write_rein_log(f"CANCEL_SINGLE | {process.name}[{process_id}] | previous_status={process.status}")
-
-        return True
+        return process_control.cancel_single(
+            self.processes, identifier, self.lock,
+            self.state.save_process, self._write_rein_log
+        )
 
     def pause_workflow(self) -> bool:
-        """Pause entire workflow - stops spawning new processes"""
         with self.lock:
-            if self.workflow_paused:
-                return False  # Already paused
-
-            self.workflow_paused = True
-            self.workflow_paused_at = time.time()
-
-        self._write_rein_log(f"PAUSE_WORKFLOW | Workflow paused, no new processes will spawn")
-        return True
+            flags = {'paused': self.workflow_paused, 'paused_at': self.workflow_paused_at}
+            result = process_control.pause_workflow_flags(flags, self._write_rein_log)
+            if result:
+                self.workflow_paused = flags['paused']
+                self.workflow_paused_at = flags['paused_at']
+        return result
 
     def resume_workflow(self) -> bool:
-        """Resume paused workflow - allows spawning to continue"""
         with self.lock:
-            if not self.workflow_paused:
-                return False  # Not paused
-
-            self.workflow_paused = False
-            self.workflow_paused_at = None
-
-        self._write_rein_log(f"RESUME_WORKFLOW | Workflow resumed, spawning will continue")
-        return True
+            flags = {'paused': self.workflow_paused, 'paused_at': self.workflow_paused_at}
+            result = process_control.resume_workflow_flags(flags, self._write_rein_log)
+            if result:
+                self.workflow_paused = flags['paused']
+                self.workflow_paused_at = flags['paused_at']
+        return result
 
     def all_completed(self) -> bool:
         """Check if all processes are completed"""
