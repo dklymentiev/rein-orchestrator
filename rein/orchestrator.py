@@ -953,139 +953,15 @@ class ProcessManager:
 
             # ROUTING: Tag-based routing from block output (v3.3)
             if block.get('routing'):
-                try:
-                    routing = block['routing']
-                    result_text = routing_engine.read_result_text(save_file)
-                    signals = routing_engine.extract_verdict_signals(result_text)
-                    next_block_name, matched_signal = routing_engine.match_routing_rule(routing, signals)
-
-                    if next_block_name and next_block_name != '_stop':
-                        current_runs = self.run_counts.get(next_block_name, 0)
-                        next_block_config = self.block_configs.get(next_block_name)
-                        max_runs_val = next_block_config.get('max_runs', self.default_max_runs) if next_block_config else self.default_max_runs
-
-                        if current_runs >= max_runs_val:
-                            self._write_rein_log(f"ROUTING BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs_val}")
-                            with self.lock:
-                                self.completed.add(next_block_name)
-                                self._write_rein_log(f"ROUTING FORCED COMPLETE | {next_block_name} | max_runs exhausted")
-                        else:
-                            self.run_counts[next_block_name] = current_runs + 1
-                            with self.lock:
-                                self.completed.discard(next_block_name)
-                                # Reset the target block
-                                for proc_uid, proc in self.processes.items():
-                                    if proc.name == next_block_name:
-                                        proc.status = "waiting"
-                                        proc.progress = 0
-                                        proc.run_count = self.run_counts[next_block_name]
-                                        self.state.save_process(proc)
-                                        break
-                                # Cascade: invalidate all blocks that depend on the reset block
-                                dependents_map = self._get_dependents_map()
-                                cascade = self._cascade_invalidation({next_block_name}, dependents_map)
-                                cascade.discard(next_block_name)  # already reset above
-
-                                # Detect BACKWARD routing: target is a predecessor of current
-                                # block in the dependency graph (going back in the flow).
-                                # Forward routing: target is a successor or sibling (moving forward).
-                                is_backward = self._is_backward_routing(name, next_block_name)
-
-                                # Gate fix: backward routing invalidates gate dependents
-                                # (except target) to prevent downstream blocks from running
-                                # with stale gate output during revision loop.
-                                if is_backward:
-                                    gate_dependents = set(dependents_map.get(name, []))
-                                    gate_dependents.discard(next_block_name)
-                                    cascade.update(gate_dependents)
-
-                                for dep_name in cascade:
-                                    self.completed.discard(dep_name)
-                                    for proc_uid, proc in self.processes.items():
-                                        if proc.name == dep_name:
-                                            if proc.status != "running":  # don't reset already-running
-                                                proc.status = "waiting"
-                                                proc.progress = 0
-                                                self.state.save_process(proc)
-                                            break
-                                if cascade:
-                                    self._write_rein_log(f"ROUTING CASCADE | invalidated: {cascade}")
-                                self.next_queue.append((next_block_name, {}))
-                                # Defer gate completion only for backward routing (revision loop)
-                                if is_backward:
-                                    routing_went_backward = True
-                            self._write_rein_log(f"ROUTING | {name} -> {next_block_name} | signal={matched_signal} | run={self.run_counts[next_block_name]}/{max_runs_val}")
-                            run_log.write("ROUTING", f"-> {next_block_name} signal={matched_signal}")
-
-                    elif next_block_name == '_stop':
-                        self._write_rein_log(f"ROUTING STOP | {name} | signal={matched_signal}")
-
-                except Exception as e:
-                    self._write_rein_log(f"ROUTING ERROR | {name} | {str(e)}")
+                routing_went_backward = self._apply_routing(
+                    block, name, save_file, run_log
+                ) or routing_went_backward
 
             # STATE MACHINE: Evaluate and trigger next block (Phase 2.5.4)
             if block.get('next') and not block.get('routing'):
-                try:
-                    result_data = routing_engine.parse_result_data(save_file)
-                    if result_data:
-                        result_data['_stage'] = name
-                    next_block_name = self._evaluate_next_block(block, result_data)
-
-                    if next_block_name:
-                        # Check max_runs for loop protection
-                        current_runs = self.run_counts.get(next_block_name, 0)
-                        next_block_config = self.block_configs.get(next_block_name)
-                        max_runs = next_block_config.get('max_runs', self.default_max_runs) if next_block_config else self.default_max_runs
-
-                        if current_runs >= max_runs:
-                            self._write_rein_log(f"NEXT BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs}")
-                            # Loop exhausted: force the blocked target into completed
-                            # so its dependents can proceed (loop is over).
-                            with self.lock:
-                                self.completed.add(next_block_name)
-                                self._write_rein_log(f"NEXT FORCED COMPLETE | {next_block_name} | max_runs exhausted, marking completed")
-                        else:
-                            # Increment run count and add to next queue
-                            self.run_counts[next_block_name] = current_runs + 1
-
-                            with self.lock:
-                                # Remove from completed to allow re-run
-                                self.completed.discard(next_block_name)
-                                # Reset process status to waiting
-                                for proc_uid, proc in self.processes.items():
-                                    if proc.name == next_block_name:
-                                        proc.status = "waiting"
-                                        proc.progress = 0
-                                        proc.run_count = self.run_counts[next_block_name]
-                                        self.state.save_process(proc)
-                                        break
-
-                                # Gate fix: invalidate blocks depending on this gate
-                                # (except routing target) to prevent race condition
-                                dependents_map = self._get_dependents_map()
-                                gate_deps = set(dependents_map.get(name, []))
-                                gate_deps.discard(next_block_name)
-                                for dep_name in gate_deps:
-                                    self.completed.discard(dep_name)
-                                    for proc_uid, proc in self.processes.items():
-                                        if proc.name == dep_name:
-                                            if proc.status != "running":
-                                                proc.status = "waiting"
-                                                proc.progress = 0
-                                                self.state.save_process(proc)
-                                            break
-                                if gate_deps:
-                                    self._write_rein_log(f"GATE CASCADE | {name} | invalidated: {gate_deps}")
-
-                                # Add to next queue
-                                self.next_queue.append((next_block_name, result_data))
-                                if current_runs > 0:
-                                    routing_went_backward = True
-
-                            self._write_rein_log(f"NEXT QUEUED | {name} -> {next_block_name} | run={self.run_counts[next_block_name]}/{max_runs}")
-                            run_log.write("NEXT", f"-> {next_block_name} run={self.run_counts[next_block_name]}/{max_runs}")
-                except Exception as e:
-                    self._write_rein_log(f"NEXT EVAL ERROR | {name} | {str(e)}")
+                routing_went_backward = self._apply_next_state_machine(
+                    block, name, save_file, run_log
+                ) or routing_went_backward
 
             # Deferred completion: only mark as completed if routing didn't send backward
             if routing_went_backward:
@@ -1114,6 +990,150 @@ class ProcessManager:
         finally:
             run_log.close()
             self.semaphore.release()
+
+    def _reset_block_for_rerun(self, target_name: str, new_run_count: int) -> None:
+        """Reset a process back to waiting state so it can re-run.
+
+        Must be called while holding self.lock.
+        """
+        for proc_uid, proc in self.processes.items():
+            if proc.name == target_name:
+                proc.status = "waiting"
+                proc.progress = 0
+                proc.run_count = new_run_count
+                self.state.save_process(proc)
+                return
+
+    def _invalidate_cascade(self, cascade_set: set) -> None:
+        """Reset all processes in cascade_set back to waiting (if not running).
+
+        Must be called while holding self.lock.
+        """
+        for dep_name in cascade_set:
+            self.completed.discard(dep_name)
+            for proc_uid, proc in self.processes.items():
+                if proc.name == dep_name:
+                    if proc.status != "running":
+                        proc.status = "waiting"
+                        proc.progress = 0
+                        self.state.save_process(proc)
+                    break
+
+    def _apply_routing(self, block: dict, name: str, save_file: str, run_log) -> bool:
+        """Apply tag-based routing (v3.3) after block completion.
+
+        Returns True if routing went backward (gate should defer completion).
+        """
+        routing_went_backward = False
+        try:
+            routing = block['routing']
+            result_text = routing_engine.read_result_text(save_file)
+            signals = routing_engine.extract_verdict_signals(result_text)
+            next_block_name, matched_signal = routing_engine.match_routing_rule(routing, signals)
+
+            if next_block_name == '_stop':
+                self._write_rein_log(f"ROUTING STOP | {name} | signal={matched_signal}")
+                return False
+
+            if not next_block_name:
+                return False
+
+            current_runs = self.run_counts.get(next_block_name, 0)
+            next_block_config = self.block_configs.get(next_block_name)
+            max_runs_val = next_block_config.get('max_runs', self.default_max_runs) if next_block_config else self.default_max_runs
+
+            if current_runs >= max_runs_val:
+                self._write_rein_log(f"ROUTING BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs_val}")
+                with self.lock:
+                    self.completed.add(next_block_name)
+                    self._write_rein_log(f"ROUTING FORCED COMPLETE | {next_block_name} | max_runs exhausted")
+                return False
+
+            self.run_counts[next_block_name] = current_runs + 1
+            with self.lock:
+                self.completed.discard(next_block_name)
+                self._reset_block_for_rerun(next_block_name, self.run_counts[next_block_name])
+
+                # Cascade: invalidate all blocks that depend on the reset block
+                dependents_map = self._get_dependents_map()
+                cascade = self._cascade_invalidation({next_block_name}, dependents_map)
+                cascade.discard(next_block_name)  # already reset above
+
+                # Backward routing: also invalidate gate dependents
+                is_backward = self._is_backward_routing(name, next_block_name)
+                if is_backward:
+                    gate_dependents = set(dependents_map.get(name, []))
+                    gate_dependents.discard(next_block_name)
+                    cascade.update(gate_dependents)
+
+                self._invalidate_cascade(cascade)
+
+                if cascade:
+                    self._write_rein_log(f"ROUTING CASCADE | invalidated: {cascade}")
+                self.next_queue.append((next_block_name, {}))
+                if is_backward:
+                    routing_went_backward = True
+
+            self._write_rein_log(f"ROUTING | {name} -> {next_block_name} | signal={matched_signal} | run={self.run_counts[next_block_name]}/{max_runs_val}")
+            run_log.write("ROUTING", f"-> {next_block_name} signal={matched_signal}")
+
+        except Exception as e:
+            self._write_rein_log(f"ROUTING ERROR | {name} | {str(e)}")
+
+        return routing_went_backward
+
+    def _apply_next_state_machine(self, block: dict, name: str, save_file: str, run_log) -> bool:
+        """Apply state machine `next:` evaluation after block completion.
+
+        Returns True if routing went backward (gate should defer completion).
+        """
+        routing_went_backward = False
+        try:
+            result_data = routing_engine.parse_result_data(save_file)
+            if result_data:
+                result_data['_stage'] = name
+            next_block_name = self._evaluate_next_block(block, result_data)
+
+            if not next_block_name:
+                return False
+
+            # Check max_runs for loop protection
+            current_runs = self.run_counts.get(next_block_name, 0)
+            next_block_config = self.block_configs.get(next_block_name)
+            max_runs = next_block_config.get('max_runs', self.default_max_runs) if next_block_config else self.default_max_runs
+
+            if current_runs >= max_runs:
+                self._write_rein_log(f"NEXT BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs}")
+                with self.lock:
+                    self.completed.add(next_block_name)
+                    self._write_rein_log(f"NEXT FORCED COMPLETE | {next_block_name} | max_runs exhausted, marking completed")
+                return False
+
+            # Increment run count and add to next queue
+            self.run_counts[next_block_name] = current_runs + 1
+            with self.lock:
+                self.completed.discard(next_block_name)
+                self._reset_block_for_rerun(next_block_name, self.run_counts[next_block_name])
+
+                # Gate fix: invalidate blocks depending on this gate (except target)
+                dependents_map = self._get_dependents_map()
+                gate_deps = set(dependents_map.get(name, []))
+                gate_deps.discard(next_block_name)
+                self._invalidate_cascade(gate_deps)
+
+                if gate_deps:
+                    self._write_rein_log(f"GATE CASCADE | {name} | invalidated: {gate_deps}")
+
+                self.next_queue.append((next_block_name, result_data))
+                if current_runs > 0:
+                    routing_went_backward = True
+
+            self._write_rein_log(f"NEXT QUEUED | {name} -> {next_block_name} | run={self.run_counts[next_block_name]}/{max_runs}")
+            run_log.write("NEXT", f"-> {next_block_name} run={self.run_counts[next_block_name]}/{max_runs}")
+        except Exception as e:
+            self._write_rein_log(f"NEXT EVAL ERROR | {name} | {str(e)}")
+
+        return routing_went_backward
 
     def _run_error_handlers(self, block: dict, block_name: str, error_msg: str, run_log=None):
         """Delegate to error_handlers module."""
