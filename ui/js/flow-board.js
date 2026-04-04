@@ -55,8 +55,8 @@ function resize() {
   const d = devicePixelRatio || 1;
   const a = document.querySelector('.canvas-wrap');
   W = a.clientWidth;
-  cs = W / GW;
-  H = Math.max(a.clientHeight, GH * cs);
+  cs = Math.min(W / GW, a.clientHeight / GH);
+  H = a.clientHeight;
   cv.width = W * d; cv.height = H * d;
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
   cx.setTransform(d, 0, 0, d, 0, 0);
