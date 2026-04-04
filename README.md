@@ -306,8 +306,134 @@ Scripts receive JSON context via stdin:
   "block_dir": "path/to/block/",
   "task_input": {"topic": "..."},
   "task_id": "task-20260102-183805",
-  "workflow_dir": "path/to/flow/"
+  "workflow_dir": "path/to/flow/",
+  "run_count": 0,
+  "depends_on": ["block_a", "block_b"],
+  "block_config": { "name": "my_block", "phase": 2 }
 }
+```
+
+When `logic.custom` is a string (script path), it replaces the LLM call entirely:
+
+```yaml
+logic:
+  custom: "logic/my-script.py"    # Runs this instead of calling LLM
+```
+
+When `logic.custom: true` (boolean), the pre-phase script handles everything and LLM is skipped.
+
+### Tag-Based Routing (v3.3)
+
+Route execution based on signals in block output. Scripts print `VERDICT: <signal>` to stdout, and routing matches the signal:
+
+```yaml
+- name: qa_gate
+  depends_on: [tests, review]
+  logic:
+    custom: "logic/evaluate.py"
+  routing:
+    revise: fix_block          # VERDICT: REVISE -> go to fix_block
+    needs-review: reviewer     # VERDICT: PASS or VERDICT: APPROVED -> needs-review
+    _default: release          # No signal matched -> default path
+  max_runs: 3                  # Max 3 routing cycles
+```
+
+Signal extraction: orchestrator reads `VERDICT:` lines from block result. `PASS`/`APPROVED` maps to `needs-review`, `REVISE` maps to `revise`.
+
+Routing resets the target block and cascade-invalidates all blocks that depend on it.
+
+### Error Handling
+
+Global error handler runs when any block fails:
+
+```yaml
+on_error: logic/notify-failure.py
+```
+
+Per-block error handler runs before the global handler:
+
+```yaml
+- name: deploy
+  logic:
+    custom: "logic/deploy.sh"
+    error: "logic/rollback.sh"     # Runs if deploy fails
+```
+
+### Execution Phases
+
+The `phase` field controls execution order. Blocks in the same phase with satisfied dependencies run in parallel:
+
+```yaml
+blocks:
+  - name: research
+    phase: 1                       # Runs first
+
+  - name: analysis
+    phase: 2
+    depends_on: [research]         # Runs after phase 1
+
+  - name: report
+    phase: 3
+    depends_on: [analysis]
+```
+
+Phases are optional -- without them, execution order is determined purely by `depends_on`.
+
+### Flow Control Flags
+
+```yaml
+- name: optional_check
+  skip_if_previous_failed: true    # Skip if any dependency failed
+  continue_if_failed: true         # Don't fail the workflow if this block fails
+```
+
+### Declarative Inputs (v2.6)
+
+Validate task input before execution starts:
+
+```yaml
+inputs:
+  topic:
+    description: "What to research"
+    required: true
+  style:
+    description: "Writing style"
+    required: false
+    default: "professional"
+```
+
+Referenced in prompts as `{{ task.input.topic }}`.
+
+### Block-Level Model Override
+
+Override the LLM model for specific blocks:
+
+```yaml
+- name: simple_task
+  model: "haiku"                   # Use faster/cheaper model
+  prompt: "Summarize..."
+
+- name: complex_analysis
+  model: "opus"                    # Use most capable model
+  prompt: "Deep analysis..."
+```
+
+### Custom Output Filenames
+
+```yaml
+- name: generate_report
+  save_as: "report.md"            # Save output as report.md instead of result.json
+```
+
+### Workflow-Level Settings
+
+```yaml
+readable_outputs: true             # Save human-readable .md alongside JSON
+timeout: 3600                      # Workflow timeout in seconds (30-86400)
+metadata:
+  version: "1.0"
+  author: "team"
+  created: "2026-01-15"
 ```
 
 ### Template Variables

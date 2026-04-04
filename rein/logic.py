@@ -40,7 +40,8 @@ class LogicRunner:
         depends_on: Optional[List[str]] = None,
         block_config: Optional[Dict] = None,
         linux_user: Optional[str] = None,
-        run_count: int = 0
+        run_count: int = 0,
+        timeout_override: Optional[int] = None
     ) -> bool:
         """
         Run logic script (Python or Shell)
@@ -102,16 +103,16 @@ class LogicRunner:
                 cmd = ['sudo', '-u', linux_user] + cmd
                 self.logger(f"LOGIC SUDO | running as {linux_user}")
 
-            # Run script
-            if True:  # Keep indent level for minimal diff
-                result = subprocess.run(
-                    cmd,
-                    input=context_json,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                    cwd=self.task_dir
-                )
+            # Run script (use block-level timeout_override if provided)
+            effective_timeout = timeout_override if timeout_override else self.timeout
+            result = subprocess.run(
+                cmd,
+                input=context_json,
+                capture_output=True,
+                text=True,
+                timeout=effective_timeout,
+                cwd=self.task_dir
+            )
             # Log output
             if result.stdout:
                 for line in result.stdout.strip().split('\n'):

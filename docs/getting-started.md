@@ -317,17 +317,129 @@ run `rein`.
 Check `/tmp/rein-runs/` for the latest run. If missing, the workflow may have
 failed -- re-run with `--no-ui` to see error messages in the terminal.
 
+## Advanced Features Reference
+
+Once you have a basic workflow running, here are the features available in schema v3.3.0.
+
+### Conditional Branching (`next`)
+
+Route execution based on block output:
+
+```yaml
+- name: review
+  prompt: "Review quality..."
+  next:
+    - if: "{{ result.approved }}"
+      goto: publish
+    - else: revision
+```
+
+Simple unconditional jump:
+
+```yaml
+- name: fix
+  next: review    # Always go back to review after fixing
+```
+
+### Revision Loops
+
+Combine `next` with `max_runs` to create retry cycles:
+
+```yaml
+- name: revision
+  depends_on: [review]
+  max_runs: 3          # Prevent infinite loops
+  next: review         # Go back for re-review
+```
+
+### Tag-Based Routing (`routing`, v3.3)
+
+Scripts print `VERDICT: <signal>` to stdout. Routing matches the signal to a target block:
+
+```yaml
+- name: qa_gate
+  logic:
+    custom: "logic/evaluate.py"
+  routing:
+    revise: fix_block
+    _default: release
+  max_runs: 3
+```
+
+### Logic Scripts
+
+Python/bash scripts for pre/post processing. Scripts receive JSON context on stdin:
+
+```yaml
+logic:
+  pre: logic/fetch-data.py          # Before LLM
+  post: logic/save-result.py        # After LLM
+  validate: logic/check.py          # Gate (exit 0 = pass)
+  custom: "logic/my-script.py"      # Replace LLM entirely
+  error: "logic/handle-failure.py"  # Per-block error handler
+```
+
+### Error Handling
+
+```yaml
+# Global (workflow-level)
+on_error: logic/notify-failure.py
+
+# Per-block
+- name: deploy
+  logic:
+    error: "logic/rollback.sh"
+```
+
+### Declarative Inputs (v2.6)
+
+```yaml
+inputs:
+  topic:
+    description: "What to research"
+    required: true
+  style:
+    required: false
+    default: "professional"
+```
+
+### Multi-Agent Step Mode (v3.3)
+
+Tag blocks with `agent:` and use `--agent-id` to run only matching blocks:
+
+```yaml
+- name: draft
+  agent: writer
+- name: review
+  agent: editor
+  depends_on: [draft]
+```
+
+```bash
+rein --step 1 --task-dir task-001 --agent-id writer
+rein --step 1 --task-dir task-001 --agent-id editor
+```
+
+### Other Block Fields
+
+| Field | Description |
+|-------|-------------|
+| `phase: 1-10` | Execution phase (same phase = parallel if deps met) |
+| `model: "haiku"` | Override LLM model for this block |
+| `save_as: "report.md"` | Custom output filename |
+| `timeout: 120` | Block timeout in seconds (30-7200) |
+| `skip_if_previous_failed: true` | Skip if any dependency failed |
+| `continue_if_failed: true` | Don't fail workflow if this block fails |
+| `readable_outputs: true` | Save .md alongside .json (workflow-level) |
+
+### Full Schema
+
+See `schemas/workflow-v3.3.0.json` for the complete JSON Schema specification.
+
 ## Next steps
 
-- **More examples**: See the [examples/](../examples/) directory for 5
+- **More examples**: See the [examples/](../examples/) directory for
   progressive tutorials covering parallel execution, deliberation patterns,
   conditional branching, and revision loops.
 - **Full CLI reference**: The [README](../README.md) covers all command-line
-  options, provider configuration, logic scripts, daemon mode, and the
-  terminal UI.
-- **Conditional branching**: Route execution based on block output using
-  `next:` with `if:` / `else:` (see `examples/05-conditional/`).
-- **Parallel execution**: Blocks with no dependencies run in parallel
-  automatically. Control concurrency with `max_parallel`.
-- **Logic scripts**: Add Python pre/post processing to any block with the
-  `logic:` field (see README for details).
+  options, provider configuration, daemon mode, and the terminal UI.

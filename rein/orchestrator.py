@@ -93,7 +93,10 @@ class ProcessManager:
 
         # Setup run directory with timestamp
         from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        import uuid as _uuid
+        # Include microseconds + random suffix to avoid collisions between
+        # concurrent test runs or rapidly-spawned workflows.
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3] + "-" + _uuid.uuid4().hex[:6]
 
         # V3: ALWAYS create task directory structure
         # task_id is optional name, otherwise auto-generated
@@ -555,6 +558,9 @@ class ProcessManager:
             logger=self._write_rein_log
         )
 
+        # Block-level timeout override (v3.3 feature)
+        block_timeout = block_config.get('timeout') if block_config else None
+
         return runner.run(
             script_path=script_path,
             output_file=data_file,
@@ -565,6 +571,7 @@ class ProcessManager:
             block_config=block_config,
             linux_user=linux_user,
             run_count=run_count,
+            timeout_override=block_timeout,
         )
 
     def _load_state_from_db(self):
@@ -611,6 +618,26 @@ class ProcessManager:
                 dependents[dep].append(name)
         return dependents
 
+    def _is_backward_routing(self, source_block: str, target_block: str) -> bool:
+        """Check if routing from source to target is backward (revision loop).
+
+        Backward means target is a (transitive) predecessor of source in the
+        dependency graph. Forward means target is a successor or sibling.
+        """
+        # Get all transitive ancestors of source_block (blocks it depends on)
+        ancestors = set()
+        queue = [source_block]
+        while queue:
+            current = queue.pop(0)
+            block = self.block_configs.get(current)
+            if not block:
+                continue
+            for dep in block.get('depends_on', []):
+                if dep not in ancestors:
+                    ancestors.add(dep)
+                    queue.append(dep)
+        return target_block in ancestors
+
     def _cascade_invalidation(self, failed_blocks: Set[str], dependents_map: Dict[str, List[str]]) -> Set[str]:
         """BFS from failed blocks through dependents. Returns full set needing re-run."""
         needs_rerun = set(failed_blocks)
@@ -623,6 +650,56 @@ class ProcessManager:
                     queue.append(downstream)
                     self._write_rein_log(f"CASCADE | {downstream} | invalidated (depends on {current})")
         return needs_rerun
+
+    def _get_running_names(self) -> set:
+        """Get names of currently running blocks (thread-safe)."""
+        with self.lock:
+            return {p.name for p in self.processes.values() if p.status == "running"}
+
+    def _re_evaluate_pending(self, pending: dict, spawned: set = None):
+        """Re-add blocks to pending if they were invalidated by routing cascade.
+
+        Only re-adds blocks that are not completed, not already pending,
+        and not currently running (to avoid duplicate execution).
+        """
+        running = self._get_running_names()
+        for block in self.all_blocks:
+            name = block.get('name') or block.get('stage', 'unknown')
+            if name not in self.completed and name not in pending and name not in running:
+                pending[name] = block
+                if spawned is not None:
+                    spawned.discard(name)
+
+    def _detect_orphans(self, pending: dict):
+        """Skip blocks whose dependencies can never be satisfied.
+
+        Only called when workflow is stuck (no running, no progress).
+        Marks pending blocks with unmet deps as completed to allow termination.
+        """
+        if self._has_running_processes():
+            return  # Don't orphan while blocks are still running
+        orphans = []
+        for name in list(pending.keys()):
+            block = pending[name]
+            deps = block.get('depends_on', [])
+            if not deps:
+                continue
+            if all(dep in self.completed for dep in deps):
+                continue  # deps met, can run
+            orphans.append(name)
+        for name in orphans:
+            self._write_rein_log(f"ORPHAN SKIP | {name} | deps unsatisfiable, workflow stuck")
+            self.completed.add(name)
+            del pending[name]
+
+    def _is_stuck(self, pending: dict) -> bool:
+        """Check if workflow is stuck: pending blocks exist but none can run."""
+        if not pending:
+            return False
+        return not any(
+            all(dep in self.completed for dep in (pending[n].get('depends_on', []) or []))
+            for n in pending
+        )
 
     def _clean_block_outputs(self, block_name: str):
         """Delete output files for a block to prevent stale data."""
@@ -1041,11 +1118,13 @@ class ProcessManager:
                     process.progress = 50
                     self.state.save_process(process)
 
-                    # Call Claude (with optional agent model override)
+                    # Call Claude (priority: block.model > agent_cfg.model > workflow default)
+                    block_model = block.get('model') or None
                     agent_model = agent_cfg.model if agent_cfg and agent_cfg.model else None
+                    model_override = block_model or agent_model
                     import time as _time
                     _call_start = _time.time()
-                    result = self.call_claude(prompt, name, model_override=agent_model)
+                    result = self.call_claude(prompt, name, model_override=model_override)
                     _call_dur = _time.time() - _call_start
                     run_log.write("LLM RESPONSE", f"chars={len(result)} duration={_call_dur:.1f}s")
                     process.progress = 75
@@ -1187,13 +1266,18 @@ class ProcessManager:
                                 cascade = self._cascade_invalidation({next_block_name}, dependents_map)
                                 cascade.discard(next_block_name)  # already reset above
 
-                                # Gate fix: also invalidate blocks that depend on THIS gate block
-                                # (except the routing target). Prevents race condition where
-                                # downstream blocks see gate as "completed" before routing
-                                # sends workflow backward for revision.
-                                gate_dependents = set(dependents_map.get(name, []))
-                                gate_dependents.discard(next_block_name)  # target proceeds normally
-                                cascade.update(gate_dependents)
+                                # Detect BACKWARD routing: target is a predecessor of current
+                                # block in the dependency graph (going back in the flow).
+                                # Forward routing: target is a successor or sibling (moving forward).
+                                is_backward = self._is_backward_routing(name, next_block_name)
+
+                                # Gate fix: backward routing invalidates gate dependents
+                                # (except target) to prevent downstream blocks from running
+                                # with stale gate output during revision loop.
+                                if is_backward:
+                                    gate_dependents = set(dependents_map.get(name, []))
+                                    gate_dependents.discard(next_block_name)
+                                    cascade.update(gate_dependents)
 
                                 for dep_name in cascade:
                                     self.completed.discard(dep_name)
@@ -1207,9 +1291,8 @@ class ProcessManager:
                                 if cascade:
                                     self._write_rein_log(f"ROUTING CASCADE | invalidated: {cascade}")
                                 self.next_queue.append((next_block_name, {}))
-                                # Only defer gate if this is a backward loop (re-run).
-                                # Forward routing (first run of target) should let gate complete.
-                                if current_runs > 0:
+                                # Defer gate completion only for backward routing (revision loop)
+                                if is_backward:
                                     routing_went_backward = True
                             self._write_rein_log(f"ROUTING | {name} -> {next_block_name} | signal={matched_signal} | run={self.run_counts[next_block_name]}/{max_runs_val}")
                             run_log.write("ROUTING", f"-> {next_block_name} signal={matched_signal}")
@@ -1653,15 +1736,21 @@ class ProcessManager:
                         self.next_queue.insert(0, (next_block_name, trigger_data))
                     break
 
+            self._re_evaluate_pending(pending)
+
             time.sleep(0.5)
 
             # Check if all done
             if not pending and self.all_completed() and not self.next_queue:
                 break
 
-            # Stuck check: nothing spawned, nothing running, nothing in queue
+            # Stuck check
             if not spawned_this_round and not self._has_running_processes() and not self.next_queue:
-                break
+                if not pending:
+                    break
+                if self._is_stuck(pending):
+                    self._write_rein_log(f"STUCK DETECTED | {len(pending)} pending but no deps satisfiable")
+                    break
 
         # Determine completion status
         all_done = all(
@@ -1698,23 +1787,47 @@ class ProcessManager:
     def _wait_for_inflight(self, timeout: float = 300.0):
         """Wait for currently running blocks to finish before returning.
 
-        Called when step budget is exhausted but blocks are still executing
-        in background threads. Must wait for them to complete so SQLite state
-        is consistent before the process exits.
+        Waits until no process is 'running' AND all done/failed blocks are
+        registered in self.completed set. This ensures threads have finished
+        their post-execution work (routing eval, completed.add, output flush).
         """
         deadline = time.time() + timeout
         while time.time() < deadline:
             with self.lock:
                 running = [p for p in self.processes.values() if p.status == "running"]
-            if not running:
+                # Also wait for done blocks to register in completed set
+                pending_registration = [
+                    p for p in self.processes.values()
+                    if p.status in ("done", "failed") and p.name not in self.completed
+                ]
+            if not running and not pending_registration:
+                # Extra sleep to let stdout buffers flush from daemon threads
+                time.sleep(0.1)
                 return
-            time.sleep(0.5)
-        self._write_rein_log(f"WAIT TIMEOUT | {len(running)} blocks still running after {timeout}s")
+            time.sleep(0.2)
+        self._write_rein_log(f"WAIT TIMEOUT | {len(running)} running, {len(pending_registration)} unregistered")
 
     def _has_running_processes(self) -> bool:
-        """Check if any processes are currently running."""
+        """Check if any processes are currently running or transitioning."""
         with self.lock:
-            return any(p.status == "running" for p in self.processes.values())
+            for p in self.processes.values():
+                if p.status == "running":
+                    return True
+                # Transitional: done status but not yet registered in completed set
+                if p.status == "done" and p.name not in self.completed:
+                    return True
+            return False
+
+    def _sync_completed_from_processes(self):
+        """Sync self.completed set from process status (done/failed).
+
+        Called before stuck detection to avoid false positives from threads
+        that finished but haven't yet registered completion.
+        """
+        with self.lock:
+            for p in self.processes.values():
+                if p.status in ("done", "failed") and p.name not in self.completed:
+                    self.completed.add(p.name)
 
     def run_workflow(self):
         """Execute workflow with dependency management"""
@@ -1816,12 +1929,33 @@ class ProcessManager:
                         self.next_queue.insert(0, (next_block_name, trigger_data))
                     break  # Exit next_queue loop to wait for semaphore
 
+            self._re_evaluate_pending(pending, spawned)
+
             # Wait a bit for processes to complete
             time.sleep(0.5)
 
             # Check if all done (all pending spawned, all processes completed, and next_queue empty)
             if not pending and self.all_completed() and not self.next_queue:
                 break
+
+            # Stuck check: sync completed from process status first to avoid races
+            self._sync_completed_from_processes()
+            if not self._has_running_processes() and not self.next_queue:
+                time.sleep(0.3)  # Grace period for in-flight completion
+                self._sync_completed_from_processes()
+                if self._has_running_processes() or self.next_queue:
+                    continue
+                if not pending:
+                    break
+                if self._is_stuck(pending):
+                    self._detect_orphans(pending)
+                    if not pending:
+                        break
+                    self._write_rein_log(f"STUCK DETECTED | {len(pending)} pending but no deps satisfiable")
+                    break
+
+        # Wait for any in-flight threads to complete before finalizing
+        self._wait_for_inflight()
 
         # Workflow finished - save summary and stop the UI
         self._finalize_run()
