@@ -39,6 +39,7 @@ from rein.tasks import update_task_status as _update_task_status
 from rein.tasks import save_task_to_memory as _save_task_to_memory
 from rein.log import get_logger, get_console
 from rein import state_machine
+from rein import block_resolver
 
 logger = get_logger(__name__)
 console = get_console()
@@ -697,146 +698,19 @@ class ProcessManager:
         return failed_blocks
 
     def _should_execute_block(self, block: dict, previous_failed: List[str]) -> bool:
-        """Check if block should be executed based on skip_if_previous_failed flag
-
-        skip_if_previous_failed=True  -> skip this block if any previous block failed
-        skip_if_previous_failed=False -> continue executing even if previous failed (default)
-        """
-        skip_if_failed = block.get('skip_if_previous_failed', False)
-
-        if previous_failed and skip_if_failed:
-            # There were failures and this block SHOULD skip-on-failure
-            return False
-
-        return True
+        return block_resolver.should_execute_block(block, previous_failed)
 
     def _should_continue_after_failure(self, block: dict, block_failed: bool) -> bool:
-        """Check if workflow should continue after block failure"""
-        if not block_failed:
-            return True  # No failure, continue
-
-        continue_if_failed = block.get('continue_if_failed', True)
-        return continue_if_failed
+        return block_resolver.should_continue_after_failure(block, block_failed)
 
     def _evaluate_next_block(self, block: dict, result_data: dict) -> Optional[str]:
-        """Evaluate next block specification and return next block name (STATE MACHINE Phase 2.5.4)
-
-        Supports:
-        - Simple string: next: "publish" -> always go to publish
-        - Conditional list:
-            next:
-              - if: "{{ result.approved }}"
-                goto: publish
-              - else:
-                goto: revision
-
-        Args:
-            block: Block configuration dict
-            result_data: Result from block execution (parsed JSON or raw)
-
-        Returns:
-            Name of next block to trigger, or None if no next specified
-        """
-        next_spec = block.get('next')
-        if not next_spec:
-            return None
-
-        name = block.get('name') or block.get('stage', 'unknown')
-
-        # Simple string case
-        if isinstance(next_spec, str):
-            self._write_rein_log(f"NEXT SIMPLE | {name} -> {next_spec}")
-            return next_spec
-
-        # Conditional list case
-        if isinstance(next_spec, list):
-            for condition in next_spec:
-                if 'else' in condition:
-                    # Default/else branch - always matches if reached
-                    goto = condition.get('goto') or condition.get('else')
-                    self._write_rein_log(f"NEXT ELSE | {name} -> {goto}")
-                    return goto
-
-                if 'if' in condition:
-                    condition_expr = condition['if']
-                    goto = condition.get('goto')
-
-                    # Evaluate condition - supports {{ result.field }} syntax
-                    if self._evaluate_condition(condition_expr, result_data):
-                        self._write_rein_log(f"NEXT IF | {name} | condition={condition_expr} -> {goto}")
-                        return goto
-
-        return None
+        return block_resolver.evaluate_next_block(block, result_data, self._write_rein_log)
 
     def _evaluate_condition(self, expr: str, result_data: dict) -> bool:
-        """Evaluate a condition expression against result data
-
-        Supports:
-        - {{ result.approved }} - checks if result.approved is truthy
-        - {{ result.status == 'approved' }} - equality check
-        - {{ result.score > 0.8 }} - comparison
-        """
-        try:
-            # Extract expression from {{ }}
-            match = re.match(r'\{\{\s*(.+?)\s*\}\}', expr.strip())
-            if not match:
-                self._write_rein_log(f"CONDITION PARSE ERROR | no match: {expr}")
-                return False
-
-            inner_expr = match.group(1).strip()
-
-            # Handle comparison operators
-            for op in ['==', '!=', '>=', '<=', '>', '<']:
-                if op in inner_expr:
-                    parts = inner_expr.split(op, 1)
-                    if len(parts) == 2:
-                        left = self._resolve_path(parts[0].strip(), result_data)
-                        right_str = parts[1].strip().strip("'\"")
-
-                        # Try to convert right side to same type as left
-                        if isinstance(left, bool):
-                            right = right_str.lower() in ('true', '1', 'yes')
-                        elif isinstance(left, (int, float)):
-                            try:
-                                right = float(right_str)
-                            except (ValueError, TypeError):
-                                right = right_str
-                        else:
-                            right = right_str
-
-                        if op == '==':
-                            return left == right
-                        elif op == '!=':
-                            return left != right
-                        elif op == '>':
-                            return left > right
-                        elif op == '<':
-                            return left < right
-                        elif op == '>=':
-                            return left >= right
-                        elif op == '<=':
-                            return left <= right
-
-            # Simple truthy check: {{ result.approved }}
-            value = self._resolve_path(inner_expr, result_data)
-            return bool(value)
-
-        except Exception as e:
-            self._write_rein_log(f"CONDITION EVAL ERROR | {expr} | {str(e)}")
-            return False
+        return block_resolver.evaluate_condition(expr, result_data, self._write_rein_log)
 
     def _resolve_path(self, path: str, data: dict) -> any:
-        """Resolve a dot-separated path like 'result.approved' in data dict"""
-        parts = path.split('.')
-        current = data
-
-        for part in parts:
-            if isinstance(current, dict) and part in current:
-                current = current[part]
-            else:
-                return None
-
-        return current
+        return block_resolver.resolve_path(path, data)
 
     def spawn_process(self, block: dict, team_tone: str = "", from_next_queue: bool = False) -> Optional[Process]:
         """Spawn a new block execution (PHASE 2.5: Claude API instead of subprocess)"""
