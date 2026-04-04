@@ -1380,20 +1380,7 @@ class ProcessManager:
                 self._wait_for_inflight()
                 break
 
-            # Find ready blocks (dependencies satisfied + agent filter)
-            ready = []
-            for name, block in pending.items():
-                depends_on = block.get('depends_on', [])
-                if not (not depends_on or all(dep in self.completed for dep in depends_on)):
-                    continue  # deps not met
-
-                # Agent routing: if agent_id set, skip blocks assigned to other agents
-                if agent_id:
-                    block_agent = block.get('agent', '')
-                    if block_agent and block_agent != agent_id:
-                        continue  # not my block
-
-                ready.append(name)
+            ready = state_machine.find_ready_blocks(pending, self.completed, agent_id)
 
             # Spawn ready blocks up to remaining budget
             spawned_this_round = False
@@ -1454,20 +1441,17 @@ class ProcessManager:
                     break
 
         # Determine completion status
-        all_done = all(
-            name in self.completed
-            for block in self.all_blocks
-            for name in [block.get('name') or block.get('stage', 'unknown')]
-        ) and self.all_completed() and not self.next_queue
+        all_done = (
+            state_machine.all_blocks_completed(self.all_blocks, self.completed)
+            and self.all_completed()
+            and not self.next_queue
+        )
 
         if all_done:
             self._finalize_run()
             self._write_rein_log(f"STEP COMPLETE | workflow done | steps_used={steps_used}")
         else:
-            remaining = sum(
-                1 for block in self.all_blocks
-                if (block.get('name') or block.get('stage', 'unknown')) not in self.completed
-            )
+            remaining = state_machine.count_remaining_blocks(self.all_blocks, self.completed)
             self._write_rein_log(
                 f"STEP YIELDING | steps_used={steps_used} | remaining={remaining}"
             )

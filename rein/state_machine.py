@@ -170,3 +170,45 @@ def find_blocks_needing_repending(
         if name not in completed and name not in pending and name not in running_names:
             to_add.append(block)
     return to_add
+
+
+def find_ready_blocks(
+    pending: dict,
+    completed: Set[str],
+    agent_id: Optional[str] = None,
+) -> List[str]:
+    """Find blocks whose dependencies are satisfied and ready to spawn.
+
+    Optional agent_id filter: if set, skip blocks assigned to other agents.
+    A block with no agent field runs for any agent.
+    """
+    ready = []
+    for name, block in pending.items():
+        depends_on = block.get('depends_on', [])
+        if depends_on and not all(dep in completed for dep in depends_on):
+            continue  # deps not met
+
+        # Agent routing filter
+        if agent_id:
+            block_agent = block.get('agent', '')
+            if block_agent and block_agent != agent_id:
+                continue
+
+        ready.append(name)
+    return ready
+
+
+def count_remaining_blocks(all_blocks: List[dict], completed: Set[str]) -> int:
+    """Count how many blocks haven't been completed yet."""
+    return sum(
+        1 for block in all_blocks
+        if (block.get('name') or block.get('stage', 'unknown')) not in completed
+    )
+
+
+def all_blocks_completed(all_blocks: List[dict], completed: Set[str]) -> bool:
+    """Check if all blocks are in the completed set."""
+    return all(
+        (block.get('name') or block.get('stage', 'unknown')) in completed
+        for block in all_blocks
+    )
