@@ -38,6 +38,7 @@ from rein.run_log import RunLogger
 from rein.tasks import update_task_status as _update_task_status
 from rein.tasks import save_task_to_memory as _save_task_to_memory
 from rein.log import get_logger, get_console
+from rein import state_machine
 
 logger = get_logger(__name__)
 console = get_console()
@@ -607,99 +608,43 @@ class ProcessManager:
         max_dep_phase = max(block_phases.get(dep, 0) for dep in depends_on) if depends_on else 0
         return max_dep_phase + 1
 
+    # State machine delegation -- logic lives in rein.state_machine module.
+    # These methods preserve the original signatures for backward compat
+    # with tests and external callers.
+
     def _get_dependents_map(self) -> Dict[str, List[str]]:
-        """Build reverse dependency graph: {block -> [blocks that depend on it]}"""
-        dependents: Dict[str, List[str]] = {}
-        for block in self.all_blocks:
-            name = block.get('name') or block.get('stage', 'unknown')
-            for dep in block.get('depends_on', []):
-                if dep not in dependents:
-                    dependents[dep] = []
-                dependents[dep].append(name)
-        return dependents
+        return state_machine.get_dependents_map(self.all_blocks)
 
     def _is_backward_routing(self, source_block: str, target_block: str) -> bool:
-        """Check if routing from source to target is backward (revision loop).
-
-        Backward means target is a (transitive) predecessor of source in the
-        dependency graph. Forward means target is a successor or sibling.
-        """
-        # Get all transitive ancestors of source_block (blocks it depends on)
-        ancestors = set()
-        queue = [source_block]
-        while queue:
-            current = queue.pop(0)
-            block = self.block_configs.get(current)
-            if not block:
-                continue
-            for dep in block.get('depends_on', []):
-                if dep not in ancestors:
-                    ancestors.add(dep)
-                    queue.append(dep)
-        return target_block in ancestors
+        return state_machine.is_backward_routing(self.block_configs, source_block, target_block)
 
     def _cascade_invalidation(self, failed_blocks: Set[str], dependents_map: Dict[str, List[str]]) -> Set[str]:
-        """BFS from failed blocks through dependents. Returns full set needing re-run."""
-        needs_rerun = set(failed_blocks)
-        queue = list(failed_blocks)
-        while queue:
-            current = queue.pop(0)
-            for downstream in dependents_map.get(current, []):
-                if downstream not in needs_rerun:
-                    needs_rerun.add(downstream)
-                    queue.append(downstream)
-                    self._write_rein_log(f"CASCADE | {downstream} | invalidated (depends on {current})")
-        return needs_rerun
+        return state_machine.cascade_invalidation(failed_blocks, dependents_map, self._write_rein_log)
 
     def _get_running_names(self) -> set:
-        """Get names of currently running blocks (thread-safe)."""
-        with self.lock:
-            return {p.name for p in self.processes.values() if p.status == "running"}
+        return state_machine.collect_running_names(self.processes, self.lock)
 
     def _re_evaluate_pending(self, pending: dict, spawned: set = None):
-        """Re-add blocks to pending if they were invalidated by routing cascade.
-
-        Only re-adds blocks that are not completed, not already pending,
-        and not currently running (to avoid duplicate execution).
-        """
-        running = self._get_running_names()
-        for block in self.all_blocks:
+        running = state_machine.collect_running_names(self.processes, self.lock)
+        to_add = state_machine.find_blocks_needing_repending(
+            self.all_blocks, pending, self.completed, running
+        )
+        for block in to_add:
             name = block.get('name') or block.get('stage', 'unknown')
-            if name not in self.completed and name not in pending and name not in running:
-                pending[name] = block
-                if spawned is not None:
-                    spawned.discard(name)
+            pending[name] = block
+            if spawned is not None:
+                spawned.discard(name)
 
     def _detect_orphans(self, pending: dict):
-        """Skip blocks whose dependencies can never be satisfied.
-
-        Only called when workflow is stuck (no running, no progress).
-        Marks pending blocks with unmet deps as completed to allow termination.
-        """
-        if self._has_running_processes():
-            return  # Don't orphan while blocks are still running
-        orphans = []
-        for name in list(pending.keys()):
-            block = pending[name]
-            deps = block.get('depends_on', [])
-            if not deps:
-                continue
-            if all(dep in self.completed for dep in deps):
-                continue  # deps met, can run
-            orphans.append(name)
+        orphans = state_machine.detect_orphans(
+            pending, self.completed, self._has_running_processes, self._write_rein_log
+        )
         for name in orphans:
-            self._write_rein_log(f"ORPHAN SKIP | {name} | deps unsatisfiable, workflow stuck")
             self.completed.add(name)
             del pending[name]
 
     def _is_stuck(self, pending: dict) -> bool:
-        """Check if workflow is stuck: pending blocks exist but none can run."""
-        if not pending:
-            return False
-        return not any(
-            all(dep in self.completed for dep in (pending[n].get('depends_on', []) or []))
-            for n in pending
-        )
+        return state_machine.is_stuck(pending, self.completed)
 
     def _clean_block_outputs(self, block_name: str):
         """Delete output files for a block to prevent stale data."""
@@ -1808,26 +1753,14 @@ class ProcessManager:
         self._write_rein_log(f"WAIT TIMEOUT | {len(running)} running, {len(pending_registration)} unregistered")
 
     def _has_running_processes(self) -> bool:
-        """Check if any processes are currently running or transitioning."""
-        with self.lock:
-            for p in self.processes.values():
-                if p.status == "running":
-                    return True
-                # Transitional: done status but not yet registered in completed set
-                if p.status == "done" and p.name not in self.completed:
-                    return True
-            return False
+        return state_machine.has_running_or_transitioning(
+            self.processes, self.completed, self.lock
+        )
 
     def _sync_completed_from_processes(self):
-        """Sync self.completed set from process status (done/failed).
-
-        Called before stuck detection to avoid false positives from threads
-        that finished but haven't yet registered completion.
-        """
-        with self.lock:
-            for p in self.processes.values():
-                if p.status in ("done", "failed") and p.name not in self.completed:
-                    self.completed.add(p.name)
+        state_machine.sync_completed_from_processes(
+            self.processes, self.completed, self.lock
+        )
 
     def run_workflow(self):
         """Execute workflow with dependency management"""
