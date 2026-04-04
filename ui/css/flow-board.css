@@ -1,4 +1,6 @@
-/* Rein Flow Board -- dark neutral theme (Mesh-compatible) */
+/* Rein Flow Board -- dark neutral theme (Mesh-compatible)
+ * Version: 2.0.0
+ */
 
 :root {
   --bg-body:    #1a1a1a;
@@ -198,6 +200,35 @@ canvas {
   transition: color .15s;
 }
 .run-item:hover { color: var(--text); }
+
+/* ---- Zoom Controls ---- */
+.zoom-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 10;
+}
+.zoom-btn {
+  width: 36px;
+  height: 36px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 18px;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.zoom-btn:hover { background: var(--bg-accent); }
+.zoom-btn:active { background: var(--accent); color: var(--bg-body); }
+.zoom-fit { font-size: 11px; }
 
 /* ---- Scrollbar (Mesh style) ---- */
 ::-webkit-scrollbar { width: 8px; }

@@ -29,7 +29,14 @@
 
 <!-- Main -->
 <div class="main">
-  <div class="canvas-wrap"><canvas id="cv"></canvas></div>
+  <div class="canvas-wrap">
+    <canvas id="cv"></canvas>
+    <div class="zoom-controls">
+      <button class="zoom-btn" onclick="zoomIn()">+</button>
+      <button class="zoom-btn" onclick="zoomOut()">&minus;</button>
+      <button class="zoom-btn zoom-fit" onclick="zoomFit()">Fit</button>
+    </div>
+  </div>
   <div class="side" id="panel">
     <h3>EVENTS</h3>
     <div id="events"></div>

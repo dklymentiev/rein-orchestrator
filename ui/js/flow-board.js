@@ -51,18 +51,28 @@ function norm(s) {
 }
 
 // ---- Resize ----
+let userZoom = null;  // null = auto-fit, number = manual zoom
+
 function resize() {
   const d = devicePixelRatio || 1;
   const a = document.querySelector('.canvas-wrap');
   W = a.clientWidth;
-  cs = Math.min(W / GW, a.clientHeight / GH);
-  H = a.clientHeight;
+  if (userZoom !== null) {
+    cs = userZoom;
+  } else {
+    cs = Math.min(W / GW, a.clientHeight / GH);
+  }
+  H = Math.max(a.clientHeight, GH * cs);
   cv.width = W * d; cv.height = H * d;
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
   cx.setTransform(d, 0, 0, d, 0, 0);
   canvasRect = a.getBoundingClientRect();
   needsOneDraw = true;
 }
+
+function zoomIn() { userZoom = (userZoom || cs) * 1.25; resize(); }
+function zoomOut() { userZoom = (userZoom || cs) * 0.8; resize(); }
+function zoomFit() { userZoom = null; resize(); }
 
 function tx(c) { return c * cs; }
 function ty(r) { return r * cs; }
