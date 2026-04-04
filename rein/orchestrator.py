@@ -41,6 +41,7 @@ from rein.log import get_logger, get_console
 from rein import state_machine
 from rein import block_resolver
 from rein import process_control
+from rein import routing_engine
 
 logger = get_logger(__name__)
 console = get_console()
@@ -952,36 +953,9 @@ class ProcessManager:
             if block.get('routing'):
                 try:
                     routing = block['routing']
-                    # Read result text to detect verdict/signals
-                    result_text = ""
-                    if os.path.exists(save_file):
-                        with open(save_file) as f:
-                            saved_data = json.load(f)
-                            inner = saved_data.get('result', saved_data.get('response', ''))
-                            result_text = inner if isinstance(inner, str) else json.dumps(inner)
-
-                    # Extract signals from result text (VERDICT: PASS, VERDICT: REVISE, etc.)
-                    signals = set()
-                    for line in result_text.upper().split('\n'):
-                        line = line.strip()
-                        if line.startswith('VERDICT:'):
-                            verdict = line.split(':', 1)[1].strip()
-                            if verdict == 'PASS' or verdict == 'APPROVED':
-                                signals.add('needs-review')
-                            elif verdict == 'REVISE':
-                                signals.add('revise')
-
-                    # Match signals against routing rules
-                    next_block_name = None
-                    matched_signal = None
-                    for signal in signals:
-                        if signal in routing:
-                            next_block_name = routing[signal]
-                            matched_signal = signal
-                            break
-                    if not next_block_name:
-                        next_block_name = routing.get('_default')
-                        matched_signal = '_default'
+                    result_text = routing_engine.read_result_text(save_file)
+                    signals = routing_engine.extract_verdict_signals(result_text)
+                    next_block_name, matched_signal = routing_engine.match_routing_rule(routing, signals)
 
                     if next_block_name and next_block_name != '_stop':
                         current_runs = self.run_counts.get(next_block_name, 0)
@@ -1050,26 +1024,9 @@ class ProcessManager:
             # STATE MACHINE: Evaluate and trigger next block (Phase 2.5.4)
             if block.get('next') and not block.get('routing'):
                 try:
-                    # Parse result data for condition evaluation
-                    result_data = {}
-                    if os.path.exists(save_file):
-                        with open(save_file) as f:
-                            saved_data = json.load(f)
-                            # Get inner result (may be dict or string)
-                            inner_result = saved_data.get('result', {})
-                            if isinstance(inner_result, dict):
-                                parsed_result = inner_result
-                            elif isinstance(inner_result, str):
-                                # Try to parse as JSON
-                                try:
-                                    parsed_result = json.loads(inner_result)
-                                except (json.JSONDecodeError, ValueError):
-                                    parsed_result = {'raw': inner_result}
-                            else:
-                                parsed_result = {'value': inner_result}
-                            # Wrap in 'result' for {{ result.field }} conditions
-                            result_data = {'result': parsed_result, '_stage': name, '_saved': saved_data}
-
+                    result_data = routing_engine.parse_result_data(save_file)
+                    if result_data:
+                        result_data['_stage'] = name
                     next_block_name = self._evaluate_next_block(block, result_data)
 
                     if next_block_name:
