@@ -140,9 +140,7 @@ If you can edit a YAML file, you can orchestrate a team of AI agents.
 
 ## Examples
 
-Ten progressive examples in the `examples/` directory:
-
-### Basics (01-05)
+Five progressive examples in the `examples/` directory:
 
 | # | Example | Pattern | What you learn |
 |---|---------|---------|----------------|
@@ -151,14 +149,6 @@ Ten progressive examples in the `examples/` directory:
 | 03 | [research-team](examples/03-research-team/) | 3 parallel + 1 | Fan-out / fan-in pattern |
 | 04 | [deliberation](examples/04-deliberation/) | 3-phase debate | Cross-review and multi-phase |
 | 05 | [conditional](examples/05-conditional/) | Branching + loops | if/else, revision loops, max_runs |
-
-### Advanced (06-08)
-
-| # | Example | Pattern | What you learn |
-|---|---------|---------|----------------|
-| 06 | [security-review](examples/06-security-review/) | Multi-specialist audit | Parallel security analysis with synthesis |
-| 07 | [api-auth-review](examples/07-api-auth-review/) | Focused code review | API authentication flow analysis |
-| 08 | [pin-pairing-review](examples/08-pin-pairing-review/) | Paired review | Two reviewers + synthesis pattern |
 
 ```bash
 # Try any example

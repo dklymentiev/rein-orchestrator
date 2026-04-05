@@ -1,4 +1,4 @@
-schema_version: "2.6.0"
+schema_version: "3.3.0"
 name: code-review
 description: "Sequential two-specialist workflow: review code, then improve it"
 team: team-code-review
