@@ -5,9 +5,14 @@ Each block execution creates a log at:
   task_dir/{block_name}/runs/run-{NNN}.log
 
 Where NNN is the zero-padded run_count (supports revision loops).
+
+All lines are passed through scrub_secrets() so leaked run logs never
+expose provider API keys or bearer tokens (HIGH-003).
 """
 import os
 from datetime import datetime
+
+from rein.log import scrub_secrets
 
 
 class RunLogger:
@@ -24,9 +29,14 @@ class RunLogger:
         self._fd = open(self.log_path, "w")
 
     def write(self, category: str, message: str):
-        """Write a structured log line: TIMESTAMP | CATEGORY | message"""
+        """Write a structured log line: TIMESTAMP | CATEGORY | message
+
+        Message is scrubbed for API keys / bearer tokens before write
+        (HIGH-003).
+        """
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        line = f"{ts} | {category} | {message}\n"
+        safe_message = scrub_secrets(str(message))
+        line = f"{ts} | {category} | {safe_message}\n"
         self._fd.write(line)
         self._fd.flush()
 

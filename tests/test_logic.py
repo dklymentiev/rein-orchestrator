@@ -251,3 +251,206 @@ with open(output_file, "w") as f:
         assert ctx["task_id"] == "ctx-test"
         assert ctx["task_input"]["topic"] == "test topic"
         assert ctx["block_config"]["name"] == "ctx-block"
+
+
+# ============================================================
+# TASK #1175: logic scripts (validate, custom string, error, timeout)
+# ============================================================
+
+class TestLogicRunnerAdvanced:
+    """Advanced logic script scenarios: timeout override, run_count, shell scripts"""
+
+    @pytest.fixture
+    def temp_dirs(self):
+        with tempfile.TemporaryDirectory() as task_dir:
+            with tempfile.TemporaryDirectory() as workflow_dir:
+                yield task_dir, workflow_dir
+
+    def _write_script(self, workflow_dir, name, content):
+        path = os.path.join(workflow_dir, name)
+        with open(path, "w") as f:
+            f.write(content)
+        return name
+
+    def test_timeout_override_enforced(self, temp_dirs):
+        """timeout_override parameter kills script exceeding timeout"""
+        task_dir, workflow_dir = temp_dirs
+        self._write_script(workflow_dir, "slow.py", '''#!/usr/bin/env python3
+import time, sys, json
+ctx = json.load(sys.stdin)
+time.sleep(5)
+with open(ctx["output_file"], "w") as f:
+    json.dump({"result": "ok"}, f)
+''')
+        runner = LogicRunner(task_dir=task_dir, workflow_dir=workflow_dir)
+        output = os.path.join(task_dir, "out.json")
+        # 1 second timeout should kill the 5-second sleep
+        result = runner.run(
+            script_path="slow.py",
+            output_file=output,
+            timeout_override=1
+        )
+        assert result is False  # timed out
+
+    def test_timeout_override_not_triggered(self, temp_dirs):
+        """Fast script with timeout_override completes normally"""
+        task_dir, workflow_dir = temp_dirs
+        self._write_script(workflow_dir, "fast.py", '''#!/usr/bin/env python3
+import sys, json
+ctx = json.load(sys.stdin)
+with open(ctx["output_file"], "w") as f:
+    json.dump({"result": "fast"}, f)
+''')
+        runner = LogicRunner(task_dir=task_dir, workflow_dir=workflow_dir)
+        output = os.path.join(task_dir, "out.json")
+        result = runner.run(
+            script_path="fast.py",
+            output_file=output,
+            timeout_override=10
+        )
+        assert result is True
+
+    def test_default_timeout_used_when_no_override(self, temp_dirs):
+        """Without timeout_override, uses LogicRunner.timeout default"""
+        task_dir, workflow_dir = temp_dirs
+        self._write_script(workflow_dir, "ok.py", '''#!/usr/bin/env python3
+import sys, json
+ctx = json.load(sys.stdin)
+with open(ctx["output_file"], "w") as f:
+    json.dump({"result": "ok"}, f)
+''')
+        runner = LogicRunner(task_dir=task_dir, workflow_dir=workflow_dir, timeout=30)
+        output = os.path.join(task_dir, "out.json")
+        result = runner.run(script_path="ok.py", output_file=output)
+        assert result is True
+
+    def test_run_count_passed_in_context(self, temp_dirs):
+        """run_count parameter appears in script context"""
+        task_dir, workflow_dir = temp_dirs
+        self._write_script(workflow_dir, "counter.py", '''#!/usr/bin/env python3
+import sys, json
+ctx = json.load(sys.stdin)
+with open(ctx["output_file"], "w") as f:
+    json.dump({"run": ctx["run_count"]}, f)
+''')
+        runner = LogicRunner(task_dir=task_dir, workflow_dir=workflow_dir)
+        output = os.path.join(task_dir, "out.json")
+        runner.run(script_path="counter.py", output_file=output, run_count=3)
+
+        with open(output) as f:
+            data = json.load(f)
+        assert data["run"] == 3
+
+    def test_shell_script_execution(self, temp_dirs):
+        """Shell scripts (.sh) should also execute"""
+        task_dir, workflow_dir = temp_dirs
+        script_path = os.path.join(workflow_dir, "test.sh")
+        with open(script_path, "w") as f:
+            f.write('#!/bin/bash\n')
+            f.write('read ctx\n')
+            f.write('output=$(echo "$ctx" | python3 -c "import sys,json; print(json.load(sys.stdin)[\\"output_file\\"])")\n')
+            f.write('echo \'{"result": "shell ok"}\' > "$output"\n')
+
+        runner = LogicRunner(task_dir=task_dir, workflow_dir=workflow_dir)
+        output = os.path.join(task_dir, "out.json")
+        result = runner.run(script_path="test.sh", output_file=output)
+        assert result is True
+        with open(output) as f:
+            assert json.load(f)["result"] == "shell ok"
+
+    def test_script_stderr_logged(self, temp_dirs):
+        """Script stderr should be captured in logs on failure"""
+        task_dir, workflow_dir = temp_dirs
+        script_path = os.path.join(workflow_dir, "err.py")
+        with open(script_path, "w") as f:
+            f.write('#!/usr/bin/env python3\nimport sys\nsys.stderr.write("BOOM failure\\n")\nsys.exit(1)\n')
+
+        logs = []
+        runner = LogicRunner(
+            task_dir=task_dir, workflow_dir=workflow_dir,
+            logger=lambda x: logs.append(x)
+        )
+        result = runner.run(script_path="err.py", output_file=os.path.join(task_dir, "o.json"))
+        assert result is False
+        assert any("BOOM" in log for log in logs)
+
+    def test_script_stdout_logged(self, temp_dirs):
+        """Script stdout should appear in logs"""
+        task_dir, workflow_dir = temp_dirs
+        script_path = os.path.join(workflow_dir, "speak.py")
+        with open(script_path, "w") as f:
+            f.write('#!/usr/bin/env python3\nimport sys, json\nctx = json.load(sys.stdin)\nprint("HELLO from script")\nwith open(ctx["output_file"], "w") as f: json.dump({"result": "ok"}, f)\n')
+
+        logs = []
+        runner = LogicRunner(
+            task_dir=task_dir, workflow_dir=workflow_dir,
+            logger=lambda x: logs.append(x)
+        )
+        runner.run(script_path="speak.py", output_file=os.path.join(task_dir, "o.json"))
+        assert any("HELLO from script" in log for log in logs)
+
+    def test_block_config_passed(self, temp_dirs):
+        """block_config dict should be accessible in script context"""
+        task_dir, workflow_dir = temp_dirs
+        script_path = os.path.join(workflow_dir, "cfg.py")
+        with open(script_path, "w") as f:
+            f.write('''#!/usr/bin/env python3
+import sys, json
+ctx = json.load(sys.stdin)
+cfg = ctx["block_config"]
+with open(ctx["output_file"], "w") as f:
+    json.dump({"name": cfg["name"], "phase": cfg.get("phase")}, f)
+''')
+
+        runner = LogicRunner(task_dir=task_dir, workflow_dir=workflow_dir)
+        output = os.path.join(task_dir, "out.json")
+        runner.run(
+            script_path="cfg.py",
+            output_file=output,
+            block_config={"name": "my_block", "phase": 5, "prompt": "test"}
+        )
+
+        with open(output) as f:
+            data = json.load(f)
+        assert data["name"] == "my_block"
+        assert data["phase"] == 5
+
+    def test_unsafe_linux_user_rejected(self, temp_dirs):
+        """linux_user with unsafe characters should be rejected"""
+        task_dir, workflow_dir = temp_dirs
+        script_path = os.path.join(workflow_dir, "ok.py")
+        with open(script_path, "w") as f:
+            f.write('import sys, json\nctx = json.load(sys.stdin)\nwith open(ctx["output_file"], "w") as f: json.dump({"result": "ok"}, f)\n')
+
+        logs = []
+        runner = LogicRunner(
+            task_dir=task_dir, workflow_dir=workflow_dir,
+            logger=lambda x: logs.append(x)
+        )
+        result = runner.run(
+            script_path="ok.py",
+            output_file=os.path.join(task_dir, "o.json"),
+            linux_user="bad user; rm -rf /"  # shell injection attempt
+        )
+        assert result is False
+        assert any("unsafe linux_user" in log for log in logs)
+
+    def test_root_linux_user_forbidden(self, temp_dirs):
+        """linux_user='root' should be rejected for safety"""
+        task_dir, workflow_dir = temp_dirs
+        script_path = os.path.join(workflow_dir, "ok.py")
+        with open(script_path, "w") as f:
+            f.write('import sys, json\nctx = json.load(sys.stdin)\nwith open(ctx["output_file"], "w") as f: json.dump({"result": "ok"}, f)\n')
+
+        logs = []
+        runner = LogicRunner(
+            task_dir=task_dir, workflow_dir=workflow_dir,
+            logger=lambda x: logs.append(x)
+        )
+        result = runner.run(
+            script_path="ok.py",
+            output_file=os.path.join(task_dir, "o.json"),
+            linux_user="root"
+        )
+        assert result is False
+        assert any("root" in log.lower() and "forbidden" in log.lower() for log in logs)

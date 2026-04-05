@@ -1,4 +1,4 @@
-schema_version: "2.6.0"
+schema_version: "3.3.0"
 name: hello-world
 description: "Simplest Rein workflow: one specialist, one task"
 team: team-hello

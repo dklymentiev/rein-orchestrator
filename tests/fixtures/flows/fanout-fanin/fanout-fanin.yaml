@@ -1,0 +1,40 @@
+schema_version: "3.3.0"
+name: fanout-fanin
+team: team-arithmetic
+max_parallel: 5
+description: "Diamond: A -> {B, C, D} -> E. Tests parallel execution and fan-in."
+
+blocks:
+  - name: start
+    phase: 1
+    prompt: "entry"
+    logic:
+      custom: "../../mock_scripts/pass.py"
+
+  - name: branch_a
+    phase: 2
+    depends_on: [start]
+    prompt: "branch a"
+    logic:
+      custom: "../../mock_scripts/pass.py"
+
+  - name: branch_b
+    phase: 2
+    depends_on: [start]
+    prompt: "branch b"
+    logic:
+      custom: "../../mock_scripts/pass.py"
+
+  - name: branch_c
+    phase: 2
+    depends_on: [start]
+    prompt: "branch c"
+    logic:
+      custom: "../../mock_scripts/pass.py"
+
+  - name: merge
+    phase: 3
+    depends_on: [branch_a, branch_b, branch_c]
+    prompt: "merge"
+    logic:
+      custom: "../../mock_scripts/pass.py"

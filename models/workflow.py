@@ -34,7 +34,7 @@ class NextCondition(BaseModel):
 class BlockConfig(BaseModel):
     """Individual workflow block configuration"""
     name: str = Field(..., pattern=r'^[a-z0-9_]+$', min_length=1, max_length=50)
-    phase: Optional[int] = Field(None, ge=1, le=10)
+    phase: Optional[int] = Field(None, ge=1, le=1000)
     specialist: Optional[str] = Field(None, pattern=r'^[a-z0-9-]+$')  # Optional for pure logic blocks
     prompt: Optional[str] = Field(default="", min_length=0)
     depends_on: List[str] = Field(default_factory=list)
@@ -110,11 +110,12 @@ class WorkflowConfig(BaseModel):
     model: Optional[str] = None
     max_tokens: Optional[int] = Field(None, ge=1, le=200000)
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
+    default_max_runs: Optional[int] = Field(None, ge=1, le=100, description="Default max_runs for blocks without explicit max_runs")
     inputs: Optional[Dict[str, InputFieldConfig]] = None
     on_error: Optional[str] = Field(None, description="Global error handler script path (v3.3)")
     blocks: List[BlockConfig] = Field(..., min_length=1, max_length=100)
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     @field_validator('blocks')
     @classmethod

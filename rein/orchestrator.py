@@ -11,6 +11,7 @@ import json
 import subprocess
 import time
 import signal
+import shutil
 import threading
 import re
 import uuid
@@ -37,7 +38,14 @@ from rein.agent_config import load_agent_config, validate_forbidden_behavior, Ag
 from rein.run_log import RunLogger
 from rein.tasks import update_task_status as _update_task_status
 from rein.tasks import save_task_to_memory as _save_task_to_memory
-from rein.log import get_logger, get_console
+from rein.log import get_logger, get_console, scrub_secrets
+from rein import state_machine
+from rein import block_resolver
+from rein import process_control
+from rein import routing_engine
+from rein import error_handlers
+from rein import run_summary
+from rein import prompt_assembler
 
 logger = get_logger(__name__)
 console = get_console()
@@ -93,7 +101,10 @@ class ProcessManager:
 
         # Setup run directory with timestamp
         from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        import uuid as _uuid
+        # Include microseconds + random suffix to avoid collisions between
+        # concurrent test runs or rapidly-spawned workflows.
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3] + "-" + _uuid.uuid4().hex[:6]
 
         # V3: ALWAYS create task directory structure
         # task_id is optional name, otherwise auto-generated
@@ -152,17 +163,10 @@ class ProcessManager:
             }
             self._write_rein_log(f"REIN STARTED | run_id={timestamp} | db={self.db_path} | max_parallel={max_parallel}")
 
-    # Patterns for sensitive data scrubbing in logs
-    _SECRET_PATTERNS = re.compile(
-        r'(sk-[a-zA-Z0-9]{20,}|anthropic-[a-zA-Z0-9]{20,}|'
-        r'ANTHROPIC_API_KEY=[^\s]+|OPENAI_API_KEY=[^\s]+|'
-        r'OPENROUTER_API_KEY=[^\s]+|Bearer\s+[a-zA-Z0-9._-]{20,})'
-    )
-
     def _write_rein_log(self, message):
-        """Write to rein's own log file (with sensitive data scrubbing)"""
+        """Write to rein's own log file with shared credential scrubbing (HIGH-003)."""
         try:
-            clean_message = self._SECRET_PATTERNS.sub('[REDACTED]', str(message))
+            clean_message = scrub_secrets(str(message))
             with open(self.rein_log_file, 'a') as f:
                 timestamp = datetime.now().isoformat()
                 f.write(f"{timestamp} | {clean_message}\n")
@@ -250,98 +254,22 @@ class ProcessManager:
             self._load_state_from_db()
 
     def _run_preflight_validation(self, workflow_file: str):
-        """Run schema validation before workflow execution"""
-        try:
-            engine = ValidationEngine()
-            result = engine.validate_workflow(Path(workflow_file), cross_reference_check=True)
-
-            if result.is_valid:
-                self._write_rein_log(f"VALIDATE OK | schema_version={result.metadata.get('schema_version')} | blocks={result.metadata.get('blocks_count')} | phases={result.metadata.get('phases')}")
-                console.info("")
-                console.info("[VALIDATE] Workflow: %s", result.metadata.get('name'))
-                console.info("[VALIDATE] Team: %s", result.metadata.get('team'))
-                console.info("[VALIDATE] Schema Version: %s", result.metadata.get('schema_version'))
-                console.info("[VALIDATE] Blocks: %s", result.metadata.get('blocks_count'))
-                console.info("[VALIDATE] Execution Phases: %s", result.metadata.get('phases'))
-                console.info("[VALIDATE] Flow Control Blocks: %s", result.metadata.get('flow_control_blocks'))
-                console.info("[VALIDATE] Status: OK\n")
-            else:
-                self._write_rein_log(f"VALIDATE FAILED | errors={len(result.errors)} | warnings={len(result.warnings)}")
-                console.error("\n[ERROR] Workflow validation failed!")
-                console.error(result.format_report())
-                console.info("")
-                sys.exit(1)
-
-            if result.warnings:
-                logger.warning("%d validation warnings:", len(result.warnings))
-                for warning in result.warnings:
-                    logger.warning("  - %s: %s", warning.field, warning.message)
-
-        except Exception as e:
-            self._write_rein_log(f"VALIDATE ERROR | {str(e)}")
-            logger.warning("Validation engine error (continuing anyway): %s", e)
+        """Schema validation (delegates to ConfigLoader)"""
+        self.config_loader.run_preflight_validation(
+            workflow_file,
+            console_info=console.info,
+            console_error=console.error,
+            pkg_logger=logger,
+        )
 
     def _validate_task_inputs(self, config: dict):
-        """Validate task inputs against declarative inputs: section (v2.6.0).
-
-        - If no inputs: section, skip entirely (backward compat).
-        - For each declared required field: check if present in self.task_input.
-        - For optional fields with default: inject into self.task_input if missing.
-        - Log warning for extra (undeclared) inputs.
-        - On errors: print, log, sys.exit(1).
-        """
-        inputs_spec = config.get('inputs')
-        if not inputs_spec:
-            return  # No inputs declared - backward compatible
-
-        errors = []
-        declared = set(inputs_spec.keys())
-        provided = set(self.task_input.keys())
-
-        for field_name, field_config in inputs_spec.items():
-            # field_config can be a dict (from YAML) or InputFieldConfig (from models.workflow)
-            if isinstance(field_config, dict):
-                is_required = field_config.get('required', True)
-                default_val = field_config.get('default')
-            else:
-                is_required = field_config.required
-                default_val = field_config.default
-
-            if field_name not in self.task_input:
-                if is_required:
-                    desc = ""
-                    if isinstance(field_config, dict):
-                        desc = field_config.get('description', '')
-                    elif hasattr(field_config, 'description'):
-                        desc = field_config.description or ''
-                    hint = f" ({desc})" if desc else ""
-                    errors.append(f"  - '{field_name}'{hint}")
-                elif default_val is not None:
-                    # Inject default value
-                    self.task_input[field_name] = default_val
-                    self._write_rein_log(f"INPUT DEFAULT | {field_name} = {default_val}")
-
-        # Warn about extra (undeclared) inputs
-        extra = provided - declared
-        if extra:
-            self._write_rein_log(f"INPUT WARNING | Extra undeclared inputs: {sorted(extra)}")
-            logger.warning("Extra inputs not declared in workflow: %s", sorted(extra))
-
-        if errors:
-            workflow_name = config.get('name', 'unknown')
-            msg = (
-                f"\n[ERROR] Missing required inputs for workflow '{workflow_name}':\n"
-                + "\n".join(errors)
-                + f"\n\nDeclared inputs: {sorted(declared)}"
-                + f"\nProvided inputs: {sorted(provided)}"
-                + "\n\nProvide inputs via --input '{\"field\": \"value\"}' or task.input.json\n"
-            )
-            console.error(msg)
-            missing_names = [e.strip().lstrip("- '").split("'")[0] for e in errors]
-            self._write_rein_log(f"INPUT VALIDATION FAILED | missing: {missing_names}")
-            sys.exit(1)
-
-        self._write_rein_log(f"INPUT VALIDATION OK | declared={sorted(declared)} | provided={sorted(provided)}")
+        """Validate task inputs (delegates to ConfigLoader)"""
+        self.config_loader.validate_task_inputs(
+            config,
+            self.task_input,
+            console_error=console.error,
+            pkg_logger=logger,
+        )
 
     def _load_env_file(self, workflow_dir: str):
         """Load .env file from flow directory (delegates to ConfigLoader)"""
@@ -360,107 +288,30 @@ class ProcessManager:
         try:
             # Load specialist instructions
             specialist_text = ""
-
-            # Support both old 'agents' (list) and new 'specialist' (single) format
-            agents = block.get('agents', [])
-            if block.get('specialist'):
-                agents = [block.get('specialist')]
-
-            for agent in agents:
+            for agent in prompt_assembler.extract_block_agents(block):
                 spec = self.load_specialist(agent)
                 specialist_text += f"\n---\n{spec}"
 
-            # Get block prompt
             prompt = block.get('prompt', '')
 
-            # REFACTOR: Substitute task.input.* placeholders first
-            if self.task_input:
-                # Find {{ task.input.fieldname }} placeholders
-                task_input_pattern = r'\{\{\s*task\.input\.(\w+)\s*\}\}'
-                for match in re.finditer(task_input_pattern, prompt):
-                    full_placeholder = match.group(0)
-                    field_name = match.group(1)
-                    if field_name in self.task_input:
-                        value = self.task_input[field_name]
-                        # If value is dict/list, convert to JSON string
-                        if isinstance(value, (dict, list)):
-                            value = json.dumps(value, ensure_ascii=False)
-                        prompt = prompt.replace(full_placeholder, str(value))
-                        self._write_rein_log(f"TASK INPUT SUBSTITUTED | {field_name} | value_len={len(str(value))}")
+            # Substitute task.input.* placeholders
+            prompt = prompt_assembler.substitute_task_inputs(
+                prompt, self.task_input, self._write_rein_log
+            )
 
-            # Substitute input files ({{ file.json }})
-            # Parse prompt to find all {{ file.json }} placeholders (including spaces)
-            # Find placeholders WITH spaces preserved
-            placeholder_matches = re.finditer(r'\{\{([^}]+)\}\}', prompt)
+            # Substitute {{ file.json }} placeholders
+            prompt = prompt_assembler.substitute_file_placeholders(
+                prompt, self.task_dir, self.workflow_dir, self._write_rein_log
+            )
 
-            for match in placeholder_matches:
-                full_placeholder = match.group(0)  # e.g., "{{ filename.json }}"
-                filename = match.group(1).strip()  # e.g., "filename.json"
+            # Safety net: unresolved placeholders
+            prompt_assembler.check_unresolved_inputs(prompt, self.task_input)
 
-                # Try to resolve file path in order of priority
-                file_path = None
-
-                # 1. Block output: {{ block_name.json }} -> task_dir/block_name/outputs/result.json
-                if self.task_dir and filename.endswith('.json'):
-                    block_name = filename[:-5]  # Remove .json
-                    block_output = os.path.join(self.task_dir, block_name, "outputs", "result.json")
-                    if os.path.exists(block_output):
-                        file_path = block_output
-                        self._write_rein_log(f"BLOCK OUTPUT FOUND | {block_name} | {block_output}")
-
-                # 2. Task outputs: task_dir/outputs/filename
-                if not file_path and self.task_dir:
-                    task_output_path = os.path.join(self.task_dir, "outputs", filename)
-                    if os.path.exists(task_output_path):
-                        file_path = task_output_path
-
-                # 3. Workflow directory: workflow_dir/filename (for static data)
-                if not file_path and self.workflow_dir:
-                    workflow_path = os.path.join(self.workflow_dir, filename)
-                    if os.path.exists(workflow_path):
-                        file_path = workflow_path
-
-                if file_path:
-                    try:
-                        with open(file_path) as f:
-                            data = json.load(f)
-                            # Extract just the data content if it's wrapped in envelope
-                            if isinstance(data, dict) and 'result' in data:
-                                result_str = data.get('result', '')
-                                try:
-                                    inner_data = json.loads(result_str)
-                                    data = inner_data
-                                except (json.JSONDecodeError, ValueError, TypeError):
-                                    pass
-                            # Use the FULL placeholder text (with spaces preserved)
-                            prompt = prompt.replace(full_placeholder, json.dumps(data, ensure_ascii=False))
-                            self._write_rein_log(f"FILE SUBSTITUTED | {filename} | from={file_path} | size={len(json.dumps(data))}")
-                    except Exception as e:
-                        self._write_rein_log(f"FILE SUBSTITUTE ERROR | {file_path} | {str(e)}")
-                else:
-                    self._write_rein_log(f"FILE NOT FOUND | {filename} (checked block outputs, task outputs, workflow dir)")
-
-            # Safety net: detect unresolved {{ task.input.* }} placeholders
-            unresolved = re.findall(r'\{\{\s*task\.input\.(\w+)\s*\}\}', prompt)
-            if unresolved:
-                raise ValueError(
-                    f"Unresolved input placeholders: {set(unresolved)}. "
-                    f"Provided inputs: {list(self.task_input.keys())}"
-                )
-
-            # Build final prompt
-            full_prompt = f"""{team_tone}
-
-{specialist_text}
-
----
-
-{prompt}"""
-            # Debug logging
+            full_prompt = prompt_assembler.build_final_prompt(team_tone, specialist_text, prompt)
             self._write_rein_log(f"ASSEMBLED PROMPT | len={len(full_prompt)} | first_200={full_prompt[:200]}")
             return full_prompt
         except ValueError:
-            raise  # Propagate validation errors (unresolved placeholders)
+            raise
         except Exception as e:
             self._write_rein_log(f"PROMPT ASSEMBLY ERROR | {str(e)}")
             return ""
@@ -552,8 +403,11 @@ class ProcessManager:
             workflow_dir=workflow_dir,
             task_id=self.task_id,
             task_input=self.task_input,
-            logger=self._write_rein_log
+            logger=self._write_rein_log,
         )
+
+        # Block-level timeout override (v3.3 feature)
+        block_timeout = block_config.get('timeout') if block_config else None
 
         return runner.run(
             script_path=script_path,
@@ -565,6 +419,7 @@ class ProcessManager:
             block_config=block_config,
             linux_user=linux_user,
             run_count=run_count,
+            timeout_override=block_timeout,
         )
 
     def _load_state_from_db(self):
@@ -600,29 +455,43 @@ class ProcessManager:
         max_dep_phase = max(block_phases.get(dep, 0) for dep in depends_on) if depends_on else 0
         return max_dep_phase + 1
 
+    # State machine delegation -- logic lives in rein.state_machine module.
+    # These methods preserve the original signatures for backward compat
+    # with tests and external callers.
+
     def _get_dependents_map(self) -> Dict[str, List[str]]:
-        """Build reverse dependency graph: {block -> [blocks that depend on it]}"""
-        dependents: Dict[str, List[str]] = {}
-        for block in self.all_blocks:
-            name = block.get('name') or block.get('stage', 'unknown')
-            for dep in block.get('depends_on', []):
-                if dep not in dependents:
-                    dependents[dep] = []
-                dependents[dep].append(name)
-        return dependents
+        return state_machine.get_dependents_map(self.all_blocks)
+
+    def _is_backward_routing(self, source_block: str, target_block: str) -> bool:
+        return state_machine.is_backward_routing(self.block_configs, source_block, target_block)
 
     def _cascade_invalidation(self, failed_blocks: Set[str], dependents_map: Dict[str, List[str]]) -> Set[str]:
-        """BFS from failed blocks through dependents. Returns full set needing re-run."""
-        needs_rerun = set(failed_blocks)
-        queue = list(failed_blocks)
-        while queue:
-            current = queue.pop(0)
-            for downstream in dependents_map.get(current, []):
-                if downstream not in needs_rerun:
-                    needs_rerun.add(downstream)
-                    queue.append(downstream)
-                    self._write_rein_log(f"CASCADE | {downstream} | invalidated (depends on {current})")
-        return needs_rerun
+        return state_machine.cascade_invalidation(failed_blocks, dependents_map, self._write_rein_log)
+
+    def _get_running_names(self) -> set:
+        return state_machine.collect_running_names(self.processes, self.lock)
+
+    def _re_evaluate_pending(self, pending: dict, spawned: set = None):
+        running = state_machine.collect_running_names(self.processes, self.lock)
+        to_add = state_machine.find_blocks_needing_repending(
+            self.all_blocks, pending, self.completed, running
+        )
+        for block in to_add:
+            name = block.get('name') or block.get('stage', 'unknown')
+            pending[name] = block
+            if spawned is not None:
+                spawned.discard(name)
+
+    def _detect_orphans(self, pending: dict):
+        orphans = state_machine.detect_orphans(
+            pending, self.completed, self._has_running_processes, self._write_rein_log
+        )
+        for name in orphans:
+            self.completed.add(name)
+            del pending[name]
+
+    def _is_stuck(self, pending: dict) -> bool:
+        return state_machine.is_stuck(pending, self.completed)
 
     def _clean_block_outputs(self, block_name: str):
         """Delete output files for a block to prevent stale data."""
@@ -751,146 +620,19 @@ class ProcessManager:
         return failed_blocks
 
     def _should_execute_block(self, block: dict, previous_failed: List[str]) -> bool:
-        """Check if block should be executed based on skip_if_previous_failed flag
-
-        skip_if_previous_failed=True  -> skip this block if any previous block failed
-        skip_if_previous_failed=False -> continue executing even if previous failed (default)
-        """
-        skip_if_failed = block.get('skip_if_previous_failed', False)
-
-        if previous_failed and skip_if_failed:
-            # There were failures and this block SHOULD skip-on-failure
-            return False
-
-        return True
+        return block_resolver.should_execute_block(block, previous_failed)
 
     def _should_continue_after_failure(self, block: dict, block_failed: bool) -> bool:
-        """Check if workflow should continue after block failure"""
-        if not block_failed:
-            return True  # No failure, continue
-
-        continue_if_failed = block.get('continue_if_failed', True)
-        return continue_if_failed
+        return block_resolver.should_continue_after_failure(block, block_failed)
 
     def _evaluate_next_block(self, block: dict, result_data: dict) -> Optional[str]:
-        """Evaluate next block specification and return next block name (STATE MACHINE Phase 2.5.4)
-
-        Supports:
-        - Simple string: next: "publish" -> always go to publish
-        - Conditional list:
-            next:
-              - if: "{{ result.approved }}"
-                goto: publish
-              - else:
-                goto: revision
-
-        Args:
-            block: Block configuration dict
-            result_data: Result from block execution (parsed JSON or raw)
-
-        Returns:
-            Name of next block to trigger, or None if no next specified
-        """
-        next_spec = block.get('next')
-        if not next_spec:
-            return None
-
-        name = block.get('name') or block.get('stage', 'unknown')
-
-        # Simple string case
-        if isinstance(next_spec, str):
-            self._write_rein_log(f"NEXT SIMPLE | {name} -> {next_spec}")
-            return next_spec
-
-        # Conditional list case
-        if isinstance(next_spec, list):
-            for condition in next_spec:
-                if 'else' in condition:
-                    # Default/else branch - always matches if reached
-                    goto = condition.get('goto') or condition.get('else')
-                    self._write_rein_log(f"NEXT ELSE | {name} -> {goto}")
-                    return goto
-
-                if 'if' in condition:
-                    condition_expr = condition['if']
-                    goto = condition.get('goto')
-
-                    # Evaluate condition - supports {{ result.field }} syntax
-                    if self._evaluate_condition(condition_expr, result_data):
-                        self._write_rein_log(f"NEXT IF | {name} | condition={condition_expr} -> {goto}")
-                        return goto
-
-        return None
+        return block_resolver.evaluate_next_block(block, result_data, self._write_rein_log)
 
     def _evaluate_condition(self, expr: str, result_data: dict) -> bool:
-        """Evaluate a condition expression against result data
-
-        Supports:
-        - {{ result.approved }} - checks if result.approved is truthy
-        - {{ result.status == 'approved' }} - equality check
-        - {{ result.score > 0.8 }} - comparison
-        """
-        try:
-            # Extract expression from {{ }}
-            match = re.match(r'\{\{\s*(.+?)\s*\}\}', expr.strip())
-            if not match:
-                self._write_rein_log(f"CONDITION PARSE ERROR | no match: {expr}")
-                return False
-
-            inner_expr = match.group(1).strip()
-
-            # Handle comparison operators
-            for op in ['==', '!=', '>=', '<=', '>', '<']:
-                if op in inner_expr:
-                    parts = inner_expr.split(op, 1)
-                    if len(parts) == 2:
-                        left = self._resolve_path(parts[0].strip(), result_data)
-                        right_str = parts[1].strip().strip("'\"")
-
-                        # Try to convert right side to same type as left
-                        if isinstance(left, bool):
-                            right = right_str.lower() in ('true', '1', 'yes')
-                        elif isinstance(left, (int, float)):
-                            try:
-                                right = float(right_str)
-                            except (ValueError, TypeError):
-                                right = right_str
-                        else:
-                            right = right_str
-
-                        if op == '==':
-                            return left == right
-                        elif op == '!=':
-                            return left != right
-                        elif op == '>':
-                            return left > right
-                        elif op == '<':
-                            return left < right
-                        elif op == '>=':
-                            return left >= right
-                        elif op == '<=':
-                            return left <= right
-
-            # Simple truthy check: {{ result.approved }}
-            value = self._resolve_path(inner_expr, result_data)
-            return bool(value)
-
-        except Exception as e:
-            self._write_rein_log(f"CONDITION EVAL ERROR | {expr} | {str(e)}")
-            return False
+        return block_resolver.evaluate_condition(expr, result_data, self._write_rein_log)
 
     def _resolve_path(self, path: str, data: dict) -> any:
-        """Resolve a dot-separated path like 'result.approved' in data dict"""
-        parts = path.split('.')
-        current = data
-
-        for part in parts:
-            if isinstance(current, dict) and part in current:
-                current = current[part]
-            else:
-                return None
-
-        return current
+        return block_resolver.resolve_path(path, data)
 
     def spawn_process(self, block: dict, team_tone: str = "", from_next_queue: bool = False) -> Optional[Process]:
         """Spawn a new block execution (PHASE 2.5: Claude API instead of subprocess)"""
@@ -1041,11 +783,13 @@ class ProcessManager:
                     process.progress = 50
                     self.state.save_process(process)
 
-                    # Call Claude (with optional agent model override)
+                    # Call Claude (priority: block.model > agent_cfg.model > workflow default)
+                    block_model = block.get('model') or None
                     agent_model = agent_cfg.model if agent_cfg and agent_cfg.model else None
+                    model_override = block_model or agent_model
                     import time as _time
                     _call_start = _time.time()
-                    result = self.call_claude(prompt, name, model_override=agent_model)
+                    result = self.call_claude(prompt, name, model_override=model_override)
                     _call_dur = _time.time() - _call_start
                     run_log.write("LLM RESPONSE", f"chars={len(result)} duration={_call_dur:.1f}s")
                     process.progress = 75
@@ -1074,11 +818,13 @@ class ProcessManager:
 
                     process.progress = 75
 
-                # Save result from Claude (only if not custom - custom script saves its own result)
+                # Save result from Claude (only if not custom - custom script saves its own result).
+                # Scrub credentials from result before persistence so a leaked
+                # task directory never exposes provider API keys (HIGH-003).
                 block_usage = self._block_usage.get(name)
                 save_data = {
                     "stage": name,
-                    "result": result,
+                    "result": scrub_secrets(result) if isinstance(result, str) else result,
                     "timestamp": datetime.now().isoformat()
                 }
                 if block_usage:
@@ -1098,6 +844,17 @@ class ProcessManager:
             if logic_config.get('validate'):
                 if not self._run_logic(logic_config['validate'], save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user, run_count=process.run_count):
                     raise Exception(f"Validate-phase logic failed: {logic_config['validate']}")
+
+            # save_as: write an alias copy of result.json under a custom filename
+            # so other blocks can reference it as {{ custom_name.json }} (fix #1185).
+            save_as = block.get('save_as')
+            if save_as and os.path.exists(save_file):
+                try:
+                    alias_path = os.path.join(output_dir, save_as)
+                    shutil.copy2(save_file, alias_path)
+                    self._write_rein_log(f"SAVE_AS | {name} | alias={alias_path}")
+                except Exception as e:
+                    self._write_rein_log(f"SAVE_AS ERROR | {name} | {str(e)}")
 
             process.progress = 100
             process.status = "done"
@@ -1127,179 +884,15 @@ class ProcessManager:
 
             # ROUTING: Tag-based routing from block output (v3.3)
             if block.get('routing'):
-                try:
-                    routing = block['routing']
-                    # Read result text to detect verdict/signals
-                    result_text = ""
-                    if os.path.exists(save_file):
-                        with open(save_file) as f:
-                            saved_data = json.load(f)
-                            inner = saved_data.get('result', saved_data.get('response', ''))
-                            result_text = inner if isinstance(inner, str) else json.dumps(inner)
-
-                    # Extract signals from result text (VERDICT: PASS, VERDICT: REVISE, etc.)
-                    signals = set()
-                    for line in result_text.upper().split('\n'):
-                        line = line.strip()
-                        if line.startswith('VERDICT:'):
-                            verdict = line.split(':', 1)[1].strip()
-                            if verdict == 'PASS' or verdict == 'APPROVED':
-                                signals.add('needs-review')
-                            elif verdict == 'REVISE':
-                                signals.add('revise')
-
-                    # Match signals against routing rules
-                    next_block_name = None
-                    matched_signal = None
-                    for signal in signals:
-                        if signal in routing:
-                            next_block_name = routing[signal]
-                            matched_signal = signal
-                            break
-                    if not next_block_name:
-                        next_block_name = routing.get('_default')
-                        matched_signal = '_default'
-
-                    if next_block_name and next_block_name != '_stop':
-                        current_runs = self.run_counts.get(next_block_name, 0)
-                        next_block_config = self.block_configs.get(next_block_name)
-                        max_runs_val = next_block_config.get('max_runs', self.default_max_runs) if next_block_config else self.default_max_runs
-
-                        if current_runs >= max_runs_val:
-                            self._write_rein_log(f"ROUTING BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs_val}")
-                            with self.lock:
-                                self.completed.add(next_block_name)
-                                self._write_rein_log(f"ROUTING FORCED COMPLETE | {next_block_name} | max_runs exhausted")
-                        else:
-                            self.run_counts[next_block_name] = current_runs + 1
-                            with self.lock:
-                                self.completed.discard(next_block_name)
-                                # Reset the target block
-                                for proc_uid, proc in self.processes.items():
-                                    if proc.name == next_block_name:
-                                        proc.status = "waiting"
-                                        proc.progress = 0
-                                        proc.run_count = self.run_counts[next_block_name]
-                                        self.state.save_process(proc)
-                                        break
-                                # Cascade: invalidate all blocks that depend on the reset block
-                                dependents_map = self._get_dependents_map()
-                                cascade = self._cascade_invalidation({next_block_name}, dependents_map)
-                                cascade.discard(next_block_name)  # already reset above
-
-                                # Gate fix: also invalidate blocks that depend on THIS gate block
-                                # (except the routing target). Prevents race condition where
-                                # downstream blocks see gate as "completed" before routing
-                                # sends workflow backward for revision.
-                                gate_dependents = set(dependents_map.get(name, []))
-                                gate_dependents.discard(next_block_name)  # target proceeds normally
-                                cascade.update(gate_dependents)
-
-                                for dep_name in cascade:
-                                    self.completed.discard(dep_name)
-                                    for proc_uid, proc in self.processes.items():
-                                        if proc.name == dep_name:
-                                            if proc.status != "running":  # don't reset already-running
-                                                proc.status = "waiting"
-                                                proc.progress = 0
-                                                self.state.save_process(proc)
-                                            break
-                                if cascade:
-                                    self._write_rein_log(f"ROUTING CASCADE | invalidated: {cascade}")
-                                self.next_queue.append((next_block_name, {}))
-                                # Only defer gate if this is a backward loop (re-run).
-                                # Forward routing (first run of target) should let gate complete.
-                                if current_runs > 0:
-                                    routing_went_backward = True
-                            self._write_rein_log(f"ROUTING | {name} -> {next_block_name} | signal={matched_signal} | run={self.run_counts[next_block_name]}/{max_runs_val}")
-                            run_log.write("ROUTING", f"-> {next_block_name} signal={matched_signal}")
-
-                    elif next_block_name == '_stop':
-                        self._write_rein_log(f"ROUTING STOP | {name} | signal={matched_signal}")
-
-                except Exception as e:
-                    self._write_rein_log(f"ROUTING ERROR | {name} | {str(e)}")
+                routing_went_backward = self._apply_routing(
+                    block, name, save_file, run_log
+                ) or routing_went_backward
 
             # STATE MACHINE: Evaluate and trigger next block (Phase 2.5.4)
             if block.get('next') and not block.get('routing'):
-                try:
-                    # Parse result data for condition evaluation
-                    result_data = {}
-                    if os.path.exists(save_file):
-                        with open(save_file) as f:
-                            saved_data = json.load(f)
-                            # Get inner result (may be dict or string)
-                            inner_result = saved_data.get('result', {})
-                            if isinstance(inner_result, dict):
-                                parsed_result = inner_result
-                            elif isinstance(inner_result, str):
-                                # Try to parse as JSON
-                                try:
-                                    parsed_result = json.loads(inner_result)
-                                except (json.JSONDecodeError, ValueError):
-                                    parsed_result = {'raw': inner_result}
-                            else:
-                                parsed_result = {'value': inner_result}
-                            # Wrap in 'result' for {{ result.field }} conditions
-                            result_data = {'result': parsed_result, '_stage': name, '_saved': saved_data}
-
-                    next_block_name = self._evaluate_next_block(block, result_data)
-
-                    if next_block_name:
-                        # Check max_runs for loop protection
-                        current_runs = self.run_counts.get(next_block_name, 0)
-                        next_block_config = self.block_configs.get(next_block_name)
-                        max_runs = next_block_config.get('max_runs', self.default_max_runs) if next_block_config else self.default_max_runs
-
-                        if current_runs >= max_runs:
-                            self._write_rein_log(f"NEXT BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs}")
-                            # Loop exhausted: force the blocked target into completed
-                            # so its dependents can proceed (loop is over).
-                            with self.lock:
-                                self.completed.add(next_block_name)
-                                self._write_rein_log(f"NEXT FORCED COMPLETE | {next_block_name} | max_runs exhausted, marking completed")
-                        else:
-                            # Increment run count and add to next queue
-                            self.run_counts[next_block_name] = current_runs + 1
-
-                            with self.lock:
-                                # Remove from completed to allow re-run
-                                self.completed.discard(next_block_name)
-                                # Reset process status to waiting
-                                for proc_uid, proc in self.processes.items():
-                                    if proc.name == next_block_name:
-                                        proc.status = "waiting"
-                                        proc.progress = 0
-                                        proc.run_count = self.run_counts[next_block_name]
-                                        self.state.save_process(proc)
-                                        break
-
-                                # Gate fix: invalidate blocks depending on this gate
-                                # (except routing target) to prevent race condition
-                                dependents_map = self._get_dependents_map()
-                                gate_deps = set(dependents_map.get(name, []))
-                                gate_deps.discard(next_block_name)
-                                for dep_name in gate_deps:
-                                    self.completed.discard(dep_name)
-                                    for proc_uid, proc in self.processes.items():
-                                        if proc.name == dep_name:
-                                            if proc.status != "running":
-                                                proc.status = "waiting"
-                                                proc.progress = 0
-                                                self.state.save_process(proc)
-                                            break
-                                if gate_deps:
-                                    self._write_rein_log(f"GATE CASCADE | {name} | invalidated: {gate_deps}")
-
-                                # Add to next queue
-                                self.next_queue.append((next_block_name, result_data))
-                                if current_runs > 0:
-                                    routing_went_backward = True
-
-                            self._write_rein_log(f"NEXT QUEUED | {name} -> {next_block_name} | run={self.run_counts[next_block_name]}/{max_runs}")
-                            run_log.write("NEXT", f"-> {next_block_name} run={self.run_counts[next_block_name]}/{max_runs}")
-                except Exception as e:
-                    self._write_rein_log(f"NEXT EVAL ERROR | {name} | {str(e)}")
+                routing_went_backward = self._apply_next_state_machine(
+                    block, name, save_file, run_log
+                ) or routing_went_backward
 
             # Deferred completion: only mark as completed if routing didn't send backward
             if routing_went_backward:
@@ -1329,90 +922,181 @@ class ProcessManager:
             run_log.close()
             self.semaphore.release()
 
-    def _run_error_handlers(self, block: dict, block_name: str, error_msg: str, run_log=None):
-        """Run error handlers: per-block logic.error first, then global on_error.
+    def _reset_block_for_rerun(self, target_name: str, new_run_count: int) -> None:
+        """Reset a process back to waiting state so it can re-run.
 
-        Error context is passed via stdin JSON to the handler script:
-        {block_name, error, task_dir, task_id, flow_name}
+        Must be called while holding self.lock.
         """
-        error_context = json.dumps({
-            "block_name": block_name,
-            "error": error_msg,
-            "task_dir": self.task_dir,
-            "task_id": self.task_id or "",
-            "flow_name": self.flow_name or "",
-        })
+        for proc_uid, proc in self.processes.items():
+            if proc.name == target_name:
+                proc.status = "waiting"
+                proc.progress = 0
+                proc.run_count = new_run_count
+                self.state.save_process(proc)
+                return
 
-        logic_config = block.get("logic", {})
-        error_script = logic_config.get("error")
-        handled = False
+    def _invalidate_cascade(self, cascade_set: set) -> None:
+        """Reset all processes in cascade_set back to waiting (if not running).
 
-        # Priority 1: per-block logic.error
-        if error_script:
-            self._write_rein_log(f"ERROR HANDLER | {block_name} | logic.error={error_script}")
-            if run_log:
-                run_log.write("LOGIC.ERROR START", f"script={error_script}")
-            try:
-                script_path = os.path.join(self.workflow_dir, error_script)
-                if not os.path.isfile(script_path):
-                    script_path = error_script  # Try as absolute path
+        Must be called while holding self.lock.
+        """
+        for dep_name in cascade_set:
+            self.completed.discard(dep_name)
+            for proc_uid, proc in self.processes.items():
+                if proc.name == dep_name:
+                    if proc.status != "running":
+                        proc.status = "waiting"
+                        proc.progress = 0
+                        self.state.save_process(proc)
+                    break
 
-                result = subprocess.run(
-                    ["bash", script_path] if script_path.endswith(".sh") else ["python3", script_path],
-                    input=error_context,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    cwd=self.workflow_dir,
+    def _apply_routing(self, block: dict, name: str, save_file: str, run_log) -> bool:
+        """Apply tag-based routing (v3.3) after block completion.
+
+        Returns True if routing went backward (gate should defer completion).
+        """
+        routing_went_backward = False
+        try:
+            routing = block['routing']
+            result_text = routing_engine.read_result_text(save_file)
+            signals = routing_engine.extract_verdict_signals(result_text)
+            next_block_name, matched_signal = routing_engine.match_routing_rule(routing, signals)
+
+            if next_block_name == '_stop':
+                self._write_rein_log(f"ROUTING STOP | {name} | signal={matched_signal}")
+                return False
+
+            if not next_block_name:
+                return False
+
+            current_runs = self.run_counts.get(next_block_name, 0)
+            next_block_config = self.block_configs.get(next_block_name)
+            max_runs_val = next_block_config.get('max_runs', self.default_max_runs) if next_block_config else self.default_max_runs
+
+            if current_runs >= max_runs_val:
+                self._write_rein_log(f"ROUTING BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs_val}")
+                with self.lock:
+                    self.completed.add(next_block_name)
+                    self._write_rein_log(f"ROUTING FORCED COMPLETE | {next_block_name} | max_runs exhausted")
+                return False
+
+            self.run_counts[next_block_name] = current_runs + 1
+            with self.lock:
+                self.completed.discard(next_block_name)
+                self._reset_block_for_rerun(next_block_name, self.run_counts[next_block_name])
+
+                # Cascade: invalidate all blocks that depend on the reset block
+                dependents_map = self._get_dependents_map()
+                cascade = self._cascade_invalidation({next_block_name}, dependents_map)
+                cascade.discard(next_block_name)  # already reset above
+
+                # Backward routing: also invalidate gate dependents
+                is_backward = self._is_backward_routing(name, next_block_name)
+                if is_backward:
+                    gate_dependents = set(dependents_map.get(name, []))
+                    gate_dependents.discard(next_block_name)
+                    cascade.update(gate_dependents)
+
+                self._invalidate_cascade(cascade)
+
+                if cascade:
+                    self._write_rein_log(f"ROUTING CASCADE | invalidated: {cascade}")
+
+                # Skip non-chosen routing branches so main loop won't spawn them
+                # via depends_on scheduling (fix #1190).
+                skip_set = state_machine.compute_routing_skip_set(
+                    routing, next_block_name, name, dependents_map
                 )
-                if result.returncode == 0:
-                    self._write_rein_log(f"ERROR HANDLER OK | {block_name} | logic.error")
-                    if run_log:
-                        run_log.write("LOGIC.ERROR OK", f"script={error_script}")
-                        if result.stdout:
-                            for line in result.stdout.strip().splitlines()[:20]:
-                                run_log.write("LOGIC.ERROR STDOUT", line)
-                    handled = True
-                else:
-                    self._write_rein_log(
-                        f"ERROR HANDLER FAILED | {block_name} | logic.error | "
-                        f"exit={result.returncode} | stderr={result.stderr[:200]}"
-                    )
-                    if run_log:
-                        run_log.write("LOGIC.ERROR FAILED", f"exit={result.returncode}")
-                        if result.stderr:
-                            for line in result.stderr.strip().splitlines()[:20]:
-                                run_log.write("LOGIC.ERROR STDERR", line)
-            except Exception as handler_err:
-                self._write_rein_log(f"ERROR HANDLER EXCEPTION | {block_name} | logic.error | {handler_err}")
-                if run_log:
-                    run_log.write("LOGIC.ERROR EXCEPTION", str(handler_err))
+                for skipped_name in skip_set:
+                    self.completed.add(skipped_name)
+                    for proc_uid, proc in self.processes.items():
+                        if proc.name == skipped_name and proc.status not in ("running", "done", "failed"):
+                            proc.status = "skipped"
+                            proc.exit_code = 0
+                            self.state.save_process(proc)
+                            break
+                if skip_set:
+                    self._write_rein_log(f"ROUTING SKIP BRANCHES | {name} -> {next_block_name} | skipped={skip_set}")
 
-        # Priority 2: global on_error (only if logic.error didn't handle it)
-        if not handled and self.on_error:
-            self._write_rein_log(f"ERROR HANDLER | {block_name} | on_error={self.on_error}")
-            try:
-                script_path = os.path.join(self.workflow_dir, self.on_error)
-                if not os.path.isfile(script_path):
-                    script_path = self.on_error
+                self.next_queue.append((next_block_name, {}))
+                if is_backward:
+                    routing_went_backward = True
 
-                result = subprocess.run(
-                    ["bash", script_path] if script_path.endswith(".sh") else ["python3", script_path],
-                    input=error_context,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    cwd=self.workflow_dir,
-                )
-                if result.returncode == 0:
-                    self._write_rein_log(f"ERROR HANDLER OK | {block_name} | on_error")
-                else:
-                    self._write_rein_log(
-                        f"ERROR HANDLER FAILED | {block_name} | on_error | "
-                        f"exit={result.returncode} | stderr={result.stderr[:200]}"
-                    )
-            except Exception as handler_err:
-                self._write_rein_log(f"ERROR HANDLER EXCEPTION | {block_name} | on_error | {handler_err}")
+            self._write_rein_log(f"ROUTING | {name} -> {next_block_name} | signal={matched_signal} | run={self.run_counts[next_block_name]}/{max_runs_val}")
+            run_log.write("ROUTING", f"-> {next_block_name} signal={matched_signal}")
+
+        except Exception as e:
+            self._write_rein_log(f"ROUTING ERROR | {name} | {str(e)}")
+
+        return routing_went_backward
+
+    def _apply_next_state_machine(self, block: dict, name: str, save_file: str, run_log) -> bool:
+        """Apply state machine `next:` evaluation after block completion.
+
+        Returns True if routing went backward (gate should defer completion).
+        """
+        routing_went_backward = False
+        try:
+            result_data = routing_engine.parse_result_data(save_file)
+            if result_data:
+                result_data['_stage'] = name
+            next_block_name = self._evaluate_next_block(block, result_data)
+
+            if not next_block_name:
+                return False
+
+            # Check max_runs for loop protection
+            current_runs = self.run_counts.get(next_block_name, 0)
+            next_block_config = self.block_configs.get(next_block_name)
+            max_runs = next_block_config.get('max_runs', self.default_max_runs) if next_block_config else self.default_max_runs
+
+            if current_runs >= max_runs:
+                self._write_rein_log(f"NEXT BLOCKED | {next_block_name} | run_count={current_runs} >= max_runs={max_runs}")
+                with self.lock:
+                    self.completed.add(next_block_name)
+                    self._write_rein_log(f"NEXT FORCED COMPLETE | {next_block_name} | max_runs exhausted, marking completed")
+                return False
+
+            # Increment run count and add to next queue
+            self.run_counts[next_block_name] = current_runs + 1
+            with self.lock:
+                self.completed.discard(next_block_name)
+                self._reset_block_for_rerun(next_block_name, self.run_counts[next_block_name])
+
+                # Gate fix: invalidate blocks depending on this gate (except target)
+                dependents_map = self._get_dependents_map()
+                gate_deps = set(dependents_map.get(name, []))
+                gate_deps.discard(next_block_name)
+                self._invalidate_cascade(gate_deps)
+
+                if gate_deps:
+                    self._write_rein_log(f"GATE CASCADE | {name} | invalidated: {gate_deps}")
+
+                self.next_queue.append((next_block_name, result_data))
+                if current_runs > 0:
+                    routing_went_backward = True
+
+            self._write_rein_log(f"NEXT QUEUED | {name} -> {next_block_name} | run={self.run_counts[next_block_name]}/{max_runs}")
+            run_log.write("NEXT", f"-> {next_block_name} run={self.run_counts[next_block_name]}/{max_runs}")
+        except Exception as e:
+            self._write_rein_log(f"NEXT EVAL ERROR | {name} | {str(e)}")
+
+        return routing_went_backward
+
+    def _run_error_handlers(self, block: dict, block_name: str, error_msg: str, run_log=None):
+        """Delegate to error_handlers module."""
+        error_handlers.run_error_handlers(
+            block=block,
+            block_name=block_name,
+            error_msg=error_msg,
+            workflow_dir=self.workflow_dir,
+            task_dir=self.task_dir,
+            task_id=self.task_id or "",
+            flow_name=self.flow_name or "",
+            global_on_error=self.on_error,
+            log_fn=self._write_rein_log,
+            run_log=run_log,
+        )
 
     def _monitor_process(self, uid: str, proc: subprocess.Popen, process: Process):
         """Monitor process and collect metrics"""
@@ -1596,20 +1280,7 @@ class ProcessManager:
                 self._wait_for_inflight()
                 break
 
-            # Find ready blocks (dependencies satisfied + agent filter)
-            ready = []
-            for name, block in pending.items():
-                depends_on = block.get('depends_on', [])
-                if not (not depends_on or all(dep in self.completed for dep in depends_on)):
-                    continue  # deps not met
-
-                # Agent routing: if agent_id set, skip blocks assigned to other agents
-                if agent_id:
-                    block_agent = block.get('agent', '')
-                    if block_agent and block_agent != agent_id:
-                        continue  # not my block
-
-                ready.append(name)
+            ready = state_machine.find_ready_blocks(pending, self.completed, agent_id)
 
             # Spawn ready blocks up to remaining budget
             spawned_this_round = False
@@ -1653,31 +1324,34 @@ class ProcessManager:
                         self.next_queue.insert(0, (next_block_name, trigger_data))
                     break
 
+            self._re_evaluate_pending(pending)
+
             time.sleep(0.5)
 
             # Check if all done
             if not pending and self.all_completed() and not self.next_queue:
                 break
 
-            # Stuck check: nothing spawned, nothing running, nothing in queue
+            # Stuck check
             if not spawned_this_round and not self._has_running_processes() and not self.next_queue:
-                break
+                if not pending:
+                    break
+                if self._is_stuck(pending):
+                    self._write_rein_log(f"STUCK DETECTED | {len(pending)} pending but no deps satisfiable")
+                    break
 
         # Determine completion status
-        all_done = all(
-            name in self.completed
-            for block in self.all_blocks
-            for name in [block.get('name') or block.get('stage', 'unknown')]
-        ) and self.all_completed() and not self.next_queue
+        all_done = (
+            state_machine.all_blocks_completed(self.all_blocks, self.completed)
+            and self.all_completed()
+            and not self.next_queue
+        )
 
         if all_done:
             self._finalize_run()
             self._write_rein_log(f"STEP COMPLETE | workflow done | steps_used={steps_used}")
         else:
-            remaining = sum(
-                1 for block in self.all_blocks
-                if (block.get('name') or block.get('stage', 'unknown')) not in self.completed
-            )
+            remaining = state_machine.count_remaining_blocks(self.all_blocks, self.completed)
             self._write_rein_log(
                 f"STEP YIELDING | steps_used={steps_used} | remaining={remaining}"
             )
@@ -1698,23 +1372,35 @@ class ProcessManager:
     def _wait_for_inflight(self, timeout: float = 300.0):
         """Wait for currently running blocks to finish before returning.
 
-        Called when step budget is exhausted but blocks are still executing
-        in background threads. Must wait for them to complete so SQLite state
-        is consistent before the process exits.
+        Waits until no process is 'running' AND all done/failed blocks are
+        registered in self.completed set. This ensures threads have finished
+        their post-execution work (routing eval, completed.add, output flush).
         """
         deadline = time.time() + timeout
         while time.time() < deadline:
             with self.lock:
                 running = [p for p in self.processes.values() if p.status == "running"]
-            if not running:
+                # Also wait for done blocks to register in completed set
+                pending_registration = [
+                    p for p in self.processes.values()
+                    if p.status in ("done", "failed") and p.name not in self.completed
+                ]
+            if not running and not pending_registration:
+                # Extra sleep to let stdout buffers flush from daemon threads
+                time.sleep(0.1)
                 return
-            time.sleep(0.5)
-        self._write_rein_log(f"WAIT TIMEOUT | {len(running)} blocks still running after {timeout}s")
+            time.sleep(0.2)
+        self._write_rein_log(f"WAIT TIMEOUT | {len(running)} running, {len(pending_registration)} unregistered")
 
     def _has_running_processes(self) -> bool:
-        """Check if any processes are currently running."""
-        with self.lock:
-            return any(p.status == "running" for p in self.processes.values())
+        return state_machine.has_running_or_transitioning(
+            self.processes, self.completed, self.lock
+        )
+
+    def _sync_completed_from_processes(self):
+        state_machine.sync_completed_from_processes(
+            self.processes, self.completed, self.lock
+        )
 
     def run_workflow(self):
         """Execute workflow with dependency management"""
@@ -1816,12 +1502,33 @@ class ProcessManager:
                         self.next_queue.insert(0, (next_block_name, trigger_data))
                     break  # Exit next_queue loop to wait for semaphore
 
+            self._re_evaluate_pending(pending, spawned)
+
             # Wait a bit for processes to complete
             time.sleep(0.5)
 
             # Check if all done (all pending spawned, all processes completed, and next_queue empty)
             if not pending and self.all_completed() and not self.next_queue:
                 break
+
+            # Stuck check: sync completed from process status first to avoid races
+            self._sync_completed_from_processes()
+            if not self._has_running_processes() and not self.next_queue:
+                time.sleep(0.3)  # Grace period for in-flight completion
+                self._sync_completed_from_processes()
+                if self._has_running_processes() or self.next_queue:
+                    continue
+                if not pending:
+                    break
+                if self._is_stuck(pending):
+                    self._detect_orphans(pending)
+                    if not pending:
+                        break
+                    self._write_rein_log(f"STUCK DETECTED | {len(pending)} pending but no deps satisfiable")
+                    break
+
+        # Wait for any in-flight threads to complete before finalizing
+        self._wait_for_inflight()
 
         # Workflow finished - save summary and stop the UI
         self._finalize_run()
@@ -1830,123 +1537,51 @@ class ProcessManager:
     def _finalize_run(self):
         """Save metadata and summary after workflow completion"""
         try:
-            # Update metadata
-            self.metadata["end_time"] = datetime.now().isoformat()
-            self.metadata["total_agents"] = len(self.processes)
+            # Build and persist summary (delegates to run_summary module)
+            summary = run_summary.build_summary(
+                self.metadata, self.processes, self.log_dir,
+                self._total_usage, self._block_usage,
+            )
+            run_summary.write_summary_files(self.run_dir, self.metadata, summary)
 
-            # Calculate summary
-            completed = sum(1 for p in self.processes.values() if p.status == "done")
-            failed = sum(1 for p in self.processes.values() if p.status == "failed")
+            completed = summary["completed"]
+            failed = summary["failed"]
 
-            summary = {
-                "run_id": self.metadata.get("run_id"),
-                "start_time": self.metadata.get("start_time"),
-                "end_time": self.metadata.get("end_time"),
-                "total_agents": len(self.processes),
-                "completed": completed,
-                "failed": failed,
-                "log_dir": self.log_dir
-            }
+            self._write_rein_log(
+                f"REIN FINISHED | completed={completed} | failed={failed} | total={len(self.processes)}"
+            )
 
-            # Per-block stats
-            block_stats = {}
-            for uid, proc in self.processes.items():
-                block_stats[proc.name] = {
-                    "status": proc.status,
-                    "runs": proc.run_count + 1,  # run_count is 0-indexed
-                    "phase": proc.phase,
-                    "duration_sec": round(time.time() - proc.start_time, 1) if proc.start_time else 0,
-                }
-            summary["blocks"] = block_stats
-
-            # Add usage/cost data to summary
+            # Cost summary
             if self._total_usage.total_tokens > 0:
-                summary["usage"] = self._total_usage.to_dict()
-                summary["block_usage"] = {
-                    name: u.to_dict() for name, u in self._block_usage.items()
-                }
-
-            # Save metadata
-            with open(os.path.join(self.run_dir, "metadata.json"), 'w') as f:
-                json.dump(self.metadata, f, indent=2)
-
-            # Save summary
-            with open(os.path.join(self.run_dir, "summary.json"), 'w') as f:
-                json.dump(summary, f, indent=2)
-
-            # Log completion
-            self._write_rein_log(f"REIN FINISHED | completed={completed} | failed={failed} | total={len(self.processes)}")
-
-            # Log cost summary
-            if self._total_usage.total_tokens > 0:
-                cost_line = (
-                    f"[COST] Total: ${self._total_usage.cost:.4f} | "
-                    f"Tokens: {self._total_usage.total_tokens:,} "
-                    f"(in:{self._total_usage.input_tokens:,} out:{self._total_usage.output_tokens:,}) | "
-                    f"Provider: {self._total_usage.provider} | Model: {self._total_usage.model}"
-                )
+                cost_line = run_summary.format_cost_line(self._total_usage)
                 self._write_rein_log(cost_line)
                 console.info(cost_line)
 
             # v3.0: Update task status file and task.json
             if self.task_dir:
-                status = "completed" if failed == 0 else "failed"
-                # Update status file (v3.0: state/status)
-                with open(os.path.join(self.task_dir, "state", "status"), "w") as f:
-                    f.write(f"{status}\n")
-                # Update task.json (v3.0: input/task.json)
-                task_json_path = os.path.join(self.task_dir, "input", "task.json")
-                if os.path.exists(task_json_path):
-                    with open(task_json_path) as f:
-                        task_data = json.load(f)
-                    task_data["status"] = status
-                    task_data["completed"] = datetime.now().isoformat()
-                    task_data["blocks_completed"] = completed
-                    task_data["blocks_failed"] = failed
-                    task_data["blocks_total"] = len(self.processes)
-                    with open(task_json_path, "w") as f:
-                        json.dump(task_data, f, indent=2, ensure_ascii=False)
-                self._write_rein_log(f"TASK STATUS | {self.task_id} | status={status}")
+                run_summary.update_task_status_file(
+                    self.task_dir, completed, failed, len(self.processes),
+                    self._write_rein_log, self.task_id,
+                )
 
-            # Handle task output (copy results to task output_dir)
+            # Handle task output (copy results to output_dir)
             output_dir = self.all_blocks[0].get('output_dir') if hasattr(self, 'all_blocks') and self.all_blocks else None
             if not output_dir:
-                # Try to get from config
                 output_dir = self.config.get('output_dir') if hasattr(self, 'config') else None
 
             if output_dir:
-                try:
-                    os.makedirs(output_dir, exist_ok=True)
-                    # Copy workflow files (YAML, .env, logs) from workflow directory
-                    workflow_dir = os.path.dirname(self.workflow_file) if hasattr(self, 'workflow_file') else None
-                    if workflow_dir:
-                        for f in os.listdir(workflow_dir):
-                            if f.endswith(('.json', '.yaml', '.env')):
-                                src = os.path.join(workflow_dir, f)
-                                dst = os.path.join(output_dir, f)
-                                if os.path.isfile(src):
-                                    import shutil
-                                    try:
-                                        shutil.copy2(src, dst)
-                                    except (OSError, IOError, shutil.Error):
-                                        pass
-                    self._write_rein_log(f"OUTPUT SAVED | {output_dir}")
-                except Exception as e:
-                    self._write_rein_log(f"OUTPUT SAVE ERROR | {str(e)}")
+                workflow_file = getattr(self, 'workflow_file', None)
+                run_summary.copy_workflow_output_files(output_dir, workflow_file, self._write_rein_log)
 
-            # Update task status if task_dir is set
+            # Update task status via tasks module if status_path is set
             if hasattr(self, 'config') and 'status_path' in self.config:
                 status = 'completed' if failed == 0 else 'failed'
                 _update_task_status(
-                    self.config['status_path'],
-                    status,
-                    progress=100,
-                    blocks_completed=completed,
-                    blocks_total=len(self.processes)
+                    self.config['status_path'], status,
+                    progress=100, blocks_completed=completed,
+                    blocks_total=len(self.processes),
                 )
-
-                # Handle callback to memory (if configured)
-                if hasattr(self, 'config') and 'task_config' in self.config:
+                if 'task_config' in self.config:
                     task_config = self.config['task_config']
                     if task_config.get('callback', {}).get('save_to_memory'):
                         _save_task_to_memory(
@@ -1973,133 +1608,40 @@ class ProcessManager:
                         self._write_rein_log(f"KILL FAILED | {name} | {str(e)}")
 
     def pause_single(self, identifier: str) -> bool:
-        """Pause a single process by UID or name"""
-        with self.lock:
-            # Try to find by UID first, then by name
-            process = None
-            process_id = identifier
-
-            if identifier in self.processes:
-                # Direct UID match
-                process = self.processes[identifier]
-            else:
-                # Try to find by name
-                for uid, proc in self.processes.items():
-                    if proc.name == identifier:
-                        process = proc
-                        process_id = uid
-                        break
-
-            if not process:
-                return False
-
-            # Only pause if not already done/failed
-            if process.status in ("done", "failed"):
-                return False
-
-            # Store previous status to restore on resume
-            if not hasattr(process, '_previous_status'):
-                process._previous_status = process.status
-
-            process.status = "paused"
-
-        self.state.save_process(process)
-        self._write_rein_log(f"PAUSE_SINGLE | {process.name}[{process_id}] | previous_status={process._previous_status}")
-        return True
+        return process_control.pause_single(
+            self.processes, identifier, self.lock,
+            self.state.save_process, self._write_rein_log
+        )
 
     def resume_single(self, identifier: str) -> bool:
-        """Resume a paused process by UID or name"""
-        with self.lock:
-            # Try to find by UID first, then by name
-            process = None
-            process_id = identifier
-
-            if identifier in self.processes:
-                # Direct UID match
-                process = self.processes[identifier]
-            else:
-                # Try to find by name
-                for uid, proc in self.processes.items():
-                    if proc.name == identifier:
-                        process = proc
-                        process_id = uid
-                        break
-
-            if not process:
-                return False
-
-            if process.status != "paused":
-                return False
-
-            # Restore previous status (running or waiting)
-            previous = getattr(process, '_previous_status', 'waiting')
-            process.status = previous
-            if hasattr(process, '_previous_status'):
-                delattr(process, '_previous_status')
-
-        self.state.save_process(process)
-        self._write_rein_log(f"RESUME_SINGLE | {process.name}[{process_id}] | resumed_to={process.status}")
-        return True
+        return process_control.resume_single(
+            self.processes, identifier, self.lock,
+            self.state.save_process, self._write_rein_log
+        )
 
     def cancel_single(self, identifier: str) -> bool:
-        """Cancel a single process - kill it and mark as cancelled (won't restart)"""
-        with self.lock:
-            # Try to find by UID first, then by name
-            process = None
-            process_id = identifier
-
-            if identifier in self.processes:
-                # Direct UID match
-                process = self.processes[identifier]
-            else:
-                # Try to find by name
-                for uid, proc in self.processes.items():
-                    if proc.name == identifier:
-                        process = proc
-                        process_id = uid
-                        break
-
-            if not process:
-                return False
-
-            # Kill process if running
-            if process.status == "running" and process.pid:
-                try:
-                    os.kill(process.pid, signal.SIGTERM)
-                    self._write_rein_log(f"KILL SENT | {process.name}[{process_id}] | pid={process.pid}")
-                except Exception as e:
-                    self._write_rein_log(f"KILL FAILED | {process.name}[{process_id}] | {str(e)}")
-
-            # Mark as cancelled (won't restart on resume)
-            process.status = "cancelled"
-            self.state.save_process(process)
-            self._write_rein_log(f"CANCEL_SINGLE | {process.name}[{process_id}] | previous_status={process.status}")
-
-        return True
+        return process_control.cancel_single(
+            self.processes, identifier, self.lock,
+            self.state.save_process, self._write_rein_log
+        )
 
     def pause_workflow(self) -> bool:
-        """Pause entire workflow - stops spawning new processes"""
         with self.lock:
-            if self.workflow_paused:
-                return False  # Already paused
-
-            self.workflow_paused = True
-            self.workflow_paused_at = time.time()
-
-        self._write_rein_log(f"PAUSE_WORKFLOW | Workflow paused, no new processes will spawn")
-        return True
+            flags = {'paused': self.workflow_paused, 'paused_at': self.workflow_paused_at}
+            result = process_control.pause_workflow_flags(flags, self._write_rein_log)
+            if result:
+                self.workflow_paused = flags['paused']
+                self.workflow_paused_at = flags['paused_at']
+        return result
 
     def resume_workflow(self) -> bool:
-        """Resume paused workflow - allows spawning to continue"""
         with self.lock:
-            if not self.workflow_paused:
-                return False  # Not paused
-
-            self.workflow_paused = False
-            self.workflow_paused_at = None
-
-        self._write_rein_log(f"RESUME_WORKFLOW | Workflow resumed, spawning will continue")
-        return True
+            flags = {'paused': self.workflow_paused, 'paused_at': self.workflow_paused_at}
+            result = process_control.resume_workflow_flags(flags, self._write_rein_log)
+            if result:
+                self.workflow_paused = flags['paused']
+                self.workflow_paused_at = flags['paused_at']
+        return result
 
     def all_completed(self) -> bool:
         """Check if all processes are completed"""

@@ -1,4 +1,4 @@
-schema_version: "2.6.0"
+schema_version: "3.3.0"
 name: deliberation
 description: "Multi-phase deliberation: independent analysis -> cross-review -> final recommendation"
 team: team-deliberation

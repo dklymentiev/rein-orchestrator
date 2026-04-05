@@ -160,3 +160,108 @@ class TestBlockConfig:
             max_runs=5
         )
         assert block.max_runs == 5
+
+class TestPydanticBlockConfig:
+    """Tests for Pydantic BlockConfig (models.workflow) -- schema validation"""
+
+    def test_phase_accepts_large_values(self):
+        """Phase should accept values up to 1000 (not limited to 10)"""
+        from models.workflow import BlockConfig as PydanticBlock
+        block = PydanticBlock(name="late_phase", prompt="test", phase=50)
+        assert block.phase == 50
+
+    def test_routing_field(self):
+        """Block with routing dict"""
+        from models.workflow import BlockConfig as PydanticBlock
+        block = PydanticBlock(
+            name="gate", prompt="evaluate",
+            routing={"revise": "fix_block", "_default": "next_block"}
+        )
+        assert block.routing["revise"] == "fix_block"
+        assert block.routing["_default"] == "next_block"
+
+    def test_logic_error_handler(self):
+        """Block with per-block error handler"""
+        from models.workflow import BlockConfig as PydanticBlock, LogicConfig
+        block = PydanticBlock(
+            name="risky", prompt="deploy",
+            logic=LogicConfig(pre="logic/pre.py", error="logic/rollback.py")
+        )
+        assert block.logic.error == "logic/rollback.py"
+
+    def test_logic_custom_string(self):
+        """logic.custom as script path string"""
+        from models.workflow import BlockConfig as PydanticBlock, LogicConfig
+        block = PydanticBlock(
+            name="custom_block", prompt="x",
+            logic=LogicConfig(custom="logic/my-script.py")
+        )
+        assert block.logic.custom == "logic/my-script.py"
+
+    def test_agent_field(self):
+        """Block with agent identity for step mode"""
+        from models.workflow import BlockConfig as PydanticBlock
+        block = PydanticBlock(name="draft", prompt="write", agent="writer")
+        assert block.agent == "writer"
+
+
+class TestWorkflowConfig:
+    """Tests for WorkflowConfig Pydantic model"""
+
+    def _minimal_workflow(self, **overrides):
+        base = {
+            "schema_version": "3.3.0",
+            "name": "test-flow",
+            "team": "team-test",
+            "blocks": [{"name": "step_one", "prompt": "test"}],
+        }
+        base.update(overrides)
+        return base
+
+    def test_default_max_runs_accepted(self):
+        """default_max_runs should be accepted at workflow level"""
+        from models.workflow import WorkflowConfig
+        data = self._minimal_workflow(default_max_runs=5)
+        w = WorkflowConfig(**data)
+        assert w.default_max_runs == 5
+
+    def test_extra_fields_ignored(self):
+        """Unknown workflow-level fields should be ignored (not rejected)"""
+        from models.workflow import WorkflowConfig
+        data = self._minimal_workflow(some_future_field="test", another_field=42)
+        w = WorkflowConfig(**data)  # should not raise
+        assert w.name == "test-flow"
+
+    def test_block_extra_fields_rejected(self):
+        """Unknown block-level fields should still be rejected"""
+        from models.workflow import WorkflowConfig
+        data = self._minimal_workflow()
+        data["blocks"][0]["unknown_field"] = "oops"
+        with pytest.raises(Exception):
+            WorkflowConfig(**data)
+
+    def test_on_error_field(self):
+        """on_error global error handler accepted"""
+        from models.workflow import WorkflowConfig
+        data = self._minimal_workflow(on_error="logic/notify.py")
+        w = WorkflowConfig(**data)
+        assert w.on_error == "logic/notify.py"
+
+    def test_readable_outputs(self):
+        """readable_outputs field"""
+        from models.workflow import WorkflowConfig
+        data = self._minimal_workflow(readable_outputs=True)
+        w = WorkflowConfig(**data)
+        assert w.readable_outputs is True
+
+    def test_backward_compat_old_schema(self):
+        """Old schema_version 2.5.3 workflows still validate"""
+        from models.workflow import WorkflowConfig
+        data = {
+            "schema_version": "2.5.3",
+            "name": "old-flow",
+            "team": "team-legacy",
+            "blocks": [{"name": "step", "prompt": "do"}],
+        }
+        w = WorkflowConfig(**data)
+        assert w.schema_version == "2.5.3"
