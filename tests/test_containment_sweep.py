@@ -90,21 +90,28 @@ class TestFilePlaceholderContainment:
 # ============================================================
 
 class TestScrubSecrets:
+    # Fake credential fixtures are built by concatenation so the literal
+    # pattern does not appear in source. This prevents GitHub secret
+    # scanning from flagging test fixtures as leaked credentials.
+    _FAKE_SK_ANT = "sk" + "-ant-" + "api03-" + "abcdefghijklmnopqrstuvwxyz"
+    _FAKE_SK_PROJ = "sk" + "-proj-" + "abcdefghijklmnop"
+    _FAKE_XOXB = "xoxb" + "-1234567890-" + "abcdefghijklmnop"
+
     def test_scrub_sk_key(self):
-        raw = "Bearer sk-ant-api03-abcdefghijklmnopqrstuvwxyz"
-        assert "sk-ant" not in scrub_secrets(raw)
+        raw = "Bearer " + self._FAKE_SK_ANT
+        assert "sk" + "-ant" not in scrub_secrets(raw)
         assert "[REDACTED]" in scrub_secrets(raw)
 
     def test_scrub_anthropic_env_assignment(self):
-        raw = "exporting ANTHROPIC_API_KEY=sk-ant-secret-value-12345"
-        assert "sk-ant-secret" not in scrub_secrets(raw)
+        raw = "exporting ANTHROPIC_API_KEY=" + self._FAKE_SK_ANT
+        assert "api03" not in scrub_secrets(raw)
 
     def test_scrub_openai_env_assignment(self):
-        raw = "OPENAI_API_KEY=sk-proj-abcdefghijklmnop"
-        assert "sk-proj" not in scrub_secrets(raw)
+        raw = "OPENAI_API_KEY=" + self._FAKE_SK_PROJ
+        assert "sk" + "-proj" not in scrub_secrets(raw)
 
     def test_scrub_bearer_token(self):
-        raw = "Authorization: Bearer xoxb-1234567890-abcdefghijklmnop"
+        raw = "Authorization: Bearer " + self._FAKE_XOXB
         assert "xoxb" not in scrub_secrets(raw)
 
     def test_scrub_preserves_non_secrets(self):
@@ -120,10 +127,10 @@ class TestScrubSecrets:
         """RunLogger.write must scrub secrets before persisting."""
         from rein.run_log import RunLogger
         log = RunLogger(str(tmp_path), "block1", 0)
-        log.write("PROMPT", "Using key sk-ant-api03-verysecretkey1234567890 for call")
+        log.write("PROMPT", "Using key " + self._FAKE_SK_ANT + " for call")
         log.close()
         content = (tmp_path / "block1" / "runs" / "run-000.log").read_text()
-        assert "sk-ant-api03" not in content
+        assert "api03" not in content
         assert "[REDACTED]" in content
 
 
