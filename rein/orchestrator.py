@@ -44,6 +44,7 @@ from rein import process_control
 from rein import routing_engine
 from rein import error_handlers
 from rein import run_summary
+from rein import prompt_assembler
 
 logger = get_logger(__name__)
 console = get_console()
@@ -293,107 +294,30 @@ class ProcessManager:
         try:
             # Load specialist instructions
             specialist_text = ""
-
-            # Support both old 'agents' (list) and new 'specialist' (single) format
-            agents = block.get('agents', [])
-            if block.get('specialist'):
-                agents = [block.get('specialist')]
-
-            for agent in agents:
+            for agent in prompt_assembler.extract_block_agents(block):
                 spec = self.load_specialist(agent)
                 specialist_text += f"\n---\n{spec}"
 
-            # Get block prompt
             prompt = block.get('prompt', '')
 
-            # REFACTOR: Substitute task.input.* placeholders first
-            if self.task_input:
-                # Find {{ task.input.fieldname }} placeholders
-                task_input_pattern = r'\{\{\s*task\.input\.(\w+)\s*\}\}'
-                for match in re.finditer(task_input_pattern, prompt):
-                    full_placeholder = match.group(0)
-                    field_name = match.group(1)
-                    if field_name in self.task_input:
-                        value = self.task_input[field_name]
-                        # If value is dict/list, convert to JSON string
-                        if isinstance(value, (dict, list)):
-                            value = json.dumps(value, ensure_ascii=False)
-                        prompt = prompt.replace(full_placeholder, str(value))
-                        self._write_rein_log(f"TASK INPUT SUBSTITUTED | {field_name} | value_len={len(str(value))}")
+            # Substitute task.input.* placeholders
+            prompt = prompt_assembler.substitute_task_inputs(
+                prompt, self.task_input, self._write_rein_log
+            )
 
-            # Substitute input files ({{ file.json }})
-            # Parse prompt to find all {{ file.json }} placeholders (including spaces)
-            # Find placeholders WITH spaces preserved
-            placeholder_matches = re.finditer(r'\{\{([^}]+)\}\}', prompt)
+            # Substitute {{ file.json }} placeholders
+            prompt = prompt_assembler.substitute_file_placeholders(
+                prompt, self.task_dir, self.workflow_dir, self._write_rein_log
+            )
 
-            for match in placeholder_matches:
-                full_placeholder = match.group(0)  # e.g., "{{ filename.json }}"
-                filename = match.group(1).strip()  # e.g., "filename.json"
+            # Safety net: unresolved placeholders
+            prompt_assembler.check_unresolved_inputs(prompt, self.task_input)
 
-                # Try to resolve file path in order of priority
-                file_path = None
-
-                # 1. Block output: {{ block_name.json }} -> task_dir/block_name/outputs/result.json
-                if self.task_dir and filename.endswith('.json'):
-                    block_name = filename[:-5]  # Remove .json
-                    block_output = os.path.join(self.task_dir, block_name, "outputs", "result.json")
-                    if os.path.exists(block_output):
-                        file_path = block_output
-                        self._write_rein_log(f"BLOCK OUTPUT FOUND | {block_name} | {block_output}")
-
-                # 2. Task outputs: task_dir/outputs/filename
-                if not file_path and self.task_dir:
-                    task_output_path = os.path.join(self.task_dir, "outputs", filename)
-                    if os.path.exists(task_output_path):
-                        file_path = task_output_path
-
-                # 3. Workflow directory: workflow_dir/filename (for static data)
-                if not file_path and self.workflow_dir:
-                    workflow_path = os.path.join(self.workflow_dir, filename)
-                    if os.path.exists(workflow_path):
-                        file_path = workflow_path
-
-                if file_path:
-                    try:
-                        with open(file_path) as f:
-                            data = json.load(f)
-                            # Extract just the data content if it's wrapped in envelope
-                            if isinstance(data, dict) and 'result' in data:
-                                result_str = data.get('result', '')
-                                try:
-                                    inner_data = json.loads(result_str)
-                                    data = inner_data
-                                except (json.JSONDecodeError, ValueError, TypeError):
-                                    pass
-                            # Use the FULL placeholder text (with spaces preserved)
-                            prompt = prompt.replace(full_placeholder, json.dumps(data, ensure_ascii=False))
-                            self._write_rein_log(f"FILE SUBSTITUTED | {filename} | from={file_path} | size={len(json.dumps(data))}")
-                    except Exception as e:
-                        self._write_rein_log(f"FILE SUBSTITUTE ERROR | {file_path} | {str(e)}")
-                else:
-                    self._write_rein_log(f"FILE NOT FOUND | {filename} (checked block outputs, task outputs, workflow dir)")
-
-            # Safety net: detect unresolved {{ task.input.* }} placeholders
-            unresolved = re.findall(r'\{\{\s*task\.input\.(\w+)\s*\}\}', prompt)
-            if unresolved:
-                raise ValueError(
-                    f"Unresolved input placeholders: {set(unresolved)}. "
-                    f"Provided inputs: {list(self.task_input.keys())}"
-                )
-
-            # Build final prompt
-            full_prompt = f"""{team_tone}
-
-{specialist_text}
-
----
-
-{prompt}"""
-            # Debug logging
+            full_prompt = prompt_assembler.build_final_prompt(team_tone, specialist_text, prompt)
             self._write_rein_log(f"ASSEMBLED PROMPT | len={len(full_prompt)} | first_200={full_prompt[:200]}")
             return full_prompt
         except ValueError:
-            raise  # Propagate validation errors (unresolved placeholders)
+            raise
         except Exception as e:
             self._write_rein_log(f"PROMPT ASSEMBLY ERROR | {str(e)}")
             return ""
