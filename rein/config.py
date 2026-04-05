@@ -202,3 +202,136 @@ class ConfigLoader:
     def flow_exists(self, flow_name: str) -> bool:
         """Check if flow exists"""
         return os.path.exists(self.get_flow_path(flow_name))
+
+    def run_preflight_validation(
+        self,
+        workflow_file: str,
+        console_info: Optional[Callable[..., None]] = None,
+        console_error: Optional[Callable[..., None]] = None,
+        pkg_logger: Optional[Any] = None,
+    ) -> bool:
+        """Run JSON schema + Pydantic validation on a workflow file.
+
+        Returns True if valid. On failure, prints error and calls sys.exit(1).
+        On validator exception, logs warning and returns True (continue anyway).
+
+        Args:
+            workflow_file: Path to workflow YAML
+            console_info: Optional rich console info callback (for user output)
+            console_error: Optional rich console error callback
+            pkg_logger: Optional logging.Logger for warnings
+        """
+        try:
+            from models.validator import ValidationEngine
+            engine = ValidationEngine()
+            result = engine.validate_workflow(Path(workflow_file), cross_reference_check=True)
+
+            if result.is_valid:
+                self.logger(
+                    f"VALIDATE OK | schema_version={result.metadata.get('schema_version')} "
+                    f"| blocks={result.metadata.get('blocks_count')} "
+                    f"| phases={result.metadata.get('phases')}"
+                )
+                if console_info:
+                    console_info("")
+                    console_info("[VALIDATE] Workflow: %s", result.metadata.get('name'))
+                    console_info("[VALIDATE] Team: %s", result.metadata.get('team'))
+                    console_info("[VALIDATE] Schema Version: %s", result.metadata.get('schema_version'))
+                    console_info("[VALIDATE] Blocks: %s", result.metadata.get('blocks_count'))
+                    console_info("[VALIDATE] Execution Phases: %s", result.metadata.get('phases'))
+                    console_info("[VALIDATE] Flow Control Blocks: %s", result.metadata.get('flow_control_blocks'))
+                    console_info("[VALIDATE] Status: OK\n")
+            else:
+                self.logger(f"VALIDATE FAILED | errors={len(result.errors)} | warnings={len(result.warnings)}")
+                if console_error:
+                    console_error("\n[ERROR] Workflow validation failed!")
+                    console_error(result.format_report())
+                if console_info:
+                    console_info("")
+                import sys as _sys
+                _sys.exit(1)
+
+            if result.warnings and pkg_logger:
+                pkg_logger.warning("%d validation warnings:", len(result.warnings))
+                for warning in result.warnings:
+                    pkg_logger.warning("  - %s: %s", warning.field, warning.message)
+
+            return True
+        except SystemExit:
+            raise
+        except Exception as e:
+            self.logger(f"VALIDATE ERROR | {str(e)}")
+            if pkg_logger:
+                pkg_logger.warning("Validation engine error (continuing anyway): %s", e)
+            return True
+
+    def validate_task_inputs(
+        self,
+        config: Dict[str, Any],
+        task_input: Dict[str, Any],
+        console_error: Optional[Callable[..., None]] = None,
+        pkg_logger: Optional[Any] = None,
+    ) -> None:
+        """Validate task inputs against declarative inputs: section (v2.6.0).
+
+        - If no inputs: section, skip entirely (backward compat).
+        - For each declared required field: check if present in task_input.
+        - For optional fields with default: inject into task_input if missing.
+        - Log warning for extra (undeclared) inputs.
+        - On missing required: print error and sys.exit(1).
+
+        Mutates task_input in place (injects defaults).
+        """
+        inputs_spec = config.get('inputs')
+        if not inputs_spec:
+            return  # Backward compatible
+
+        errors = []
+        declared = set(inputs_spec.keys())
+        provided = set(task_input.keys())
+
+        for field_name, field_config in inputs_spec.items():
+            if isinstance(field_config, dict):
+                is_required = field_config.get('required', True)
+                default_val = field_config.get('default')
+            else:
+                is_required = field_config.required
+                default_val = field_config.default
+
+            if field_name not in task_input:
+                if is_required:
+                    desc = ""
+                    if isinstance(field_config, dict):
+                        desc = field_config.get('description', '')
+                    elif hasattr(field_config, 'description'):
+                        desc = field_config.description or ''
+                    hint = f" ({desc})" if desc else ""
+                    errors.append(f"  - '{field_name}'{hint}")
+                elif default_val is not None:
+                    task_input[field_name] = default_val
+                    self.logger(f"INPUT DEFAULT | {field_name} = {default_val}")
+
+        # Warn about extra (undeclared) inputs
+        extra = provided - declared
+        if extra:
+            self.logger(f"INPUT WARNING | Extra undeclared inputs: {sorted(extra)}")
+            if pkg_logger:
+                pkg_logger.warning("Extra inputs not declared in workflow: %s", sorted(extra))
+
+        if errors:
+            workflow_name = config.get('name', 'unknown')
+            msg = (
+                f"\n[ERROR] Missing required inputs for workflow '{workflow_name}':\n"
+                + "\n".join(errors)
+                + f"\n\nDeclared inputs: {sorted(declared)}"
+                + f"\nProvided inputs: {sorted(provided)}"
+                + "\n\nProvide inputs via --input '{\"field\": \"value\"}' or task.input.json\n"
+            )
+            if console_error:
+                console_error(msg)
+            missing_names = [e.strip().lstrip("- '").split("'")[0] for e in errors]
+            self.logger(f"INPUT VALIDATION FAILED | missing: {missing_names}")
+            import sys as _sys
+            _sys.exit(1)
+
+        self.logger(f"INPUT VALIDATION OK | declared={sorted(declared)} | provided={sorted(provided)}")
