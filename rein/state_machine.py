@@ -45,6 +45,55 @@ def cascade_invalidation(
     return needs_rerun
 
 
+def compute_routing_skip_set(
+    routing: dict,
+    chosen: str,
+    gate_name: str,
+    dependents_map: Dict[str, List[str]],
+) -> Set[str]:
+    """Compute blocks that must be skipped because routing picked a different branch.
+
+    When a gate uses `routing:` with several branches, only the chosen branch
+    should execute. All other named targets (and their exclusive descendants)
+    must be marked skipped so the main loop does not spawn them via depends_on
+    scheduling (fix #1190).
+
+    A descendant of a non-chosen branch is kept alive if it is also a descendant
+    of the chosen branch (i.e., paths reconverge).
+
+    Args:
+        routing: dict mapping signal -> target block name (plus optional _default)
+        chosen: the target block routing selected
+        gate_name: the gate block itself (never skip the gate)
+        dependents_map: reverse dep graph
+
+    Returns:
+        Set of block names that should be marked skipped.
+    """
+    # Collect all routing targets except the chosen one and control markers
+    non_chosen: Set[str] = set()
+    for key, target in routing.items():
+        if not target or target == '_stop' or target == chosen:
+            continue
+        non_chosen.add(target)
+
+    if not non_chosen:
+        return set()
+
+    # Descendants reachable from the chosen branch (these must NOT be skipped
+    # even if they're also reachable from a non-chosen branch -- reconvergence).
+    chosen_reach = cascade_invalidation({chosen}, dependents_map)
+
+    # Descendants of non-chosen branches (including the branches themselves)
+    non_chosen_reach = cascade_invalidation(non_chosen, dependents_map)
+
+    # Skip = non-chosen reach minus chosen reach minus gate itself
+    skip_set = non_chosen_reach - chosen_reach
+    skip_set.discard(gate_name)
+    skip_set.discard(chosen)
+    return skip_set
+
+
 def is_backward_routing(
     block_configs: Dict[str, dict],
     source_block: str,

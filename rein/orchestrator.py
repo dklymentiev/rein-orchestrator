@@ -1006,6 +1006,23 @@ class ProcessManager:
 
                 if cascade:
                     self._write_rein_log(f"ROUTING CASCADE | invalidated: {cascade}")
+
+                # Skip non-chosen routing branches so main loop won't spawn them
+                # via depends_on scheduling (fix #1190).
+                skip_set = state_machine.compute_routing_skip_set(
+                    routing, next_block_name, name, dependents_map
+                )
+                for skipped_name in skip_set:
+                    self.completed.add(skipped_name)
+                    for proc_uid, proc in self.processes.items():
+                        if proc.name == skipped_name and proc.status not in ("running", "done", "failed"):
+                            proc.status = "skipped"
+                            proc.exit_code = 0
+                            self.state.save_process(proc)
+                            break
+                if skip_set:
+                    self._write_rein_log(f"ROUTING SKIP BRANCHES | {name} -> {next_block_name} | skipped={skip_set}")
+
                 self.next_queue.append((next_block_name, {}))
                 if is_backward:
                     routing_went_backward = True

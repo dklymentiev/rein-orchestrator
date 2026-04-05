@@ -148,25 +148,20 @@ class TestGatePass:
         code, stdout, run_dir = _run_fixture_flow("gate-pass")
         assert code == 0
 
-    def test_fix_may_run_but_finish_executed(self):
-        """Current behavior: fix may run in parallel due to depends_on race with routing.
-        But finish must execute (routing _default target).
-        KNOWN LIMITATION: routing target conflict with depends_on scheduling.
-        See rein bug #1186 (decomposition will fix this)."""
+    def test_fix_is_skipped_when_gate_routes_to_finish(self):
+        """After fix #1190: non-chosen routing branches are explicitly skipped.
+        Gate routes to _default=finish, so fix must NOT execute."""
         code, stdout, run_dir = _run_fixture_flow("gate-pass")
         states = _get_block_states(run_dir)
         assert states["finish"]["status"] == "done"
-        # fix may be done (race) or waiting -- both acceptable for now
-        assert states["fix"]["status"] in ("done", "waiting")
+        assert states["fix"]["status"] == "skipped"
 
-    def test_finish_may_be_stuck_due_to_routing_race(self):
-        """KNOWN: finish may be 'waiting' due to routing/depends_on race (#1190).
-        This test documents current limitation until #1186 decomposition fixes it.
-        """
+    def test_finish_executes_under_routing_default(self):
+        """After fix #1190: finish (routing _default target) runs to completion
+        without being blocked by depends_on race with the fix branch."""
         code, stdout, run_dir = _run_fixture_flow("gate-pass")
         states = _get_block_states(run_dir)
-        # Accept either: routing worked and finish is done, OR race happened and finish stuck
-        assert states["finish"]["status"] in ("done", "waiting")
+        assert states["finish"]["status"] == "done"
 
 
 # ============================================================
