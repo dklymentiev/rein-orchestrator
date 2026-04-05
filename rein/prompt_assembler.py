@@ -45,24 +45,32 @@ def resolve_file_placeholder(
     """Resolve {{ filename }} placeholder to a file path.
 
     Priority order:
-    1. Block output: task_dir/<block>/outputs/result.json (if filename = "block.json")
-    2. Task outputs: task_dir/outputs/filename
-    3. Workflow directory: workflow_dir/filename (static data)
+    1. Block output by block name: task_dir/<block>/outputs/result.json (if filename = "block.json")
+    2. save_as alias: task_dir/*/outputs/<filename> (custom save_as filename from any block)
+    3. Task outputs: task_dir/outputs/filename
+    4. Workflow directory: workflow_dir/filename (static data)
     """
-    # 1. Block output
+    # 1. Block output by name (filename = "block_name.json")
     if task_dir and filename.endswith('.json'):
         block_name = filename[:-5]
         block_output = os.path.join(task_dir, block_name, "outputs", "result.json")
         if os.path.exists(block_output):
             return block_output
 
-    # 2. Task outputs
+    # 2. save_as alias: search across all block output dirs (fix #1185)
+    if task_dir and os.path.isdir(task_dir):
+        for entry in os.listdir(task_dir):
+            candidate = os.path.join(task_dir, entry, "outputs", filename)
+            if os.path.isfile(candidate):
+                return candidate
+
+    # 3. Task outputs
     if task_dir:
         task_output_path = os.path.join(task_dir, "outputs", filename)
         if os.path.exists(task_output_path):
             return task_output_path
 
-    # 3. Workflow directory
+    # 4. Workflow directory
     if workflow_dir:
         workflow_path = os.path.join(workflow_dir, filename)
         if os.path.exists(workflow_path):

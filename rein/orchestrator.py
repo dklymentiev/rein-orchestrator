@@ -11,6 +11,7 @@ import json
 import subprocess
 import time
 import signal
+import shutil
 import threading
 import re
 import uuid
@@ -848,6 +849,17 @@ class ProcessManager:
             if logic_config.get('validate'):
                 if not self._run_logic(logic_config['validate'], save_file, workflow_dir, input_dir, block, linux_user=agent_linux_user, run_count=process.run_count):
                     raise Exception(f"Validate-phase logic failed: {logic_config['validate']}")
+
+            # save_as: write an alias copy of result.json under a custom filename
+            # so other blocks can reference it as {{ custom_name.json }} (fix #1185).
+            save_as = block.get('save_as')
+            if save_as and os.path.exists(save_file):
+                try:
+                    alias_path = os.path.join(output_dir, save_as)
+                    shutil.copy2(save_file, alias_path)
+                    self._write_rein_log(f"SAVE_AS | {name} | alias={alias_path}")
+                except Exception as e:
+                    self._write_rein_log(f"SAVE_AS ERROR | {name} | {str(e)}")
 
             process.progress = 100
             process.status = "done"
