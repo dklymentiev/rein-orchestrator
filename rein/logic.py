@@ -21,7 +21,7 @@ class LogicRunner:
         task_id: str = "",
         task_input: Optional[Dict] = None,
         logger: Optional[Callable[[str], None]] = None,
-        timeout: int = 480  # 8 minutes default
+        timeout: int = 480,  # 8 minutes default
     ):
         self.task_dir = task_dir
         self.workflow_dir = workflow_dir
@@ -59,7 +59,12 @@ class LogicRunner:
             True if script succeeded, False otherwise
         """
         try:
-            # Resolve relative path
+            # Resolve relative path against workflow_dir. Containment is
+            # not enforced here -- logic scripts are trusted per the
+            # documented trust model (see SECURITY.md "Workflow YAML is
+            # trusted input"). A workflow that references ../lib/helper.py
+            # or ../../shared/util.sh is an accepted pattern for sharing
+            # helpers between flows under the same agents_dir.
             full_path = os.path.join(self.workflow_dir, script_path)
 
             if not os.path.exists(full_path):

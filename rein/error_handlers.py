@@ -27,9 +27,27 @@ def _run_handler_script(
     handler_kind: 'logic.error' or 'on_error' for log messages.
     """
     try:
+        # Handler paths are strictly relative to workflow_dir. The previous
+        # implementation had an explicit "try as absolute" fallback after a
+        # failed relative lookup, AND Python's os.path.join silently does
+        # the same thing when its second argument is absolute. An absolute
+        # script_path_rel is therefore rejected explicitly so a workflow
+        # cannot designate /bin/ls or /tmp/attacker.sh as an error handler
+        # (SEC-06).
+        if os.path.isabs(script_path_rel):
+            log_fn(
+                f"ERROR HANDLER REJECTED | {block_name} | {handler_kind} | "
+                f"absolute paths are not allowed: {script_path_rel}"
+            )
+            return False
+
         script_path = os.path.join(workflow_dir, script_path_rel)
         if not os.path.isfile(script_path):
-            script_path = script_path_rel  # try as absolute
+            log_fn(
+                f"ERROR HANDLER REJECTED | {block_name} | {handler_kind} | "
+                f"not found relative to workflow_dir: {script_path_rel}"
+            )
+            return False
 
         cmd = ["bash", script_path] if script_path.endswith(".sh") else ["python3", script_path]
         result = subprocess.run(

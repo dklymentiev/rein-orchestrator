@@ -2,10 +2,17 @@
 Rein Config Loader - Load workflows, teams, specialists, and env files
 """
 import os
+import re
 from pathlib import Path
 from typing import Optional, Callable, Dict, Any
 
 import yaml
+
+
+# Flow names must be safe filesystem components: alphanumerics, dash,
+# underscore, dot. No slashes, no leading dots (HIGH-004). Applied to
+# values sourced from task.yaml or external callers before any path join.
+SAFE_FLOW_NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
 
 # Default agents directory - overridden by --agents-dir CLI arg or REIN_AGENTS_DIR env
@@ -192,16 +199,26 @@ class ConfigLoader:
         Get full path to flow YAML file
 
         Args:
-            flow_name: Name of the flow
+            flow_name: Name of the flow. Must match SAFE_FLOW_NAME regex
+                -- alphanumerics, dots, dashes, underscores only, no
+                leading dot. Rejects path traversal (HIGH-004).
 
         Returns:
             Full path to flow YAML file
+
+        Raises:
+            ValueError: if flow_name contains unsafe characters
         """
+        if not flow_name or not SAFE_FLOW_NAME.match(flow_name):
+            raise ValueError(f"Invalid flow name: {flow_name!r}")
         return os.path.join(self.agents_dir, "flows", flow_name, f"{flow_name}.yaml")
 
     def flow_exists(self, flow_name: str) -> bool:
-        """Check if flow exists"""
-        return os.path.exists(self.get_flow_path(flow_name))
+        """Check if flow exists. Returns False for unsafe flow names."""
+        try:
+            return os.path.exists(self.get_flow_path(flow_name))
+        except ValueError:
+            return False
 
     def run_preflight_validation(
         self,

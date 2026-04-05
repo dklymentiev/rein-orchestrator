@@ -281,8 +281,16 @@ def _handle_flow(args):
     """Handle --flow mode: create task and run flow."""
     from rein.orchestrator import ProcessManager
     from rein.tasks import load_config
+    from rein.config import SAFE_FLOW_NAME
 
     flow_name = args.flow
+    # HIGH-005: validate flow_name as a safe filesystem component before
+    # joining into agents_dir. Matches the SAFE_TASK_NAME pattern enforced
+    # by the daemon for task IDs.
+    if not flow_name or not SAFE_FLOW_NAME.match(flow_name):
+        print(f"[ERROR] Invalid flow name: {flow_name!r}")
+        sys.exit(1)
+
     agents_dir = args.agents_dir
     flow_path = os.path.join(agents_dir, 'flows', flow_name, f'{flow_name}.yaml')
 
@@ -364,8 +372,18 @@ def _handle_task(args):
     """Handle --task mode: load flow from task.yaml."""
     from rein.orchestrator import ProcessManager
     from rein.tasks import load_config
+    from rein.config import SAFE_FLOW_NAME
 
-    task_dir = args.task.rstrip('/')
+    # HIGH-005: containment-check task_dir against agents_dir/tasks. Same
+    # pattern as _handle_status. Prevents --task ../../../etc from being
+    # accepted as a valid task location.
+    agents_dir = args.agents_dir
+    tasks_root = os.path.realpath(os.path.join(agents_dir, 'tasks'))
+    task_dir = os.path.realpath(args.task.rstrip('/'))
+    if not (task_dir == tasks_root or task_dir.startswith(tasks_root + os.sep)):
+        print(f"[ERROR] Task directory escapes tasks root: {args.task}")
+        sys.exit(1)
+
     task_yaml_path = os.path.join(task_dir, 'task.yaml')
 
     if not os.path.exists(task_yaml_path):
@@ -380,7 +398,13 @@ def _handle_task(args):
         print("[ERROR] Task must specify 'flow' field")
         sys.exit(1)
 
-    agents_dir = args.agents_dir
+    # HIGH-004: validate flow_name from task.yaml before joining into
+    # agents_dir. A hostile task.yaml could otherwise specify
+    # flow: "../../../etc/passwd" and load arbitrary YAML from the host.
+    if not SAFE_FLOW_NAME.match(flow_name):
+        print(f"[ERROR] Invalid flow name in task.yaml: {flow_name!r}")
+        sys.exit(1)
+
     flow_path = os.path.join(agents_dir, 'flows', flow_name, f'{flow_name}.yaml')
     if not os.path.exists(flow_path):
         print(f"[ERROR] Flow not found: {flow_path}")

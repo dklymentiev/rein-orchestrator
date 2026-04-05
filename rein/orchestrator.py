@@ -38,7 +38,7 @@ from rein.agent_config import load_agent_config, validate_forbidden_behavior, Ag
 from rein.run_log import RunLogger
 from rein.tasks import update_task_status as _update_task_status
 from rein.tasks import save_task_to_memory as _save_task_to_memory
-from rein.log import get_logger, get_console
+from rein.log import get_logger, get_console, scrub_secrets
 from rein import state_machine
 from rein import block_resolver
 from rein import process_control
@@ -163,17 +163,10 @@ class ProcessManager:
             }
             self._write_rein_log(f"REIN STARTED | run_id={timestamp} | db={self.db_path} | max_parallel={max_parallel}")
 
-    # Patterns for sensitive data scrubbing in logs
-    _SECRET_PATTERNS = re.compile(
-        r'(sk-[a-zA-Z0-9]{20,}|anthropic-[a-zA-Z0-9]{20,}|'
-        r'ANTHROPIC_API_KEY=[^\s]+|OPENAI_API_KEY=[^\s]+|'
-        r'OPENROUTER_API_KEY=[^\s]+|Bearer\s+[a-zA-Z0-9._-]{20,})'
-    )
-
     def _write_rein_log(self, message):
-        """Write to rein's own log file (with sensitive data scrubbing)"""
+        """Write to rein's own log file with shared credential scrubbing (HIGH-003)."""
         try:
-            clean_message = self._SECRET_PATTERNS.sub('[REDACTED]', str(message))
+            clean_message = scrub_secrets(str(message))
             with open(self.rein_log_file, 'a') as f:
                 timestamp = datetime.now().isoformat()
                 f.write(f"{timestamp} | {clean_message}\n")
@@ -410,7 +403,7 @@ class ProcessManager:
             workflow_dir=workflow_dir,
             task_id=self.task_id,
             task_input=self.task_input,
-            logger=self._write_rein_log
+            logger=self._write_rein_log,
         )
 
         # Block-level timeout override (v3.3 feature)
@@ -825,11 +818,13 @@ class ProcessManager:
 
                     process.progress = 75
 
-                # Save result from Claude (only if not custom - custom script saves its own result)
+                # Save result from Claude (only if not custom - custom script saves its own result).
+                # Scrub credentials from result before persistence so a leaked
+                # task directory never exposes provider API keys (HIGH-003).
                 block_usage = self._block_usage.get(name)
                 save_data = {
                     "stage": name,
-                    "result": result,
+                    "result": scrub_secrets(result) if isinstance(result, str) else result,
                     "timestamp": datetime.now().isoformat()
                 }
                 if block_usage:

@@ -49,10 +49,19 @@ A `workflow.yaml` file is treated the same as a CI configuration or a
 shell script: whoever writes it is assumed to have the same privileges as
 the Rein process itself. This means:
 
-- `logic.custom`, `logic.pre`, `logic.post`, `logic.validate`, and
-  `logic.error` scripts run with full process privileges. Sandboxing is
-  **not** applied to these hooks.
+- `logic.custom`, `logic.pre`, `logic.post`, and `logic.validate` scripts
+  run with full process privileges. Sandboxing is **not** applied to
+  these hooks, and script paths are **not** containment-checked against
+  the workflow directory. A workflow may legitimately reference
+  `../lib/helper.py` or `../../shared/util.sh` to share helpers between
+  flows under the same `agents_dir`. This covers the SEC-05 path-traversal
+  finding from pre-release audit #3.
 - The legacy `command:` block field executes its argument as a subprocess.
+- `logic.error` and the global `on_error` hook have a narrower contract:
+  paths must be **relative** to the workflow directory. Absolute paths
+  are explicitly rejected (SEC-06) because the previous implicit
+  fallback could turn a mis-configured handler into an invocation of
+  an unrelated system binary.
 - Consequence: do not accept workflow YAML from untrusted sources. Treat
   the `agents/flows/` directory with the same access controls as your
   application source tree. For multi-tenant deployments, use OS-level
