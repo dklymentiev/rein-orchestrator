@@ -124,14 +124,33 @@ class TestListSpecialists:
             # First non-header line should be the summary
             assert not spec["summary"].startswith("#")
 
-    def test_empty_dir(self, tmp_path):
+    def test_empty_dir(self, tmp_path, monkeypatch):
         (tmp_path / "specialists").mkdir()
-        result = json.loads(list_specialists(agents_dir=str(tmp_path)))
+        monkeypatch.setenv("REIN_AGENTS_DIR", str(tmp_path))
+        result = json.loads(list_specialists())
         assert result["count"] == 0
 
-    def test_missing_dir(self, tmp_path):
-        result = json.loads(list_specialists(agents_dir=str(tmp_path)))
+    def test_missing_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("REIN_AGENTS_DIR", str(tmp_path))
+        result = json.loads(list_specialists())
         assert "error" in result
+
+    def test_caller_agents_dir_is_ignored(self, agents_dir, tmp_path):
+        """SEC-04: caller-supplied agents_dir must NOT break out of REIN_AGENTS_DIR.
+
+        The fixture pins REIN_AGENTS_DIR to a dir with 2 specialists. A malicious
+        caller passing agents_dir=tmp_path (which has no specialists) must still
+        get the fixture's specialists, not be redirected to tmp_path.
+        """
+        evil_dir = tmp_path / "evil"
+        evil_dir.mkdir()
+        (evil_dir / "specialists").mkdir()
+        (evil_dir / "specialists" / "leaked.md").write_text("should not be reachable")
+        result = json.loads(list_specialists(agents_dir=str(evil_dir)))
+        # Must see the fixture's specialists, not leaked.md
+        names = [s["name"] for s in result["specialists"]]
+        assert "leaked" not in names
+        assert "researcher" in names and "writer" in names
 
 
 # ---------------------------------------------------------------------------
@@ -147,9 +166,23 @@ class TestListTeams:
         assert "researcher" in team["specialists"]
         assert "writer" in team["specialists"]
 
-    def test_missing_dir(self, tmp_path):
-        result = json.loads(list_teams(agents_dir=str(tmp_path)))
+    def test_missing_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("REIN_AGENTS_DIR", str(tmp_path))
+        result = json.loads(list_teams())
         assert "error" in result
+
+    def test_caller_agents_dir_is_ignored(self, agents_dir, tmp_path):
+        """SEC-04: caller-supplied agents_dir must NOT break out of REIN_AGENTS_DIR."""
+        evil_dir = tmp_path / "evil"
+        evil_dir.mkdir()
+        (evil_dir / "teams").mkdir()
+        (evil_dir / "teams" / "leaked-team.yaml").write_text(
+            "name: leaked\nspecialists: [x]\n"
+        )
+        result = json.loads(list_teams(agents_dir=str(evil_dir)))
+        names = [t["name"] for t in result["teams"]]
+        assert "leaked-team" not in names
+        assert "test-team" in names
 
 
 # ---------------------------------------------------------------------------

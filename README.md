@@ -164,9 +164,12 @@ rein --agents-dir ./agents workflow.yaml --no-ui
 pip install rein-ai
 
 # With specific provider SDK
-pip install rein-ai[anthropic]    # Claude
-pip install rein-ai[openai]       # GPT-4o
-pip install rein-ai[all]          # All provider SDKs
+pip install rein-ai[anthropic]    # Claude (anthropic SDK)
+pip install rein-ai[openai]       # GPT-4o (openai SDK)
+pip install rein-ai[all]          # Both SDK-based providers (anthropic + openai)
+
+# Ollama and OpenRouter providers use the `requests` library that is
+# already part of the base install -- no extras needed.
 
 # For daemon mode (WebSocket support)
 pip install rein-ai[daemon]
