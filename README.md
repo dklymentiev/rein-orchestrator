@@ -5,6 +5,8 @@
 
 # Rein
 
+![Rein Flow Board](https://github.com/dklymentiev/rein-orchestrator/releases/download/v3.3.2/rein-demo.gif)
+
 **Give a complex task to a team of AI agents instead of just one.**
 
 Instead of writing a single massive prompt, you break work into steps and assign each step to a specialist -- a researcher, a writer, an editor. Each one gets the previous agent's output automatically. They can work in parallel, loop back for revisions, and make decisions based on results.
