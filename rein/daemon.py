@@ -422,7 +422,7 @@ class PidfileLock:
         return False
 
 
-def run_daemon(agents_dir: str, interval: int = 5, max_workflows: int = 3, ws_port: int = 8765, no_ui: bool = True):
+def run_daemon(agents_dir: str, interval: int = 2, max_workflows: int = 3, ws_port: int = 8765, no_ui: bool = True):
     """
     Run Rein as daemon with WebSocket server.
 

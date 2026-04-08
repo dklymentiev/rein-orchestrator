@@ -113,7 +113,7 @@ class WorkflowConfig(BaseModel):
     default_max_runs: Optional[int] = Field(None, ge=1, le=100, description="Default max_runs for blocks without explicit max_runs")
     inputs: Optional[Dict[str, InputFieldConfig]] = None
     on_error: Optional[str] = Field(None, description="Global error handler script path (v3.3)")
-    blocks: List[BlockConfig] = Field(..., min_length=1, max_length=100)
+    blocks: List[BlockConfig] = Field(..., min_length=1, max_length=300)
 
     model_config = ConfigDict(extra="ignore")
 
@@ -303,11 +303,23 @@ class WorkflowConfig(BaseModel):
         """
         block_dict = {block.name: block for block in self.blocks}
 
+        # Memoized depth() -- without the cache, a workflow with shared
+        # ancestors and fan-in merges (e.g. 4 parsers -> classify) has
+        # exponential behavior because the same node is re-walked at
+        # every merge. Memoization turns it into O(V+E).
+        depth_cache: Dict[str, int] = {}
+
         def depth(name: str) -> int:
+            cached = depth_cache.get(name)
+            if cached is not None:
+                return cached
             block = block_dict[name]
             if not block.depends_on:
+                depth_cache[name] = 1
                 return 1
-            return 1 + max(depth(dep) for dep in block.depends_on)
+            result = 1 + max(depth(dep) for dep in block.depends_on)
+            depth_cache[name] = result
+            return result
 
         depths = {block.name: depth(block.name) for block in self.blocks}
         max_depth = max(depths.values())

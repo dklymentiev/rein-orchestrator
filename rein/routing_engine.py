@@ -30,9 +30,17 @@ def read_result_text(save_file: str) -> str:
 def extract_verdict_signals(result_text: str) -> Set[str]:
     """Extract routing signals from result text.
 
-    Looks for lines starting with 'VERDICT:' and maps verdict values to signals:
-    - PASS, APPROVED -> 'needs-review'
-    - REVISE         -> 'revise'
+    Looks for lines starting with 'VERDICT:' and maps verdict values to signals.
+
+    Legacy aliases (preserved for backward compatibility):
+        PASS, APPROVED -> 'needs-review'
+        REVISE         -> 'revise'
+
+    The raw verdict value is also emitted as a lowercase signal so workflows
+    can define arbitrary custom signals:
+        VERDICT: bounced  -> 'bounced'
+        VERDICT: reshoot  -> 'reshoot'
+        VERDICT: retry    -> 'retry'
 
     Returns a set of matched signal names.
     """
@@ -41,10 +49,15 @@ def extract_verdict_signals(result_text: str) -> Set[str]:
         line = line.strip()
         if line.startswith('VERDICT:'):
             verdict = line.split(':', 1)[1].strip()
+            if not verdict:
+                continue
+            # Legacy aliases
             if verdict == 'PASS' or verdict == 'APPROVED':
                 signals.add('needs-review')
             elif verdict == 'REVISE':
                 signals.add('revise')
+            # Always emit the raw verdict as a lowercase custom signal
+            signals.add(verdict.lower())
     return signals
 
 
