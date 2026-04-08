@@ -684,3 +684,182 @@ class TestGetRunningTasks:
 
         result = get_running_tasks(tasks_root=tasks_root)
         assert result == ["task-single-run"]
+
+
+# ============================================================
+# TASK #1179: WebSocket broadcasting and event parsing
+# ============================================================
+
+class TestEventParsing:
+    """Tests for parsing BLOCK_START/BLOCK_DONE/TASK_DONE markers from stdout.
+
+    This replicates the parsing logic in daemon.monitor_subprocess() without
+    requiring async/websocket infrastructure.
+    """
+
+    def _parse_line(self, line_str: str, task_id: str):
+        """Replica of daemon's parsing logic"""
+        if "[BLOCK_START]" in line_str:
+            parts = line_str.strip().split()
+            event = {"type": "block_start", "task_id": task_id}
+            for p in parts[1:]:
+                if "=" in p:
+                    k, v = p.split("=", 1)
+                    event[k] = v
+            return event
+        elif "[BLOCK_DONE]" in line_str:
+            parts = line_str.strip().split()
+            event = {"type": "block_done", "task_id": task_id}
+            for p in parts[1:]:
+                if "=" in p:
+                    k, v = p.split("=", 1)
+                    event[k] = v
+            return event
+        elif "[TASK_DONE]" in line_str:
+            parts = line_str.strip().split()
+            event = {"type": "task_done", "task_id": task_id}
+            for p in parts[1:]:
+                if "=" in p:
+                    k, v = p.split("=", 1)
+                    event[k] = v
+            return event
+        return None
+
+    def test_parse_block_start(self):
+        """Parse BLOCK_START marker into event dict"""
+        line = "[BLOCK_START] task=task-001 block=step_a\n"
+        event = self._parse_line(line, "task-001")
+        assert event["type"] == "block_start"
+        assert event["task_id"] == "task-001"
+        assert event["block"] == "step_a"
+
+    def test_parse_block_done(self):
+        """Parse BLOCK_DONE marker into event dict"""
+        line = "[BLOCK_DONE] task=task-001 block=step_b\n"
+        event = self._parse_line(line, "task-001")
+        assert event["type"] == "block_done"
+        assert event["block"] == "step_b"
+
+    def test_parse_task_done(self):
+        """Parse TASK_DONE marker into event dict"""
+        line = "[TASK_DONE] task=task-001\n"
+        event = self._parse_line(line, "task-001")
+        assert event["type"] == "task_done"
+        assert event["task_id"] == "task-001"
+
+    def test_parse_non_marker_line(self):
+        """Lines without markers return None"""
+        assert self._parse_line("Some random log line\n", "task-001") is None
+        assert self._parse_line("[VALIDATE] Status: OK\n", "task-001") is None
+
+    def test_parse_with_multiple_fields(self):
+        """Parse marker with multiple key=value fields"""
+        line = "[BLOCK_START] task=t1 block=analyze phase=3 status=running\n"
+        event = self._parse_line(line, "t1")
+        assert event["block"] == "analyze"
+        assert event["phase"] == "3"
+        assert event["status"] == "running"
+
+
+class TestWsBroadcast:
+    """Tests for ws_broadcast logic (disconnect handling)"""
+
+    def test_broadcast_empty_clients_noop(self):
+        """Broadcasting with no clients should return without error"""
+        import asyncio
+        from rein.daemon import ws_broadcast, WS_CLIENTS
+        WS_CLIENTS.clear()
+
+        async def run():
+            await ws_broadcast({"type": "test"})
+
+        asyncio.run(run())  # should not raise
+
+    def test_disconnected_clients_removed(self):
+        """Clients that raise on send should be removed from WS_CLIENTS"""
+        import asyncio
+        from rein.daemon import ws_broadcast, WS_CLIENTS
+
+        class MockClient:
+            def __init__(self, should_fail=False):
+                self.should_fail = should_fail
+                self.received = []
+
+            async def send(self, message):
+                if self.should_fail:
+                    raise ConnectionError("disconnected")
+                self.received.append(message)
+
+        WS_CLIENTS.clear()
+        good = MockClient(should_fail=False)
+        bad = MockClient(should_fail=True)
+        WS_CLIENTS.add(good)
+        WS_CLIENTS.add(bad)
+
+        async def run():
+            await ws_broadcast({"type": "test", "data": "hello"})
+
+        asyncio.run(run())
+
+        assert good in WS_CLIENTS
+        assert bad not in WS_CLIENTS
+        assert len(good.received) == 1
+        WS_CLIENTS.clear()
+
+    def test_multiple_clients_all_receive(self):
+        """All connected clients receive the same message"""
+        import asyncio
+        from rein.daemon import ws_broadcast, WS_CLIENTS
+
+        class MockClient:
+            def __init__(self):
+                self.received = []
+            async def send(self, message):
+                self.received.append(message)
+
+        WS_CLIENTS.clear()
+        clients = [MockClient() for _ in range(3)]
+        for c in clients:
+            WS_CLIENTS.add(c)
+
+        async def run():
+            await ws_broadcast({"type": "block_done", "block": "x"})
+
+        asyncio.run(run())
+
+        for c in clients:
+            assert len(c.received) == 1
+            import json as _json
+            parsed = _json.loads(c.received[0])
+            assert parsed["type"] == "block_done"
+            assert parsed["block"] == "x"
+        WS_CLIENTS.clear()
+
+
+class TestSafeTaskName:
+    """Tests for task name validation (prevents path traversal in WS subscribe)"""
+
+    def test_valid_task_names_match(self):
+        """Valid task names should match SAFE_TASK_NAME pattern"""
+        from rein.daemon import SAFE_TASK_NAME
+        valid = [
+            "task-20260404-120045-process-demo",
+            "task-001",
+            "task-abc_123",
+            "my-task-1",
+        ]
+        for name in valid:
+            assert SAFE_TASK_NAME.match(name), f"Should match: {name}"
+
+    def test_invalid_task_names_rejected(self):
+        """Unsafe task names should NOT match"""
+        from rein.daemon import SAFE_TASK_NAME
+        invalid = [
+            "../etc/passwd",
+            "task/../../evil",
+            "task with spaces",
+            "task;rm -rf",
+            "task\x00null",
+        ]
+        for name in invalid:
+            assert not SAFE_TASK_NAME.match(name), f"Should NOT match: {name}"

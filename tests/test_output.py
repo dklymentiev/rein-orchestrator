@@ -205,3 +205,121 @@ That's all.'''
             assert len(logs) == 1
             assert "READABLE OUTPUT" in logs[0]
             assert "logged-block" in logs[0]
+
+
+# ============================================================
+# TASK #1176: readable_outputs and metadata
+# ============================================================
+
+class TestReadableOutputIntegration:
+    """Tests for readable_outputs feature integration"""
+
+    def test_md_file_created_next_to_json(self):
+        """save_readable_output creates .md file next to .json"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_file = os.path.join(tmpdir, "block1", "outputs", "result.json")
+            os.makedirs(os.path.dirname(json_file))
+
+            save_readable_output(json_file, "block1", "Some text result")
+
+            md_file = os.path.join(tmpdir, "block1", "outputs", "result.md")
+            assert os.path.exists(md_file)
+
+    def test_md_contains_block_name_as_header(self):
+        """Generated .md should have block name as H1 header"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_file = os.path.join(tmpdir, "result.json")
+            save_readable_output(json_file, "my_analyzer", "Analysis complete")
+
+            md_file = os.path.join(tmpdir, "result.md")
+            with open(md_file) as f:
+                content = f.read()
+            assert content.startswith("# my_analyzer")
+
+    def test_md_contains_timestamp(self):
+        """Generated .md should contain a timestamp"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_file = os.path.join(tmpdir, "result.json")
+            save_readable_output(json_file, "block", "text")
+
+            md_file = os.path.join(tmpdir, "result.md")
+            with open(md_file) as f:
+                content = f.read()
+            # Timestamp format: YYYY-MM-DD HH:MM:SS wrapped in *
+            import re
+            assert re.search(r'\*\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\*', content)
+
+    def test_md_handles_embedded_json_block(self):
+        """Markdown with ```json code blocks should be parsed and formatted"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_file = os.path.join(tmpdir, "result.json")
+            content = 'Summary text\n\n```json\n{"key": "value"}\n```\n\nAfter text'
+            save_readable_output(json_file, "block", content)
+
+            md_file = os.path.join(tmpdir, "result.md")
+            with open(md_file) as f:
+                md = f.read()
+            assert "Summary text" in md
+            assert "After text" in md
+
+    def test_md_handles_plain_json_string(self):
+        """Pure JSON string should be formatted as markdown"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            json_file = os.path.join(tmpdir, "result.json")
+            save_readable_output(json_file, "block", '{"status": "ok", "count": 42}')
+
+            md_file = os.path.join(tmpdir, "result.md")
+            with open(md_file) as f:
+                md = f.read()
+            # Keys become H2 headers (capitalized)
+            assert "Status" in md or "status" in md
+            assert "42" in md
+
+
+class TestMetadata:
+    """Tests for workflow metadata handling"""
+
+    def test_metadata_in_pydantic_config(self):
+        """Workflow metadata field should be accepted"""
+        from models.workflow import WorkflowConfig
+        data = {
+            "schema_version": "3.3.0",
+            "name": "test-flow",
+            "team": "team-test",
+            "metadata": {
+                "version": "1.0.0",
+                "author": "tester",
+                "created": "2026-01-15T10:00:00Z"
+            },
+            "blocks": [{"name": "step", "prompt": "do"}]
+        }
+        w = WorkflowConfig(**data)
+        assert w.metadata is not None
+        assert w.metadata["version"] == "1.0.0"
+        assert w.metadata["author"] == "tester"
+
+    def test_metadata_optional(self):
+        """Metadata should be optional (absent = None)"""
+        from models.workflow import WorkflowConfig
+        data = {
+            "schema_version": "3.3.0",
+            "name": "no-meta",
+            "team": "team-test",
+            "blocks": [{"name": "step", "prompt": "do"}]
+        }
+        w = WorkflowConfig(**data)
+        assert w.metadata is None
+
+    def test_metadata_arbitrary_fields(self):
+        """Metadata should accept arbitrary extra fields"""
+        from models.workflow import WorkflowConfig
+        data = {
+            "schema_version": "3.3.0",
+            "name": "test",
+            "team": "team-x",
+            "metadata": {"custom_field_1": "value", "arbitrary": 123},
+            "blocks": [{"name": "s", "prompt": "x"}]
+        }
+        w = WorkflowConfig(**data)
+        assert w.metadata["custom_field_1"] == "value"
+        assert w.metadata["arbitrary"] == 123

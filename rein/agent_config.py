@@ -6,6 +6,7 @@ configuration from {agents_dir}/{agent_name}/agent.yaml. This provides
 model overrides, security constraints, and OS user context.
 """
 import os
+import re
 import yaml
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
@@ -17,6 +18,13 @@ logger = get_logger(__name__)
 # No fallback paths. Agent resolution requires explicit agents_dir parameter.
 # If not provided, only REIN_AGENTS_DIR env var is checked.
 AGENT_SEARCH_PATHS = []
+
+# Agent references must be safe filesystem components (HIGH-007).
+# Alphanumerics, dash, underscore, dot; no leading dot; no slashes;
+# no path traversal segments. This is a strict subset of POSIX path
+# characters to match SAFE_FLOW_NAME / SAFE_TASK_NAME conventions
+# elsewhere in the codebase.
+SAFE_AGENT_REF = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
 
 @dataclass
@@ -116,15 +124,15 @@ def validate_forbidden_behavior(agent_config: AgentConfig, block_config: dict) -
 
 
 def _resolve_agent_yaml(agent_ref: str, agents_dir: str = None) -> Optional[str]:
-    """Resolve agent reference to agent.yaml path."""
-    # Absolute path
-    if agent_ref and os.path.isabs(agent_ref):
-        yaml_path = os.path.join(agent_ref, "agent.yaml")
-        if os.path.isfile(yaml_path):
-            return yaml_path
-        # Maybe agent_ref IS the yaml file
-        if agent_ref.endswith(".yaml") and os.path.isfile(agent_ref):
-            return agent_ref
+    """Resolve agent reference to agent.yaml path.
+
+    Only accepts SAFE_AGENT_REF names (alphanumerics, dash, underscore,
+    dot; no leading dot; no slashes). Absolute paths and path traversal
+    segments are rejected (HIGH-007). This closes the vector where a
+    workflow could specify agent: '../../../etc' to escape agents_dir.
+    """
+    if not agent_ref or not SAFE_AGENT_REF.match(agent_ref):
+        logger.warning("rejected unsafe agent_ref: %r", agent_ref)
         return None
 
     # Relative to agents_dir

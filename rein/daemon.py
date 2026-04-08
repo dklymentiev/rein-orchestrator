@@ -11,7 +11,11 @@ import re
 import yaml
 import sqlite3
 import asyncio
-from typing import Set, Dict
+import atexit
+import errno
+import fcntl
+import signal
+from typing import Set, Dict, Optional
 
 from rein.config import DEFAULT_AGENTS_DIR
 from rein.log import get_logger
@@ -336,12 +340,112 @@ async def run_daemon_async(agents_dir: str, interval: int, max_workflows: int, w
         proc.terminate()
 
 
-def run_daemon(agents_dir: str, interval: int = 5, max_workflows: int = 3, ws_port: int = 8765, no_ui: bool = True):
+class PidfileLock:
+    """Exclusive pidfile lock for the Rein daemon (#1164).
+
+    Prevents accidental double-daemon by holding an fcntl advisory lock on
+    <agents_dir>/state/rein-daemon.pid. On acquire, writes the current PID.
+    On release (atexit, SIGTERM, SIGINT, or normal shutdown), removes the file.
+
+    Usage:
+        with PidfileLock(agents_dir) as lock:
+            run_daemon_work()
+    """
+    def __init__(self, agents_dir: str):
+        state_dir = os.path.join(agents_dir, "state")
+        os.makedirs(state_dir, exist_ok=True)
+        self.path = os.path.join(state_dir, "rein-daemon.pid")
+        self._fd: Optional[int] = None
+        self._acquired = False
+
+    def acquire(self) -> None:
+        """Acquire the lock. Raises RuntimeError if another daemon holds it."""
+        # Open (or create) the pidfile without truncating so we can read the
+        # holder PID when the lock is already taken.
+        fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as e:
+            if e.errno in (errno.EWOULDBLOCK, errno.EAGAIN):
+                try:
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    holder = os.read(fd, 32).decode(errors="ignore").strip()
+                except Exception:
+                    holder = "unknown"
+                os.close(fd)
+                raise RuntimeError(
+                    f"Another Rein daemon is already running (pid={holder}, lockfile={self.path})"
+                ) from None
+            os.close(fd)
+            raise
+
+        # Lock acquired -- write our PID
+        try:
+            os.ftruncate(fd, 0)
+            os.lseek(fd, 0, os.SEEK_SET)
+            os.write(fd, f"{os.getpid()}\n".encode())
+            os.fsync(fd)
+        except Exception:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+            raise
+
+        self._fd = fd
+        self._acquired = True
+        atexit.register(self.release)
+        logger.info("[DAEMON] Pidfile lock acquired: %s (pid=%d)", self.path, os.getpid())
+
+    def release(self) -> None:
+        """Release the lock and remove the pidfile. Idempotent."""
+        if not self._acquired:
+            return
+        self._acquired = False
+        try:
+            if self._fd is not None:
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
+                os.close(self._fd)
+                self._fd = None
+        except Exception as e:
+            logger.warning("[DAEMON] Pidfile unlock failed: %s", e)
+        try:
+            if os.path.exists(self.path):
+                os.unlink(self.path)
+        except Exception as e:
+            logger.warning("[DAEMON] Pidfile removal failed: %s", e)
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.release()
+        return False
+
+
+def run_daemon(agents_dir: str, interval: int = 2, max_workflows: int = 3, ws_port: int = 8765, no_ui: bool = True):
     """
     Run Rein as daemon with WebSocket server.
 
     Spawns separate subprocess for each workflow (up to max_workflows parallel).
+    Protected by an exclusive pidfile lock to prevent duplicate instances (#1164).
     """
+    # Acquire exclusive lock -- fail fast if another daemon is already running
+    try:
+        pidlock = PidfileLock(agents_dir)
+        pidlock.acquire()
+    except RuntimeError as e:
+        logger.error("[DAEMON] %s", e)
+        sys.exit(1)
+
+    # Clean shutdown on SIGTERM/SIGINT so the pidfile is always removed
+    def _handle_signal(signum, frame):
+        logger.info("[DAEMON] Received signal %d, shutting down...", signum)
+        pidlock.release()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
     async def main():
         try:
             import websockets
@@ -366,3 +470,5 @@ def run_daemon(agents_dir: str, interval: int = 5, max_workflows: int = 3, ws_po
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("[DAEMON] Shutting down...")
+    finally:
+        pidlock.release()

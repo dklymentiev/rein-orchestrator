@@ -21,7 +21,7 @@ class LogicRunner:
         task_id: str = "",
         task_input: Optional[Dict] = None,
         logger: Optional[Callable[[str], None]] = None,
-        timeout: int = 480  # 8 minutes default
+        timeout: int = 480,  # 8 minutes default
     ):
         self.task_dir = task_dir
         self.workflow_dir = workflow_dir
@@ -40,7 +40,8 @@ class LogicRunner:
         depends_on: Optional[List[str]] = None,
         block_config: Optional[Dict] = None,
         linux_user: Optional[str] = None,
-        run_count: int = 0
+        run_count: int = 0,
+        timeout_override: Optional[int] = None
     ) -> bool:
         """
         Run logic script (Python or Shell)
@@ -58,7 +59,12 @@ class LogicRunner:
             True if script succeeded, False otherwise
         """
         try:
-            # Resolve relative path
+            # Resolve relative path against workflow_dir. Containment is
+            # not enforced here -- logic scripts are trusted per the
+            # documented trust model (see SECURITY.md "Workflow YAML is
+            # trusted input"). A workflow that references ../lib/helper.py
+            # or ../../shared/util.sh is an accepted pattern for sharing
+            # helpers between flows under the same agents_dir.
             full_path = os.path.join(self.workflow_dir, script_path)
 
             if not os.path.exists(full_path):
@@ -102,16 +108,16 @@ class LogicRunner:
                 cmd = ['sudo', '-u', linux_user] + cmd
                 self.logger(f"LOGIC SUDO | running as {linux_user}")
 
-            # Run script
-            if True:  # Keep indent level for minimal diff
-                result = subprocess.run(
-                    cmd,
-                    input=context_json,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                    cwd=self.task_dir
-                )
+            # Run script (use block-level timeout_override if provided)
+            effective_timeout = timeout_override if timeout_override else self.timeout
+            result = subprocess.run(
+                cmd,
+                input=context_json,
+                capture_output=True,
+                text=True,
+                timeout=effective_timeout,
+                cwd=self.task_dir
+            )
             # Log output
             if result.stdout:
                 for line in result.stdout.strip().split('\n'):

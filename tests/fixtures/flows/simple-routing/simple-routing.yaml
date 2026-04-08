@@ -1,0 +1,39 @@
+schema_version: "3.3.0"
+name: simple-routing
+team: team-arithmetic
+max_parallel: 3
+description: "Single gate with deterministic retry: gate fails once, then passes."
+
+blocks:
+  - name: prepare
+    phase: 1
+    prompt: "prepare data"
+    logic:
+      custom: "../../mock_scripts/pass.py"
+
+  - name: gate
+    phase: 2
+    depends_on: [prepare]
+    prompt: "quality gate"
+    logic:
+      custom: "../../mock_scripts/gate_retry_once.py"
+    routing:
+      revise: fix
+      _default: finish
+    max_runs: 3
+
+  - name: fix
+    phase: 3
+    depends_on: [gate]
+    prompt: "fix issues"
+    logic:
+      custom: "../../mock_scripts/pass.py"
+    next: gate
+    max_runs: 3
+
+  - name: finish
+    phase: 3
+    depends_on: [gate]
+    prompt: "finalize"
+    logic:
+      custom: "../../mock_scripts/pass.py"

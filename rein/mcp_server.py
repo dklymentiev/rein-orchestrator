@@ -126,9 +126,12 @@ def list_specialists(agents_dir: str = "") -> str:
     """List available AI specialists with the first line of their instructions.
 
     Args:
-        agents_dir: Path to agents directory. Uses REIN_AGENTS_DIR env or default if empty.
+        agents_dir: Ignored (pinned to REIN_AGENTS_DIR for security).
     """
-    agents = agents_dir or _get_agents_dir()
+    # Pin agents_dir to configured value (ignore caller-supplied path).
+    # Caller-supplied paths would enable path traversal via list_specialists
+    # to read first lines of arbitrary .md files on the host (SEC-04).
+    agents = _get_agents_dir()
     spec_dir = os.path.join(agents, "specialists")
 
     if not os.path.isdir(spec_dir):
@@ -159,9 +162,12 @@ def list_teams(agents_dir: str = "") -> str:
     """List available teams and their specialist composition.
 
     Args:
-        agents_dir: Path to agents directory. Uses REIN_AGENTS_DIR env or default if empty.
+        agents_dir: Ignored (pinned to REIN_AGENTS_DIR for security).
     """
-    agents = agents_dir or _get_agents_dir()
+    # Pin agents_dir to configured value (ignore caller-supplied path).
+    # Caller-supplied paths would enable path traversal via list_teams
+    # to read arbitrary .yaml files on the host (SEC-04).
+    agents = _get_agents_dir()
     teams_dir = os.path.join(agents, "teams")
 
     if not os.path.isdir(teams_dir):

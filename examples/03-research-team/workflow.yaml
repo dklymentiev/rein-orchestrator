@@ -1,4 +1,4 @@
-schema_version: "2.6.0"
+schema_version: "3.3.0"
 name: research-team
 description: "Three parallel researchers + synthesizer. Demonstrates fan-out/fan-in pattern."
 team: team-research
