@@ -5,7 +5,15 @@
 
 # Rein
 
-![Rein Flow Board](https://github.com/dklymentiev/rein-orchestrator/releases/download/v3.3.2/rein-demo.gif)
+<p align="center">
+<a href="https://www.youtube.com/watch?v=oWEwLg9uCdU">
+<img src="https://img.youtube.com/vi/oWEwLg9uCdU/maxresdefault.jpg" width="800" alt="Watch Rein Demo on YouTube">
+</a>
+</p>
+
+<p align="center">
+<img src="https://github.com/dklymentiev/rein-orchestrator/releases/download/v3.3.2/rein-demo.gif" alt="Rein Flow Board">
+</p>
 
 **Give a complex task to a team of AI agents instead of just one.**
 
