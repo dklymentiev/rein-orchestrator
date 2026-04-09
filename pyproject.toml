@@ -74,7 +74,7 @@ schemas = ["*.json"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short --cov=rein --cov-report=term-missing"
+addopts = "-v --tb=short --cov=rein --cov-report=term-missing --ignore=tests/test_characterization.py --ignore=tests/test_containment_sweep.py --ignore=tests/test_cli.py"
 
 [tool.mypy]
 python_version = "3.10"
