@@ -10,8 +10,9 @@ Responsibilities:
 - Template condition evaluation ({{ result.X }}, comparisons)
 - Dot-path resolution in result dicts
 """
+
 import re
-from typing import Optional, Callable, Any
+from typing import Any, Callable, Optional
 
 
 def should_execute_block(block: dict, previous_failed: list) -> bool:
@@ -20,7 +21,7 @@ def should_execute_block(block: dict, previous_failed: list) -> bool:
     skip_if_previous_failed=True  -> skip this block if any previous block failed
     skip_if_previous_failed=False -> continue executing even if previous failed (default)
     """
-    skip_if_failed = block.get('skip_if_previous_failed', False)
+    skip_if_failed = block.get("skip_if_previous_failed", False)
     if previous_failed and skip_if_failed:
         return False
     return True
@@ -34,12 +35,12 @@ def should_continue_after_failure(block: dict, block_failed: bool) -> bool:
     """
     if not block_failed:
         return True
-    return block.get('continue_if_failed', True)
+    return block.get("continue_if_failed", True)
 
 
 def resolve_path(path: str, data: dict) -> Any:
     """Resolve a dot-separated path like 'result.approved' in data dict."""
-    parts = path.split('.')
+    parts = path.split(".")
     current = data
     for part in parts:
         if isinstance(current, dict) and part in current:
@@ -64,7 +65,7 @@ def evaluate_condition(
     Returns False on parse/evaluation errors (safe default).
     """
     try:
-        match = re.match(r'\{\{\s*(.+?)\s*\}\}', expr.strip())
+        match = re.match(r"\{\{\s*(.+?)\s*\}\}", expr.strip())
         if not match:
             if log_fn:
                 log_fn(f"CONDITION PARSE ERROR | no match: {expr}")
@@ -72,7 +73,7 @@ def evaluate_condition(
 
         inner_expr = match.group(1).strip()
 
-        for op in ['==', '!=', '>=', '<=', '>', '<']:
+        for op in ["==", "!=", ">=", "<=", ">", "<"]:
             if op in inner_expr:
                 parts = inner_expr.split(op, 1)
                 if len(parts) == 2:
@@ -80,7 +81,7 @@ def evaluate_condition(
                     right_str = parts[1].strip().strip("'\"")
 
                     if isinstance(left, bool):
-                        right = right_str.lower() in ('true', '1', 'yes')
+                        right = right_str.lower() in ("true", "1", "yes")
                     elif isinstance(left, (int, float)):
                         try:
                             right = float(right_str)
@@ -89,12 +90,18 @@ def evaluate_condition(
                     else:
                         right = right_str
 
-                    if op == '==':   return left == right
-                    elif op == '!=': return left != right
-                    elif op == '>':  return left > right
-                    elif op == '<':  return left < right
-                    elif op == '>=': return left >= right
-                    elif op == '<=': return left <= right
+                    if op == "==":
+                        return left == right
+                    elif op == "!=":
+                        return left != right
+                    elif op == ">":
+                        return left > right
+                    elif op == "<":
+                        return left < right
+                    elif op == ">=":
+                        return left >= right
+                    elif op == "<=":
+                        return left <= right
 
         # Truthy check
         value = resolve_path(inner_expr, result_data)
@@ -120,11 +127,11 @@ def evaluate_next_block(
             goto: publish
           - else: revision
     """
-    next_spec = block.get('next')
+    next_spec = block.get("next")
     if not next_spec:
         return None
 
-    name = block.get('name') or block.get('stage', 'unknown')
+    name = block.get("name") or block.get("stage", "unknown")
 
     if isinstance(next_spec, str):
         if log_fn:
@@ -133,15 +140,15 @@ def evaluate_next_block(
 
     if isinstance(next_spec, list):
         for condition in next_spec:
-            if 'else' in condition:
-                goto = condition.get('goto') or condition.get('else')
+            if "else" in condition:
+                goto = condition.get("goto") or condition.get("else")
                 if log_fn:
                     log_fn(f"NEXT ELSE | {name} -> {goto}")
                 return goto
 
-            if 'if' in condition:
-                condition_expr = condition['if']
-                goto = condition.get('goto')
+            if "if" in condition:
+                condition_expr = condition["if"]
+                goto = condition.get("goto")
                 if evaluate_condition(condition_expr, result_data, log_fn):
                     if log_fn:
                         log_fn(f"NEXT IF | {name} | condition={condition_expr} -> {goto}")

@@ -1,13 +1,14 @@
 """
 Rein UI - htop-like terminal UI using rich library
 """
+
 import os
 import time
 from typing import TYPE_CHECKING
 
 from rich.console import Console
-from rich.table import Table
 from rich.live import Live
+from rich.table import Table
 
 if TYPE_CHECKING:
     from rein.orchestrator import ProcessManager
@@ -37,33 +38,33 @@ class ReinUI:
         flags = []
 
         # P = parallel
-        if block.get('parallel', False):
+        if block.get("parallel", False):
             flags.append("P")
 
         # D{n} = depends_on count
-        deps = block.get('depends_on', [])
+        deps = block.get("depends_on", [])
         if deps:
             flags.append(f"D{len(deps)}")
 
         # L = has logic scripts
-        logic = block.get('logic', {})
-        if logic and any(logic.get(k) for k in ['pre', 'post', 'validate', 'custom']):
+        logic = block.get("logic", {})
+        if logic and any(logic.get(k) for k in ["pre", "post", "validate", "custom"]):
             flags.append("L")
 
         # N = has next (conditional jump)
-        if block.get('next'):
+        if block.get("next"):
             flags.append("N")
 
         # S = skip_if_previous_failed
-        if block.get('skip_if_previous_failed', False):
+        if block.get("skip_if_previous_failed", False):
             flags.append("S")
 
         # C = continue_if_failed
-        if block.get('continue_if_failed', False):
+        if block.get("continue_if_failed", False):
             flags.append("C")
 
         # R{n} = max_runs (loop)
-        max_runs = block.get('max_runs', 1)
+        max_runs = block.get("max_runs", 1)
         if max_runs > 1:
             flags.append(f"R{max_runs}")
 
@@ -80,15 +81,15 @@ class ReinUI:
 
         # Calculate IN size (sum of dependency outputs)
         block = self.manager.block_configs.get(block_name, {})
-        deps = block.get('depends_on', [])
+        deps = block.get("depends_on", [])
         in_size = 0
         for dep in deps:
-            dep_path = os.path.join(task_dir, dep, 'outputs', 'result.json')
+            dep_path = os.path.join(task_dir, dep, "outputs", "result.json")
             if os.path.exists(dep_path):
                 in_size += os.path.getsize(dep_path)
 
         # Calculate OUT size
-        out_path = os.path.join(task_dir, block_name, 'outputs', 'result.json')
+        out_path = os.path.join(task_dir, block_name, "outputs", "result.json")
         out_size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
 
         in_str = self._format_size(in_size)
@@ -108,7 +109,9 @@ class ReinUI:
         # Also account for progress of running processes
         running_processes = [p for p in processes if p.status == "running"]
         running_count = len(running_processes)
-        running_progress = sum(p.progress for p in running_processes) / max(1, running_count) if running_count > 0 else 0
+        running_progress = (
+            sum(p.progress for p in running_processes) / max(1, running_count) if running_count > 0 else 0
+        )
 
         # Overall percent = (completed agents * 100 + running agents * their progress) / total
         overall_percent = ((completed * 100) + (running_count * running_progress)) / total
@@ -121,6 +124,7 @@ class ReinUI:
             return ""
 
         from datetime import datetime
+
         start_time = datetime.fromisoformat(self.manager.metadata["start_time"])
         elapsed = int((datetime.now() - start_time).total_seconds())
 
@@ -143,17 +147,17 @@ class ReinUI:
         task_text = ""
         # Try task_input.topic first, then task_input.task
         if self.manager.task_input:
-            task_text = self.manager.task_input.get('topic', '')
+            task_text = self.manager.task_input.get("topic", "")
             if not task_text:
-                task_text = self.manager.task_input.get('task', '')
+                task_text = self.manager.task_input.get("task", "")
         # Clean and truncate if needed
         if task_text:
             # Strip markdown headers, normalize whitespace
-            text = task_text.strip().lstrip('#').strip()
+            text = task_text.strip().lstrip("#").strip()
             # Replace newlines with spaces for single-line display
-            text = ' '.join(text.split())
+            text = " ".join(text.split())
             if len(text) > max_len:
-                text = text[:max_len-3] + "..."
+                text = text[: max_len - 3] + "..."
             return text
         return ""
 
@@ -198,7 +202,7 @@ class ReinUI:
                 "done": "[green]done[/green]",
                 "failed": "[red]failed[/red]",
                 "waiting": "[dim]waiting[/dim]",
-                "paused": "[cyan][PAUSED][/cyan]"
+                "paused": "[cyan][PAUSED][/cyan]",
             }
             status_text = status_styles.get(proc.status, proc.status)
 
@@ -218,14 +222,7 @@ class ReinUI:
             flags_str = self._get_block_flags(proc.name)
             io_str = self._get_io_sizes(proc.name, proc.status)
 
-            table.add_row(
-                proc.name,
-                status_text,
-                flags_str,
-                io_str,
-                progress_str,
-                time_str
-            )
+            table.add_row(proc.name, status_text, flags_str, io_str, progress_str, time_str)
 
         return table
 

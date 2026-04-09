@@ -1,12 +1,14 @@
 """Tests for rein/tasks.py"""
-import os
-import json
-import pytest
-import tempfile
-import yaml
-from unittest.mock import patch, MagicMock
 
-from rein.tasks import update_task_status, save_task_to_memory, load_config, execute_task
+import json
+import os
+import tempfile
+from unittest.mock import MagicMock, patch
+
+import pytest
+import yaml
+
+from rein.tasks import execute_task, load_config, save_task_to_memory, update_task_status
 
 
 class TestUpdateTaskStatus:
@@ -106,10 +108,7 @@ class TestSaveTaskToMemory:
         with open(mem_cli_path, "w") as f:
             f.write("#!/bin/bash\n")
 
-        memory_config = {
-            "guid": "abc123",
-            "tags": ["type:artifact", "stage:completed"]
-        }
+        memory_config = {"guid": "abc123", "tags": ["type:artifact", "stage:completed"]}
 
         with patch.dict(os.environ, {"REIN_MEM_CLI": mem_cli_path}):
             save_task_to_memory(temp_output_dir, memory_config)
@@ -217,9 +216,7 @@ class TestLoadConfig:
             "name": "test-flow",
             "team": "test-team",
             "semaphore": 3,
-            "blocks": [
-                {"name": "step1", "specialist": "analyzer", "prompt": "Analyze"}
-            ]
+            "blocks": [{"name": "step1", "specialist": "analyzer", "prompt": "Analyze"}],
         }
         config_path = os.path.join(temp_dir, "flow.yaml")
         with open(config_path, "w") as f:
@@ -311,9 +308,7 @@ class TestExecuteTask:
             "name": flow_name,
             "team": "test-team",
             "semaphore": 2,
-            "blocks": [
-                {"name": "step1", "specialist": "tester", "prompt": "Test"}
-            ]
+            "blocks": [{"name": "step1", "specialist": "tester", "prompt": "Test"}],
         }
         flow_path = os.path.join(flow_dir, f"{flow_name}.yaml")
         with open(flow_path, "w") as f:
@@ -395,9 +390,7 @@ class TestExecuteTask:
         execute_task(task_id, temp_agents_dir)
 
         # Early returns happen before the try/except block that writes exit_code
-        exit_code_path = os.path.join(
-            temp_agents_dir, "tasks", task_id, "state", "exit_code"
-        )
+        exit_code_path = os.path.join(temp_agents_dir, "tasks", task_id, "state", "exit_code")
         assert not os.path.exists(exit_code_path)
 
     def test_invalid_task_yaml(self, temp_agents_dir):
@@ -432,10 +425,7 @@ class TestExecuteTask:
 
         assert result == 0
         mock_pm_cls.assert_called_once_with(
-            max_parallel=2,
-            flow_name=flow_name,
-            task_input={},
-            agents_dir=temp_agents_dir
+            max_parallel=2, flow_name=flow_name, task_input={}, agents_dir=temp_agents_dir
         )
         mock_manager.load_config.assert_called_once()
         mock_manager.run_workflow.assert_called_once()
@@ -478,9 +468,7 @@ class TestExecuteTask:
         flow_name = "qa-flow"
 
         task_dir = self._create_task(temp_agents_dir, task_id, flow_name)
-        self._create_flow(temp_agents_dir, flow_name, {
-            "name": flow_name, "semaphore": 1, "blocks": []
-        })
+        self._create_flow(temp_agents_dir, flow_name, {"name": flow_name, "semaphore": 1, "blocks": []})
 
         # Create question.txt
         os.makedirs(os.path.join(task_dir, "input"), exist_ok=True)
@@ -507,9 +495,7 @@ class TestExecuteTask:
         flow_name = "input-flow"
 
         task_dir = self._create_task(temp_agents_dir, task_id, flow_name)
-        self._create_flow(temp_agents_dir, flow_name, {
-            "name": flow_name, "semaphore": 1, "blocks": []
-        })
+        self._create_flow(temp_agents_dir, flow_name, {"name": flow_name, "semaphore": 1, "blocks": []})
 
         # Create task.input.json (takes priority over input/question.txt)
         input_data = {"topic": "Testing", "context": "Unit tests", "depth": 3}
@@ -538,9 +524,7 @@ class TestExecuteTask:
         flow_name = "json-flow"
 
         task_dir = self._create_task(temp_agents_dir, task_id, flow_name)
-        self._create_flow(temp_agents_dir, flow_name, {
-            "name": flow_name, "semaphore": 1, "blocks": []
-        })
+        self._create_flow(temp_agents_dir, flow_name, {"name": flow_name, "semaphore": 1, "blocks": []})
 
         # Create input/task.json
         os.makedirs(os.path.join(task_dir, "input"), exist_ok=True)
@@ -565,9 +549,7 @@ class TestExecuteTask:
         flow_name = "noinput-flow"
 
         self._create_task(temp_agents_dir, task_id, flow_name)
-        self._create_flow(temp_agents_dir, flow_name, {
-            "name": flow_name, "semaphore": 1, "blocks": []
-        })
+        self._create_flow(temp_agents_dir, flow_name, {"name": flow_name, "semaphore": 1, "blocks": []})
 
         mock_manager = MagicMock()
         mock_pm_cls.return_value = mock_manager
@@ -586,9 +568,7 @@ class TestExecuteTask:
         flow_name = "fail-flow"
 
         self._create_task(temp_agents_dir, task_id, flow_name)
-        self._create_flow(temp_agents_dir, flow_name, {
-            "name": flow_name, "semaphore": 1, "blocks": []
-        })
+        self._create_flow(temp_agents_dir, flow_name, {"name": flow_name, "semaphore": 1, "blocks": []})
 
         mock_manager = MagicMock()
         mock_manager.run_workflow.side_effect = RuntimeError("LLM API failed")
@@ -613,9 +593,7 @@ class TestExecuteTask:
         flow_name = "state-flow"
 
         self._create_task(temp_agents_dir, task_id, flow_name)
-        self._create_flow(temp_agents_dir, flow_name, {
-            "name": flow_name, "semaphore": 1, "blocks": []
-        })
+        self._create_flow(temp_agents_dir, flow_name, {"name": flow_name, "semaphore": 1, "blocks": []})
 
         mock_pm_cls.return_value = MagicMock()
         mock_state_cls.return_value = MagicMock()
@@ -634,9 +612,7 @@ class TestExecuteTask:
         flow_name = "attrs-flow"
 
         task_dir = self._create_task(temp_agents_dir, task_id, flow_name)
-        self._create_flow(temp_agents_dir, flow_name, {
-            "name": flow_name, "semaphore": 4, "blocks": []
-        })
+        self._create_flow(temp_agents_dir, flow_name, {"name": flow_name, "semaphore": 4, "blocks": []})
 
         mock_manager = MagicMock()
         mock_pm_cls.return_value = mock_manager
@@ -659,9 +635,7 @@ class TestExecuteTask:
         flow_name = "sem-flow"
 
         self._create_task(temp_agents_dir, task_id, flow_name)
-        self._create_flow(temp_agents_dir, flow_name, {
-            "name": flow_name, "semaphore": 7, "blocks": []
-        })
+        self._create_flow(temp_agents_dir, flow_name, {"name": flow_name, "semaphore": 7, "blocks": []})
 
         mock_manager = MagicMock()
         mock_pm_cls.return_value = mock_manager
@@ -680,9 +654,7 @@ class TestExecuteTask:
         flow_name = "db-flow"
 
         task_dir = self._create_task(temp_agents_dir, task_id, flow_name)
-        self._create_flow(temp_agents_dir, flow_name, {
-            "name": flow_name, "semaphore": 1, "blocks": []
-        })
+        self._create_flow(temp_agents_dir, flow_name, {"name": flow_name, "semaphore": 1, "blocks": []})
 
         mock_manager = MagicMock()
         mock_pm_cls.return_value = mock_manager

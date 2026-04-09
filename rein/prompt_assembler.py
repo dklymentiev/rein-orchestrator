@@ -6,6 +6,7 @@ Extracted from ProcessManager.assemble_prompt. Handles:
 - {{ block_name.json }} placeholders from block output files
 - Team tone + specialist + block prompt concatenation
 """
+
 import json
 import os
 import re
@@ -24,7 +25,7 @@ def substitute_task_inputs(
     """
     if not task_input:
         return prompt
-    pattern = r'\{\{\s*task\.input\.(\w+)\s*\}\}'
+    pattern = r"\{\{\s*task\.input\.(\w+)\s*\}\}"
     for match in re.finditer(pattern, prompt):
         full_placeholder = match.group(0)
         field_name = match.group(1)
@@ -69,7 +70,7 @@ def resolve_file_placeholder(
     that resolve outside those roots return None.
     """
     # 1. Block output by name (filename = "block_name.json")
-    if task_dir and filename.endswith('.json'):
+    if task_dir and filename.endswith(".json"):
         block_name = filename[:-5]
         block_output = os.path.join(task_dir, block_name, "outputs", "result.json")
         if os.path.exists(block_output) and _contained(block_output, task_dir):
@@ -108,14 +109,14 @@ def substitute_file_placeholders(
     Supports the result envelope pattern: if file contains {"result": "..."},
     tries to parse the inner result as JSON.
     """
-    placeholder_matches = list(re.finditer(r'\{\{([^}]+)\}\}', prompt))
+    placeholder_matches = list(re.finditer(r"\{\{([^}]+)\}\}", prompt))
 
     for match in placeholder_matches:
         full_placeholder = match.group(0)
         filename = match.group(1).strip()
 
         # Skip task.input placeholders (handled separately)
-        if filename.startswith('task.input.'):
+        if filename.startswith("task.input."):
             continue
 
         file_path = resolve_file_placeholder(filename, task_dir, workflow_dir)
@@ -127,8 +128,8 @@ def substitute_file_placeholders(
             with open(file_path) as f:
                 data = json.load(f)
                 # Extract just data content if wrapped in envelope
-                if isinstance(data, dict) and 'result' in data:
-                    result_str = data.get('result', '')
+                if isinstance(data, dict) and "result" in data:
+                    result_str = data.get("result", "")
                     try:
                         inner_data = json.loads(result_str)
                         data = inner_data
@@ -144,19 +145,18 @@ def substitute_file_placeholders(
 
 def check_unresolved_inputs(prompt: str, task_input: Dict[str, any]) -> None:
     """Raise ValueError if any {{ task.input.X }} placeholders remain unresolved."""
-    unresolved = re.findall(r'\{\{\s*task\.input\.(\w+)\s*\}\}', prompt)
+    unresolved = re.findall(r"\{\{\s*task\.input\.(\w+)\s*\}\}", prompt)
     if unresolved:
         raise ValueError(
-            f"Unresolved input placeholders: {set(unresolved)}. "
-            f"Provided inputs: {list(task_input.keys())}"
+            f"Unresolved input placeholders: {set(unresolved)}. Provided inputs: {list(task_input.keys())}"
         )
 
 
 def extract_block_agents(block: dict) -> List[str]:
     """Extract agent list from block config (supports old `agents` list + new `specialist` single)."""
-    agents = block.get('agents', []) or []
-    if block.get('specialist'):
-        agents = [block.get('specialist')]
+    agents = block.get("agents", []) or []
+    if block.get("specialist"):
+        agents = [block.get("specialist")]
     return agents
 
 

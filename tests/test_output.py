@@ -1,15 +1,9 @@
 """Tests for rein/output.py"""
+
 import os
-import json
-import pytest
 import tempfile
 
-from rein.output import (
-    get_block_dir,
-    get_output_dir,
-    format_json_as_md,
-    save_readable_output
-)
+from rein.output import format_json_as_md, get_block_dir, get_output_dir, save_readable_output
 
 
 class TestGetBlockDir:
@@ -84,11 +78,7 @@ class TestFormatJsonAsMd:
 
     def test_nested_dict(self):
         """Test formatting nested dictionary"""
-        data = {
-            "outer": {
-                "inner": "value"
-            }
-        }
+        data = {"outer": {"inner": "value"}}
         lines = format_json_as_md(data)
 
         assert "## Outer" in lines
@@ -105,12 +95,7 @@ class TestFormatJsonAsMd:
 
     def test_list_of_dicts(self):
         """Test formatting list of dictionaries"""
-        data = {
-            "people": [
-                {"name": "Alice", "age": 30},
-                {"name": "Bob", "age": 25}
-            ]
-        }
+        data = {"people": [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]}
         lines = format_json_as_md(data)
 
         assert "### Alice" in lines
@@ -136,12 +121,7 @@ class TestSaveReadableOutput:
             json_file = os.path.join(tmpdir, "result.json")
             logs = []
 
-            result = save_readable_output(
-                json_file,
-                "test-block",
-                '{"key": "value"}',
-                logger=lambda x: logs.append(x)
-            )
+            result = save_readable_output(json_file, "test-block", '{"key": "value"}', logger=lambda x: logs.append(x))
 
             assert result is True
             md_file = os.path.join(tmpdir, "result.md")
@@ -157,11 +137,7 @@ class TestSaveReadableOutput:
         with tempfile.TemporaryDirectory() as tmpdir:
             json_file = os.path.join(tmpdir, "result.json")
 
-            result = save_readable_output(
-                json_file,
-                "text-block",
-                "This is plain text content"
-            )
+            result = save_readable_output(json_file, "text-block", "This is plain text content")
 
             assert result is True
             md_file = os.path.join(tmpdir, "result.md")
@@ -175,17 +151,13 @@ class TestSaveReadableOutput:
         with tempfile.TemporaryDirectory() as tmpdir:
             json_file = os.path.join(tmpdir, "result.json")
 
-            result_with_block = '''Here is the analysis:
+            result_with_block = """Here is the analysis:
 ```json
 {"findings": ["item1", "item2"]}
 ```
-That's all.'''
+That's all."""
 
-            result = save_readable_output(
-                json_file,
-                "analysis-block",
-                result_with_block
-            )
+            result = save_readable_output(json_file, "analysis-block", result_with_block)
 
             assert result is True
 
@@ -195,12 +167,7 @@ That's all.'''
             json_file = os.path.join(tmpdir, "result.json")
             logs = []
 
-            save_readable_output(
-                json_file,
-                "logged-block",
-                "content",
-                logger=lambda x: logs.append(x)
-            )
+            save_readable_output(json_file, "logged-block", "content", logger=lambda x: logs.append(x))
 
             assert len(logs) == 1
             assert "READABLE OUTPUT" in logs[0]
@@ -210,6 +177,7 @@ That's all.'''
 # ============================================================
 # TASK #1176: readable_outputs and metadata
 # ============================================================
+
 
 class TestReadableOutputIntegration:
     """Tests for readable_outputs feature integration"""
@@ -247,7 +215,8 @@ class TestReadableOutputIntegration:
                 content = f.read()
             # Timestamp format: YYYY-MM-DD HH:MM:SS wrapped in *
             import re
-            assert re.search(r'\*\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\*', content)
+
+            assert re.search(r"\*\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\*", content)
 
     def test_md_handles_embedded_json_block(self):
         """Markdown with ```json code blocks should be parsed and formatted"""
@@ -282,16 +251,13 @@ class TestMetadata:
     def test_metadata_in_pydantic_config(self):
         """Workflow metadata field should be accepted"""
         from models.workflow import WorkflowConfig
+
         data = {
             "schema_version": "3.3.0",
             "name": "test-flow",
             "team": "team-test",
-            "metadata": {
-                "version": "1.0.0",
-                "author": "tester",
-                "created": "2026-01-15T10:00:00Z"
-            },
-            "blocks": [{"name": "step", "prompt": "do"}]
+            "metadata": {"version": "1.0.0", "author": "tester", "created": "2026-01-15T10:00:00Z"},
+            "blocks": [{"name": "step", "prompt": "do"}],
         }
         w = WorkflowConfig(**data)
         assert w.metadata is not None
@@ -301,11 +267,12 @@ class TestMetadata:
     def test_metadata_optional(self):
         """Metadata should be optional (absent = None)"""
         from models.workflow import WorkflowConfig
+
         data = {
             "schema_version": "3.3.0",
             "name": "no-meta",
             "team": "team-test",
-            "blocks": [{"name": "step", "prompt": "do"}]
+            "blocks": [{"name": "step", "prompt": "do"}],
         }
         w = WorkflowConfig(**data)
         assert w.metadata is None
@@ -313,12 +280,13 @@ class TestMetadata:
     def test_metadata_arbitrary_fields(self):
         """Metadata should accept arbitrary extra fields"""
         from models.workflow import WorkflowConfig
+
         data = {
             "schema_version": "3.3.0",
             "name": "test",
             "team": "team-x",
             "metadata": {"custom_field_1": "value", "arbitrary": 123},
-            "blocks": [{"name": "s", "prompt": "x"}]
+            "blocks": [{"name": "s", "prompt": "x"}],
         }
         w = WorkflowConfig(**data)
         assert w.metadata["custom_field_1"] == "value"

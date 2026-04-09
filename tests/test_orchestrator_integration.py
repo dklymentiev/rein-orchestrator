@@ -7,16 +7,12 @@ coverage visibility into _execute_block, spawn_process, run_workflow etc.
 Uses deterministic mock scripts from tests/fixtures/mock_scripts/
 to avoid LLM calls.
 """
+
 import os
-import sys
-import json
-import time
-import tempfile
-import shutil
+
 import pytest
 
 from rein.orchestrator import ProcessManager
-
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -42,18 +38,19 @@ def isolated_tasks_dir(tmp_path):
 def _make_minimal_flow(flow_dir, blocks, name="test-flow"):
     """Write minimal flow YAML + logic scripts to flow_dir."""
     import yaml
+
     os.makedirs(flow_dir, exist_ok=True)
     logic_dir = os.path.join(flow_dir, "logic")
     os.makedirs(logic_dir, exist_ok=True)
 
     # Deterministic pass-through script (no sleep, no randomness)
-    pass_script = '''#!/usr/bin/env python3
+    pass_script = """#!/usr/bin/env python3
 import sys, json, os
 ctx = json.load(sys.stdin)
 os.makedirs(os.path.dirname(ctx['output_file']), exist_ok=True)
 with open(ctx['output_file'], 'w') as f:
     json.dump({"result": "ok", "approved": True}, f)
-'''
+"""
     with open(os.path.join(logic_dir, "pass.py"), "w") as f:
         f.write(pass_script)
 
@@ -75,9 +72,12 @@ class TestLoadConfigInProcess:
     def test_load_minimal_config(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Load a minimal 1-block config"""
         flow_dir = tmp_path / "flow"
-        yaml_path = _make_minimal_flow(str(flow_dir), [
-            {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-        ])
+        yaml_path = _make_minimal_flow(
+            str(flow_dir),
+            [
+                {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
+            ],
+        )
 
         mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir)
         config = {
@@ -92,39 +92,56 @@ class TestLoadConfigInProcess:
 
     def test_load_config_sets_team(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         flow_dir = tmp_path / "flow"
-        yaml_path = _make_minimal_flow(str(flow_dir), [
-            {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-        ])
+        yaml_path = _make_minimal_flow(
+            str(flow_dir),
+            [
+                {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
+            ],
+        )
         mgr = ProcessManager(agents_dir=isolated_tasks_dir)
-        config = {"schema_version": "3.3.0", "name": "test", "team": "team-test",
-                  "blocks": [{"name": "a", "prompt": "x"}]}
+        config = {
+            "schema_version": "3.3.0",
+            "name": "test",
+            "team": "team-test",
+            "blocks": [{"name": "a", "prompt": "x"}],
+        }
         mgr.load_config(config, workflow_file=yaml_path)
         assert mgr.team_name == "team-test"
 
     def test_load_config_reads_default_max_runs(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         flow_dir = tmp_path / "flow"
-        yaml_path = _make_minimal_flow(str(flow_dir), [
-            {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-        ])
+        yaml_path = _make_minimal_flow(
+            str(flow_dir),
+            [
+                {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
+            ],
+        )
         mgr = ProcessManager(agents_dir=isolated_tasks_dir)
         config = {
-            "schema_version": "3.3.0", "name": "test", "team": "team-test",
+            "schema_version": "3.3.0",
+            "name": "test",
+            "team": "team-test",
             "default_max_runs": 7,
-            "blocks": [{"name": "a", "prompt": "x"}]
+            "blocks": [{"name": "a", "prompt": "x"}],
         }
         mgr.load_config(config, workflow_file=yaml_path)
         assert mgr.default_max_runs == 7
 
     def test_load_config_sets_timeout(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         flow_dir = tmp_path / "flow"
-        yaml_path = _make_minimal_flow(str(flow_dir), [
-            {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-        ])
+        yaml_path = _make_minimal_flow(
+            str(flow_dir),
+            [
+                {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
+            ],
+        )
         mgr = ProcessManager(agents_dir=isolated_tasks_dir)
         config = {
-            "schema_version": "3.3.0", "name": "test", "team": "team-test",
+            "schema_version": "3.3.0",
+            "name": "test",
+            "team": "team-test",
             "timeout": 3600,
-            "blocks": [{"name": "a", "prompt": "x"}]
+            "blocks": [{"name": "a", "prompt": "x"}],
         }
         mgr.load_config(config, workflow_file=yaml_path)
         assert mgr.timeout == 3600
@@ -150,13 +167,18 @@ class TestRunStepInProcess:
     def test_run_step_empty_workflow(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Empty workflow completes immediately"""
         flow_dir = tmp_path / "flow"
-        yaml_path = _make_minimal_flow(str(flow_dir), [
-            {"name": "noop", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-        ])
+        yaml_path = _make_minimal_flow(
+            str(flow_dir),
+            [
+                {"name": "noop", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
+            ],
+        )
         mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir)
         config = {
-            "schema_version": "3.3.0", "name": "empty", "team": "team-test",
-            "blocks": [{"name": "noop", "prompt": "x"}]
+            "schema_version": "3.3.0",
+            "name": "empty",
+            "team": "team-test",
+            "blocks": [{"name": "noop", "prompt": "x"}],
         }
         mgr.load_config(config, workflow_file=yaml_path)
         # Mark as completed to simulate resume
@@ -169,8 +191,7 @@ class TestRunStepInProcess:
     def test_run_step_single_block(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Run a single block via run_step with real logic script"""
         blocks = [
-            {"name": "step_a", "phase": 1, "prompt": "x",
-             "logic": {"custom": "logic/pass.py"}},
+            {"name": "step_a", "phase": 1, "prompt": "x", "logic": {"custom": "logic/pass.py"}},
         ]
         mgr = self._setup_mgr(isolated_tasks_dir, tmp_path, blocks)
         # May need multiple invocations if step_mode yields early
@@ -183,10 +204,8 @@ class TestRunStepInProcess:
         """Run 3-block linear chain: a -> b -> c via run_step (may need multiple invocations)"""
         blocks = [
             {"name": "a", "phase": 1, "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-            {"name": "b", "phase": 2, "depends_on": ["a"], "prompt": "y",
-             "logic": {"custom": "logic/pass.py"}},
-            {"name": "c", "phase": 3, "depends_on": ["b"], "prompt": "z",
-             "logic": {"custom": "logic/pass.py"}},
+            {"name": "b", "phase": 2, "depends_on": ["a"], "prompt": "y", "logic": {"custom": "logic/pass.py"}},
+            {"name": "c", "phase": 3, "depends_on": ["b"], "prompt": "z", "logic": {"custom": "logic/pass.py"}},
         ]
         mgr = self._setup_mgr(isolated_tasks_dir, tmp_path, blocks)
         # Invoke run_step multiple times (like cron would)
@@ -200,14 +219,28 @@ class TestRunStepInProcess:
     def test_run_step_parallel_blocks(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Run fan-out: start -> {a, b} -> merge"""
         blocks = [
-            {"name": "start", "phase": 1, "prompt": "x",
-             "logic": {"custom": "logic/pass.py"}},
-            {"name": "branch_a", "phase": 2, "depends_on": ["start"], "prompt": "a",
-             "logic": {"custom": "logic/pass.py"}},
-            {"name": "branch_b", "phase": 2, "depends_on": ["start"], "prompt": "b",
-             "logic": {"custom": "logic/pass.py"}},
-            {"name": "merge", "phase": 3, "depends_on": ["branch_a", "branch_b"],
-             "prompt": "m", "logic": {"custom": "logic/pass.py"}},
+            {"name": "start", "phase": 1, "prompt": "x", "logic": {"custom": "logic/pass.py"}},
+            {
+                "name": "branch_a",
+                "phase": 2,
+                "depends_on": ["start"],
+                "prompt": "a",
+                "logic": {"custom": "logic/pass.py"},
+            },
+            {
+                "name": "branch_b",
+                "phase": 2,
+                "depends_on": ["start"],
+                "prompt": "b",
+                "logic": {"custom": "logic/pass.py"},
+            },
+            {
+                "name": "merge",
+                "phase": 3,
+                "depends_on": ["branch_a", "branch_b"],
+                "prompt": "m",
+                "logic": {"custom": "logic/pass.py"},
+            },
         ]
         mgr = self._setup_mgr(isolated_tasks_dir, tmp_path, blocks)
         result = mgr.run_step(max_steps=20)
@@ -223,13 +256,11 @@ class TestInitializeProcesses:
         flow_dir = tmp_path / "flow"
         blocks = [
             {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-            {"name": "b", "prompt": "y", "depends_on": ["a"],
-             "logic": {"custom": "logic/pass.py"}},
+            {"name": "b", "prompt": "y", "depends_on": ["a"], "logic": {"custom": "logic/pass.py"}},
         ]
         yaml_path = _make_minimal_flow(str(flow_dir), blocks)
         mgr = ProcessManager(agents_dir=isolated_tasks_dir)
-        config = {"schema_version": "3.3.0", "name": "test", "team": "team-test",
-                  "blocks": blocks}
+        config = {"schema_version": "3.3.0", "name": "test", "team": "team-test", "blocks": blocks}
         mgr.load_config(config, workflow_file=yaml_path)
         assert len(mgr.processes) == 2
         names = {p.name for p in mgr.processes.values()}
@@ -237,12 +268,19 @@ class TestInitializeProcesses:
 
     def test_initial_status_is_waiting(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         flow_dir = tmp_path / "flow"
-        yaml_path = _make_minimal_flow(str(flow_dir), [
-            {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-        ])
+        yaml_path = _make_minimal_flow(
+            str(flow_dir),
+            [
+                {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
+            ],
+        )
         mgr = ProcessManager(agents_dir=isolated_tasks_dir)
-        config = {"schema_version": "3.3.0", "name": "test", "team": "team-test",
-                  "blocks": [{"name": "a", "prompt": "x"}]}
+        config = {
+            "schema_version": "3.3.0",
+            "name": "test",
+            "team": "team-test",
+            "blocks": [{"name": "a", "prompt": "x"}],
+        }
         mgr.load_config(config, workflow_file=yaml_path)
         for p in mgr.processes.values():
             assert p.status == "waiting"
@@ -259,8 +297,7 @@ class TestBlockConfigsStored:
         ]
         yaml_path = _make_minimal_flow(str(flow_dir), blocks)
         mgr = ProcessManager(agents_dir=isolated_tasks_dir)
-        config = {"schema_version": "3.3.0", "name": "test", "team": "team-test",
-                  "blocks": blocks}
+        config = {"schema_version": "3.3.0", "name": "test", "team": "team-test", "blocks": blocks}
         mgr.load_config(config, workflow_file=yaml_path)
         assert "foo" in mgr.block_configs
         assert "bar" in mgr.block_configs
@@ -274,16 +311,14 @@ class TestRunWorkflowInProcess:
         flow_dir = tmp_path / "flow"
         yaml_path = _make_minimal_flow(str(flow_dir), blocks)
         mgr = ProcessManager(max_parallel=3, agents_dir=agents_dir)
-        config = {"schema_version": "3.3.0", "name": "test-flow",
-                  "team": "team-test", "blocks": blocks}
+        config = {"schema_version": "3.3.0", "name": "test-flow", "team": "team-test", "blocks": blocks}
         mgr.load_config(config, workflow_file=yaml_path)
         return mgr
 
     def test_run_workflow_single_block(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """run_workflow completes a single-block flow"""
         blocks = [
-            {"name": "only", "prompt": "x",
-             "logic": {"custom": "logic/pass.py"}},
+            {"name": "only", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
         ]
         mgr = self._setup_mgr(isolated_tasks_dir, tmp_path, blocks)
         mgr.run_workflow()
@@ -293,10 +328,8 @@ class TestRunWorkflowInProcess:
         """run_workflow completes linear chain"""
         blocks = [
             {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-            {"name": "b", "depends_on": ["a"], "prompt": "y",
-             "logic": {"custom": "logic/pass.py"}},
-            {"name": "c", "depends_on": ["b"], "prompt": "z",
-             "logic": {"custom": "logic/pass.py"}},
+            {"name": "b", "depends_on": ["a"], "prompt": "y", "logic": {"custom": "logic/pass.py"}},
+            {"name": "c", "depends_on": ["b"], "prompt": "z", "logic": {"custom": "logic/pass.py"}},
         ]
         mgr = self._setup_mgr(isolated_tasks_dir, tmp_path, blocks)
         mgr.run_workflow()
@@ -310,8 +343,7 @@ class TestRunWorkflowInProcess:
             {"name": "p1", "prompt": "1", "logic": {"custom": "logic/pass.py"}},
             {"name": "p2", "prompt": "2", "logic": {"custom": "logic/pass.py"}},
             {"name": "p3", "prompt": "3", "logic": {"custom": "logic/pass.py"}},
-            {"name": "merge", "depends_on": ["p1", "p2", "p3"], "prompt": "m",
-             "logic": {"custom": "logic/pass.py"}},
+            {"name": "merge", "depends_on": ["p1", "p2", "p3"], "prompt": "m", "logic": {"custom": "logic/pass.py"}},
         ]
         mgr = self._setup_mgr(isolated_tasks_dir, tmp_path, blocks)
         mgr.run_workflow()
@@ -321,12 +353,9 @@ class TestRunWorkflowInProcess:
         """Diamond: A -> {B, C} -> D"""
         blocks = [
             {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-            {"name": "b", "depends_on": ["a"], "prompt": "y",
-             "logic": {"custom": "logic/pass.py"}},
-            {"name": "c", "depends_on": ["a"], "prompt": "z",
-             "logic": {"custom": "logic/pass.py"}},
-            {"name": "d", "depends_on": ["b", "c"], "prompt": "w",
-             "logic": {"custom": "logic/pass.py"}},
+            {"name": "b", "depends_on": ["a"], "prompt": "y", "logic": {"custom": "logic/pass.py"}},
+            {"name": "c", "depends_on": ["a"], "prompt": "z", "logic": {"custom": "logic/pass.py"}},
+            {"name": "d", "depends_on": ["b", "c"], "prompt": "w", "logic": {"custom": "logic/pass.py"}},
         ]
         mgr = self._setup_mgr(isolated_tasks_dir, tmp_path, blocks)
         mgr.run_workflow()
@@ -339,20 +368,25 @@ class TestFailingScript:
     def _make_failing_flow(self, tmp_path, blocks, exit_code=1):
         """Flow with a script that exits with error"""
         import yaml
+
         flow_dir = tmp_path / "flow"
         logic_dir = flow_dir / "logic"
         os.makedirs(logic_dir)
 
         # Failing script
         with open(logic_dir / "fail.py", "w") as f:
-            f.write(f'#!/usr/bin/env python3\nimport sys\nsys.exit({exit_code})\n')
+            f.write(f"#!/usr/bin/env python3\nimport sys\nsys.exit({exit_code})\n")
 
         # Passing script
         with open(logic_dir / "pass.py", "w") as f:
-            f.write('#!/usr/bin/env python3\nimport sys, json, os\nctx=json.load(sys.stdin)\nos.makedirs(os.path.dirname(ctx["output_file"]), exist_ok=True)\nwith open(ctx["output_file"], "w") as f: json.dump({"result": "ok"}, f)\n')
+            f.write(
+                '#!/usr/bin/env python3\nimport sys, json, os\nctx=json.load(sys.stdin)\nos.makedirs(os.path.dirname(ctx["output_file"]), exist_ok=True)\nwith open(ctx["output_file"], "w") as f: json.dump({"result": "ok"}, f)\n'
+            )
 
         flow = {
-            "schema_version": "3.3.0", "name": "fail-test", "team": "team-test",
+            "schema_version": "3.3.0",
+            "name": "fail-test",
+            "team": "team-test",
             "blocks": blocks,
         }
         yaml_path = flow_dir / "fail-test.yaml"
@@ -367,8 +401,7 @@ class TestFailingScript:
         ]
         yaml_path = self._make_failing_flow(tmp_path, blocks)
         mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir)
-        config = {"schema_version": "3.3.0", "name": "fail-test",
-                  "team": "team-test", "blocks": blocks}
+        config = {"schema_version": "3.3.0", "name": "fail-test", "team": "team-test", "blocks": blocks}
         mgr.load_config(config, workflow_file=yaml_path)
         mgr.run_workflow()
 
@@ -380,16 +413,12 @@ class TestFailingScript:
     def test_continue_if_failed_allows_downstream(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Block with continue_if_failed=True doesn't stop workflow"""
         blocks = [
-            {"name": "failing", "prompt": "x",
-             "logic": {"custom": "logic/fail.py"},
-             "continue_if_failed": True},
-            {"name": "downstream", "depends_on": ["failing"], "prompt": "y",
-             "logic": {"custom": "logic/pass.py"}},
+            {"name": "failing", "prompt": "x", "logic": {"custom": "logic/fail.py"}, "continue_if_failed": True},
+            {"name": "downstream", "depends_on": ["failing"], "prompt": "y", "logic": {"custom": "logic/pass.py"}},
         ]
         yaml_path = self._make_failing_flow(tmp_path, blocks)
         mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir)
-        config = {"schema_version": "3.3.0", "name": "fail-test",
-                  "team": "team-test", "blocks": blocks}
+        config = {"schema_version": "3.3.0", "name": "fail-test", "team": "team-test", "blocks": blocks}
         mgr.load_config(config, workflow_file=yaml_path)
         mgr.run_workflow()
 
@@ -404,17 +433,18 @@ class TestErrorHandlers:
     def _setup_flow_with_error_handler(self, tmp_path, per_block_error=None, global_error=None):
         """Create a flow with a failing block and optional error handlers"""
         import yaml
+
         flow_dir = tmp_path / "flow"
         logic_dir = flow_dir / "logic"
         os.makedirs(logic_dir)
 
         # Failing script
         with open(logic_dir / "fail.py", "w") as f:
-            f.write('#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n')
+            f.write("#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n")
 
         # Error handler script (always succeeds, writes marker)
         with open(logic_dir / "handler.py", "w") as f:
-            f.write('#!/usr/bin/env python3\nimport sys, os\n')
+            f.write("#!/usr/bin/env python3\nimport sys, os\n")
             f.write(f'with open("{tmp_path}/handler_called.txt", "w") as f: f.write("called")\n')
 
         block = {"name": "failing", "prompt": "x", "logic": {"custom": "logic/fail.py"}}
@@ -422,7 +452,9 @@ class TestErrorHandlers:
             block["logic"]["error"] = per_block_error
 
         flow = {
-            "schema_version": "3.3.0", "name": "err-test", "team": "team-test",
+            "schema_version": "3.3.0",
+            "name": "err-test",
+            "team": "team-test",
             "blocks": [block],
         }
         if global_error:
@@ -435,9 +467,7 @@ class TestErrorHandlers:
 
     def test_global_on_error_called(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Global on_error handler runs when block fails"""
-        yaml_path, flow = self._setup_flow_with_error_handler(
-            tmp_path, global_error="logic/handler.py"
-        )
+        yaml_path, flow = self._setup_flow_with_error_handler(tmp_path, global_error="logic/handler.py")
         mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir)
         mgr.load_config(flow, workflow_file=yaml_path)
         mgr.run_workflow()
@@ -451,9 +481,7 @@ class TestErrorHandlers:
 
     def test_per_block_error_handler_called(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Per-block logic.error handler runs when block fails"""
-        yaml_path, flow = self._setup_flow_with_error_handler(
-            tmp_path, per_block_error="logic/handler.py"
-        )
+        yaml_path, flow = self._setup_flow_with_error_handler(tmp_path, per_block_error="logic/handler.py")
         mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir)
         mgr.load_config(flow, workflow_file=yaml_path)
         mgr.run_workflow()
@@ -478,31 +506,40 @@ class TestInputValidation:
     def test_no_inputs_section_backward_compat(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Workflow without inputs section skips validation"""
         flow_dir = tmp_path / "flow"
-        yaml_path = _make_minimal_flow(str(flow_dir), [
-            {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-        ])
+        yaml_path = _make_minimal_flow(
+            str(flow_dir),
+            [
+                {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
+            ],
+        )
         mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir)
-        config = {"schema_version": "3.3.0", "name": "no-inputs",
-                  "team": "team-test",
-                  "blocks": [{"name": "a", "prompt": "x"}]}
+        config = {
+            "schema_version": "3.3.0",
+            "name": "no-inputs",
+            "team": "team-test",
+            "blocks": [{"name": "a", "prompt": "x"}],
+        }
         mgr.load_config(config, workflow_file=yaml_path)
         # Should not raise -- no inputs section = backward compat
 
     def test_optional_input_with_default_injected(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Optional input with default gets injected into task_input"""
         flow_dir = tmp_path / "flow"
-        yaml_path = _make_minimal_flow(str(flow_dir), [
-            {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-        ])
-        mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir,
-                             task_input={})
+        yaml_path = _make_minimal_flow(
+            str(flow_dir),
+            [
+                {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
+            ],
+        )
+        mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir, task_input={})
         config = {
-            "schema_version": "3.3.0", "name": "with-defaults",
+            "schema_version": "3.3.0",
+            "name": "with-defaults",
             "team": "team-test",
             "inputs": {
                 "priority": {"required": False, "default": "high"},
             },
-            "blocks": [{"name": "a", "prompt": "x"}]
+            "blocks": [{"name": "a", "prompt": "x"}],
         }
         mgr.load_config(config, workflow_file=yaml_path)
         assert mgr.task_input.get("priority") == "high"
@@ -510,18 +547,21 @@ class TestInputValidation:
     def test_missing_required_input_exits(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Missing required input triggers sys.exit(1)"""
         flow_dir = tmp_path / "flow"
-        yaml_path = _make_minimal_flow(str(flow_dir), [
-            {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-        ])
-        mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir,
-                             task_input={})
+        yaml_path = _make_minimal_flow(
+            str(flow_dir),
+            [
+                {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
+            ],
+        )
+        mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir, task_input={})
         config = {
-            "schema_version": "3.3.0", "name": "strict",
+            "schema_version": "3.3.0",
+            "name": "strict",
             "team": "team-test",
             "inputs": {
                 "topic": {"required": True, "description": "Topic to analyze"},
             },
-            "blocks": [{"name": "a", "prompt": "x"}]
+            "blocks": [{"name": "a", "prompt": "x"}],
         }
         with pytest.raises(SystemExit):
             mgr.load_config(config, workflow_file=yaml_path)
@@ -529,16 +569,19 @@ class TestInputValidation:
     def test_provided_input_accepted(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Provided required input is accepted"""
         flow_dir = tmp_path / "flow"
-        yaml_path = _make_minimal_flow(str(flow_dir), [
-            {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-        ])
-        mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir,
-                             task_input={"topic": "AI"})
+        yaml_path = _make_minimal_flow(
+            str(flow_dir),
+            [
+                {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
+            ],
+        )
+        mgr = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir, task_input={"topic": "AI"})
         config = {
-            "schema_version": "3.3.0", "name": "strict",
+            "schema_version": "3.3.0",
+            "name": "strict",
             "team": "team-test",
             "inputs": {"topic": {"required": True}},
-            "blocks": [{"name": "a", "prompt": "x"}]
+            "blocks": [{"name": "a", "prompt": "x"}],
         }
         mgr.load_config(config, workflow_file=yaml_path)
         assert mgr.task_input["topic"] == "AI"
@@ -552,15 +595,13 @@ class TestResumeFromSqlite:
         flow_dir = tmp_path / "flow"
         blocks = [
             {"name": "a", "prompt": "x", "logic": {"custom": "logic/pass.py"}},
-            {"name": "b", "depends_on": ["a"], "prompt": "y",
-             "logic": {"custom": "logic/pass.py"}},
+            {"name": "b", "depends_on": ["a"], "prompt": "y", "logic": {"custom": "logic/pass.py"}},
         ]
         yaml_path = _make_minimal_flow(str(flow_dir), blocks)
 
         # First run
         mgr1 = ProcessManager(max_parallel=3, agents_dir=isolated_tasks_dir)
-        config = {"schema_version": "3.3.0", "name": "resume-test",
-                  "team": "team-test", "blocks": blocks}
+        config = {"schema_version": "3.3.0", "name": "resume-test", "team": "team-test", "blocks": blocks}
         mgr1.load_config(config, workflow_file=yaml_path)
         mgr1.run_workflow()
         assert "a" in mgr1.completed

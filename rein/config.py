@@ -1,13 +1,13 @@
 """
 Rein Config Loader - Load workflows, teams, specialists, and env files
 """
+
 import os
 import re
 from pathlib import Path
-from typing import Optional, Callable, Dict, Any
+from typing import Any, Callable, Dict, Optional
 
 import yaml
-
 
 # Flow names must be safe filesystem components: alphanumerics, dash,
 # underscore, dot. No slashes, no leading dots (HIGH-004). Applied to
@@ -33,17 +33,14 @@ def _resolve_default_agents_dir() -> str:
     # 4. Fallback to ./agents (will be created or error at runtime)
     return cwd_agents
 
+
 DEFAULT_AGENTS_DIR = _resolve_default_agents_dir()
 
 
 class ConfigLoader:
     """Loader for Rein configuration files"""
 
-    def __init__(
-        self,
-        agents_dir: str = "",
-        logger: Optional[Callable[[str], None]] = None
-    ):
+    def __init__(self, agents_dir: str = "", logger: Optional[Callable[[str], None]] = None):
         self.agents_dir = agents_dir or DEFAULT_AGENTS_DIR
         self.logger = logger or (lambda x: None)
 
@@ -127,7 +124,7 @@ class ConfigLoader:
                 team_data = yaml.safe_load(f)
 
             # Support both old 'tone' and new 'collaboration_tone' field names
-            tone = team_data.get('collaboration_tone') or team_data.get('tone', '')
+            tone = team_data.get("collaboration_tone") or team_data.get("tone", "")
             self.logger(f"TEAM LOADED | {team_name} | tone={tone}")
             return tone
         except Exception as e:
@@ -168,7 +165,7 @@ class ConfigLoader:
             search_dir = workflow_dir
             env_file = None
             for _ in range(3):
-                candidate = os.path.join(search_dir, '.env')
+                candidate = os.path.join(search_dir, ".env")
                 if os.path.exists(candidate):
                     env_file = candidate
                     break
@@ -181,14 +178,14 @@ class ConfigLoader:
                 with open(env_file) as f:
                     for line in f:
                         line = line.strip()
-                        if line and not line.startswith('#'):
-                            if '=' in line:
-                                key, value = line.split('=', 1)
+                        if line and not line.startswith("#"):
+                            if "=" in line:
+                                key, value = line.split("=", 1)
                                 os.environ[key.strip()] = value.strip()
                 self.logger(f"ENV LOADED | {env_file}")
                 return True
             else:
-                self.logger(f"ENV NOT FOUND | using system env")
+                self.logger("ENV NOT FOUND | using system env")
                 return False
         except Exception as e:
             self.logger(f"ENV LOAD ERROR | {str(e)}")
@@ -240,6 +237,7 @@ class ConfigLoader:
         """
         try:
             from models.validator import ValidationEngine
+
             engine = ValidationEngine()
             result = engine.validate_workflow(Path(workflow_file), cross_reference_check=True)
 
@@ -251,12 +249,12 @@ class ConfigLoader:
                 )
                 if console_info:
                     console_info("")
-                    console_info("[VALIDATE] Workflow: %s", result.metadata.get('name'))
-                    console_info("[VALIDATE] Team: %s", result.metadata.get('team'))
-                    console_info("[VALIDATE] Schema Version: %s", result.metadata.get('schema_version'))
-                    console_info("[VALIDATE] Blocks: %s", result.metadata.get('blocks_count'))
-                    console_info("[VALIDATE] Execution Phases: %s", result.metadata.get('phases'))
-                    console_info("[VALIDATE] Flow Control Blocks: %s", result.metadata.get('flow_control_blocks'))
+                    console_info("[VALIDATE] Workflow: %s", result.metadata.get("name"))
+                    console_info("[VALIDATE] Team: %s", result.metadata.get("team"))
+                    console_info("[VALIDATE] Schema Version: %s", result.metadata.get("schema_version"))
+                    console_info("[VALIDATE] Blocks: %s", result.metadata.get("blocks_count"))
+                    console_info("[VALIDATE] Execution Phases: %s", result.metadata.get("phases"))
+                    console_info("[VALIDATE] Flow Control Blocks: %s", result.metadata.get("flow_control_blocks"))
                     console_info("[VALIDATE] Status: OK\n")
             else:
                 self.logger(f"VALIDATE FAILED | errors={len(result.errors)} | warnings={len(result.warnings)}")
@@ -266,6 +264,7 @@ class ConfigLoader:
                 if console_info:
                     console_info("")
                 import sys as _sys
+
                 _sys.exit(1)
 
             if result.warnings and pkg_logger:
@@ -299,7 +298,7 @@ class ConfigLoader:
 
         Mutates task_input in place (injects defaults).
         """
-        inputs_spec = config.get('inputs')
+        inputs_spec = config.get("inputs")
         if not inputs_spec:
             return  # Backward compatible
 
@@ -309,8 +308,8 @@ class ConfigLoader:
 
         for field_name, field_config in inputs_spec.items():
             if isinstance(field_config, dict):
-                is_required = field_config.get('required', True)
-                default_val = field_config.get('default')
+                is_required = field_config.get("required", True)
+                default_val = field_config.get("default")
             else:
                 is_required = field_config.required
                 default_val = field_config.default
@@ -319,9 +318,9 @@ class ConfigLoader:
                 if is_required:
                     desc = ""
                     if isinstance(field_config, dict):
-                        desc = field_config.get('description', '')
-                    elif hasattr(field_config, 'description'):
-                        desc = field_config.description or ''
+                        desc = field_config.get("description", "")
+                    elif hasattr(field_config, "description"):
+                        desc = field_config.description or ""
                     hint = f" ({desc})" if desc else ""
                     errors.append(f"  - '{field_name}'{hint}")
                 elif default_val is not None:
@@ -336,19 +335,20 @@ class ConfigLoader:
                 pkg_logger.warning("Extra inputs not declared in workflow: %s", sorted(extra))
 
         if errors:
-            workflow_name = config.get('name', 'unknown')
+            workflow_name = config.get("name", "unknown")
             msg = (
                 f"\n[ERROR] Missing required inputs for workflow '{workflow_name}':\n"
                 + "\n".join(errors)
                 + f"\n\nDeclared inputs: {sorted(declared)}"
                 + f"\nProvided inputs: {sorted(provided)}"
-                + "\n\nProvide inputs via --input '{\"field\": \"value\"}' or task.input.json\n"
+                + '\n\nProvide inputs via --input \'{"field": "value"}\' or task.input.json\n'
             )
             if console_error:
                 console_error(msg)
             missing_names = [e.strip().lstrip("- '").split("'")[0] for e in errors]
             self.logger(f"INPUT VALIDATION FAILED | missing: {missing_names}")
             import sys as _sys
+
             _sys.exit(1)
 
         self.logger(f"INPUT VALIDATION OK | declared={sorted(declared)} | provided={sorted(provided)}")

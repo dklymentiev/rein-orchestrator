@@ -18,15 +18,16 @@ Supported providers:
     - openrouter: Multi-model proxy (OPENROUTER_API_KEY)
     - gateway: AI Gateway proxy (AI_GATEWAY_URL)
 """
-import os
-from typing import Optional, Callable
 
-from .base import Provider, UsageStats
+import os
+from typing import Callable, Optional
+
 from .anthropic import AnthropicProvider
-from .openai import OpenAIProvider
-from .ollama import OllamaProvider
-from .openrouter import OpenRouterProvider
+from .base import Provider, UsageStats
 from .gateway import GatewayProvider
+from .ollama import OllamaProvider
+from .openai import OpenAIProvider
+from .openrouter import OpenRouterProvider
 
 PROVIDERS = {
     "anthropic": AnthropicProvider,
@@ -37,14 +38,13 @@ PROVIDERS = {
 }
 
 
-
 def create_provider(
     provider: str = "",
     model: str = "",
     max_tokens: int = 4096,
     temperature: float = 0.7,
     logger: Optional[Callable[[str], None]] = None,
-    **kwargs
+    **kwargs,
 ) -> Provider:
     """
     Create an LLM provider instance.

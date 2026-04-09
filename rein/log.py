@@ -9,22 +9,22 @@ Also provides scrub_secrets() — the shared credential redaction function
 applied to rein.log, block run logs (runs/run-NNN.log), and the result
 field of result.json before persistence (HIGH-003).
 """
+
 import logging
 import re
 import sys
 
-
 # Shared credential/token patterns scrubbed from any persisted output.
 # Covers provider API keys, bearer tokens, and KEY=VALUE env dumps.
 _SECRET_PATTERNS = re.compile(
-    r'(sk-[a-zA-Z0-9]{20,}'
-    r'|anthropic-[a-zA-Z0-9]{20,}'
-    r'|sk-ant-[a-zA-Z0-9_-]{20,}'
-    r'|sk-or-[a-zA-Z0-9_-]{20,}'
-    r'|ANTHROPIC_API_KEY=[^\s]+'
-    r'|OPENAI_API_KEY=[^\s]+'
-    r'|OPENROUTER_API_KEY=[^\s]+'
-    r'|Bearer\s+[a-zA-Z0-9._-]{20,})'
+    r"(sk-[a-zA-Z0-9]{20,}"
+    r"|anthropic-[a-zA-Z0-9]{20,}"
+    r"|sk-ant-[a-zA-Z0-9_-]{20,}"
+    r"|sk-or-[a-zA-Z0-9_-]{20,}"
+    r"|ANTHROPIC_API_KEY=[^\s]+"
+    r"|OPENAI_API_KEY=[^\s]+"
+    r"|OPENROUTER_API_KEY=[^\s]+"
+    r"|Bearer\s+[a-zA-Z0-9._-]{20,})"
 )
 
 
@@ -37,7 +37,7 @@ def scrub_secrets(text: str) -> str:
     """
     if not isinstance(text, str):
         return text
-    return _SECRET_PATTERNS.sub('[REDACTED]', text)
+    return _SECRET_PATTERNS.sub("[REDACTED]", text)
 
 
 class _LazyStreamHandler(logging.StreamHandler):

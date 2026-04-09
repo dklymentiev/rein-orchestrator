@@ -9,21 +9,20 @@ Covers:
 - SEC-05: logic script path containment against workflow_dir
 - SEC-06: error handler script path containment (no raw absolute fallback)
 """
-import json
+
 import os
-import tempfile
 
 import pytest
 
+from rein.agent_config import SAFE_AGENT_REF, _resolve_agent_yaml
+from rein.config import SAFE_FLOW_NAME, ConfigLoader
 from rein.log import scrub_secrets
 from rein.prompt_assembler import resolve_file_placeholder
-from rein.config import ConfigLoader, SAFE_FLOW_NAME
-from rein.agent_config import _resolve_agent_yaml, SAFE_AGENT_REF
-
 
 # ============================================================
 # HIGH-001: prompt_assembler containment
 # ============================================================
+
 
 class TestFilePlaceholderContainment:
     def test_traversal_via_filename_is_rejected(self, tmp_path):
@@ -55,7 +54,8 @@ class TestFilePlaceholderContainment:
         # {{ secret.json }} might find tmp_path/secret.json via the symlink
         result = resolve_file_placeholder("secret.json", str(task_dir), None)
         assert result is None or task_dir.resolve() in [
-            p for p in [tmp_path]  # any path we resolve must be inside task_dir
+            p
+            for p in [tmp_path]  # any path we resolve must be inside task_dir
             if str(result or "").startswith(str(task_dir.resolve()))
         ]
         # Strong form: if result is truthy it must be inside task_dir
@@ -88,6 +88,7 @@ class TestFilePlaceholderContainment:
 # ============================================================
 # HIGH-003: credential scrubbing
 # ============================================================
+
 
 class TestScrubSecrets:
     # Fake credential fixtures are built by concatenation so the literal
@@ -126,6 +127,7 @@ class TestScrubSecrets:
     def test_run_logger_scrubs(self, tmp_path):
         """RunLogger.write must scrub secrets before persisting."""
         from rein.run_log import RunLogger
+
         log = RunLogger(str(tmp_path), "block1", 0)
         log.write("PROMPT", "Using key " + self._FAKE_SK_ANT + " for call")
         log.close()
@@ -137,6 +139,7 @@ class TestScrubSecrets:
 # ============================================================
 # HIGH-004: SAFE_FLOW_NAME validation
 # ============================================================
+
 
 class TestFlowNameValidation:
     def test_safe_names_accepted(self):
@@ -170,6 +173,7 @@ class TestFlowNameValidation:
 # ============================================================
 # HIGH-007: agent_ref containment
 # ============================================================
+
 
 class TestAgentRefContainment:
     def test_safe_refs_accepted(self):
@@ -214,6 +218,7 @@ class TestAgentRefContainment:
 # missing-file misconfiguration into an unexpected execution of
 # whatever absolute path happened to be in the YAML. That fallback
 # has been removed.
+
 
 class TestErrorHandlerNoAbsoluteFallback:
     def test_absolute_path_not_executed(self, tmp_path):

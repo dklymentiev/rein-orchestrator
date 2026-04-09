@@ -4,6 +4,7 @@ When a gate block uses `routing:` to select one of several targets, the
 non-chosen branches must be marked skipped so the main loop does not also
 spawn them via depends_on scheduling.
 """
+
 from rein import state_machine
 
 

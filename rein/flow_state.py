@@ -4,12 +4,12 @@ Rein Flow State - Build complete workflow state as JSON.
 Returns blocks with layout coordinates, edges, events, and status.
 Used by MCP tools, CLI, and external APIs (HQ dashboard).
 """
-import os
+
 import json
+import os
 import sqlite3
+
 import yaml
-from datetime import datetime
-from typing import Optional
 
 
 def get_flow_state(task_dir: str, agents_dir: str = None) -> dict:
@@ -160,7 +160,7 @@ def _parse_recent_events(task_dir: str, limit: int = 50) -> list:
         with open(log_path) as f:
             lines = f.readlines()
 
-        for line in lines[-limit * 2:]:  # Read extra to filter
+        for line in lines[-limit * 2 :]:  # Read extra to filter
             line = line.strip()
             if not line or " | " not in line:
                 continue
@@ -203,12 +203,14 @@ def _parse_recent_events(task_dir: str, limit: int = 50) -> list:
             else:
                 continue  # Skip debug/internal lines
 
-            events.append({
-                "ts": ts,
-                "type": event_type,
-                "block": block_name,
-                "detail": full_rest[:200],
-            })
+            events.append(
+                {
+                    "ts": ts,
+                    "type": event_type,
+                    "block": block_name,
+                    "detail": full_rest[:200],
+                }
+            )
 
     except Exception:
         pass
@@ -219,13 +221,14 @@ def _parse_recent_events(task_dir: str, limit: int = 50) -> list:
 def _extract_block_name(text: str) -> str:
     """Extract block name from log line like 'BLOCK STARTED | draft[abc123] | ...'."""
     import re
+
     # Match pattern: name[uid] where name is alphanumeric+hyphens
-    match = re.search(r'\b([a-zA-Z][a-zA-Z0-9_-]*)\[', text)
+    match = re.search(r"\b([a-zA-Z][a-zA-Z0-9_-]*)\[", text)
     if match:
         return match.group(1)
 
     # Try: "block=name" pattern (from BLOCK_START markers)
-    match = re.search(r'block=(\S+)', text)
+    match = re.search(r"block=(\S+)", text)
     if match:
         return match.group(1)
 

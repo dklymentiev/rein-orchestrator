@@ -1,4 +1,5 @@
 """Shared fixtures for Rein test suite."""
+
 import os
 import tempfile
 
@@ -43,6 +44,7 @@ def sample_workflow_file(tmp_dir, sample_workflow):
 def mock_provider():
     """Return a mock provider that echoes back prompts."""
     from unittest.mock import MagicMock
+
     from rein.providers.base import UsageStats
 
     provider = MagicMock()

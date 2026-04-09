@@ -1,14 +1,15 @@
 """Tests for rein/cli.py"""
-import os
-import json
+
 import argparse
-import pytest
+import json
+import os
 import tempfile
+from unittest.mock import MagicMock, patch
+
+import pytest
 import yaml
 
-from unittest.mock import patch, MagicMock
-
-from rein.cli import main, _handle_status, _handle_flow, _handle_task, _handle_config, _handle_step_resume
+from rein.cli import _handle_config, _handle_flow, _handle_status, _handle_step_resume, _handle_task, main
 
 
 class TestArgumentParsing:
@@ -20,33 +21,44 @@ class TestArgumentParsing:
         # We only need to verify that parse_args is called;
         # actual integration parsing is tested below via parse_known_args.
         mock_parse.return_value = argparse.Namespace(
-            config=None, flow=None, input=None, task_dir=None,
-            question=None, task=None, status=None, pause=False,
-            resume=None, no_ui=False, agents_dir="/tmp/agents",
-            daemon=False, daemon_interval=5, max_workflows=3,
-            ws_port=8765, run_task=None,
+            config=None,
+            flow=None,
+            input=None,
+            task_dir=None,
+            question=None,
+            task=None,
+            status=None,
+            pause=False,
+            resume=None,
+            no_ui=False,
+            agents_dir="/tmp/agents",
+            daemon=False,
+            daemon_interval=5,
+            max_workflows=3,
+            ws_port=8765,
+            run_task=None,
         )
         return mock_parse.return_value
 
     def test_defaults(self):
         """Test that default values are correct when no arguments given"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--flow', metavar='FLOW_NAME')
-        parser.add_argument('--input', metavar='JSON')
-        parser.add_argument('--task-dir', metavar='DIR')
-        parser.add_argument('--question', metavar='FILE')
-        parser.add_argument('--task', metavar='TASK_DIR')
-        parser.add_argument('--status', metavar='TASK_ID')
-        parser.add_argument('--pause', action='store_true')
-        parser.add_argument('--resume', metavar='RUN_ID')
-        parser.add_argument('--no-ui', action='store_true')
-        parser.add_argument('--agents-dir', metavar='PATH', default='/default/agents')
-        parser.add_argument('--daemon', action='store_true')
-        parser.add_argument('--daemon-interval', type=int, default=5)
-        parser.add_argument('--max-workflows', type=int, default=3)
-        parser.add_argument('--ws-port', type=int, default=8765)
-        parser.add_argument('--run-task', metavar='TASK_ID')
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--flow", metavar="FLOW_NAME")
+        parser.add_argument("--input", metavar="JSON")
+        parser.add_argument("--task-dir", metavar="DIR")
+        parser.add_argument("--question", metavar="FILE")
+        parser.add_argument("--task", metavar="TASK_DIR")
+        parser.add_argument("--status", metavar="TASK_ID")
+        parser.add_argument("--pause", action="store_true")
+        parser.add_argument("--resume", metavar="RUN_ID")
+        parser.add_argument("--no-ui", action="store_true")
+        parser.add_argument("--agents-dir", metavar="PATH", default="/default/agents")
+        parser.add_argument("--daemon", action="store_true")
+        parser.add_argument("--daemon-interval", type=int, default=5)
+        parser.add_argument("--max-workflows", type=int, default=3)
+        parser.add_argument("--ws-port", type=int, default=8765)
+        parser.add_argument("--run-task", metavar="TASK_ID")
 
         args = parser.parse_args([])
         assert args.config is None
@@ -59,7 +71,7 @@ class TestArgumentParsing:
         assert args.pause is False
         assert args.resume is None
         assert args.no_ui is False
-        assert args.agents_dir == '/default/agents'
+        assert args.agents_dir == "/default/agents"
         assert args.daemon is False
         assert args.daemon_interval == 5
         assert args.max_workflows == 3
@@ -69,16 +81,16 @@ class TestArgumentParsing:
     def test_config_positional(self):
         """Test positional config argument"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
+        parser.add_argument("config", nargs="?")
         args = parser.parse_args(["workflow.yaml"])
         assert args.config == "workflow.yaml"
 
     def test_flow_argument(self):
         """Test --flow argument"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--flow', metavar='FLOW_NAME')
-        parser.add_argument('--question', metavar='FILE')
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--flow", metavar="FLOW_NAME")
+        parser.add_argument("--question", metavar="FILE")
         args = parser.parse_args(["--flow", "deliberation", "--question", "q.txt"])
         assert args.flow == "deliberation"
         assert args.question == "q.txt"
@@ -86,14 +98,13 @@ class TestArgumentParsing:
     def test_daemon_arguments(self):
         """Test --daemon with related arguments"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--daemon', action='store_true')
-        parser.add_argument('--daemon-interval', type=int, default=5)
-        parser.add_argument('--max-workflows', type=int, default=3)
-        parser.add_argument('--ws-port', type=int, default=8765)
-        parser.add_argument('--no-ui', action='store_true')
-        args = parser.parse_args(["--daemon", "--daemon-interval", "10",
-                                   "--max-workflows", "5", "--ws-port", "9000"])
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--daemon", action="store_true")
+        parser.add_argument("--daemon-interval", type=int, default=5)
+        parser.add_argument("--max-workflows", type=int, default=3)
+        parser.add_argument("--ws-port", type=int, default=8765)
+        parser.add_argument("--no-ui", action="store_true")
+        args = parser.parse_args(["--daemon", "--daemon-interval", "10", "--max-workflows", "5", "--ws-port", "9000"])
         assert args.daemon is True
         assert args.daemon_interval == 10
         assert args.max_workflows == 5
@@ -102,73 +113,73 @@ class TestArgumentParsing:
     def test_task_argument(self):
         """Test --task argument"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--task', metavar='TASK_DIR')
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--task", metavar="TASK_DIR")
         args = parser.parse_args(["--task", "/path/to/task-001"])
         assert args.task == "/path/to/task-001"
 
     def test_status_argument(self):
         """Test --status argument"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--status', metavar='TASK_ID')
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--status", metavar="TASK_ID")
         args = parser.parse_args(["--status", "task-20260101-120000"])
         assert args.status == "task-20260101-120000"
 
     def test_run_task_argument(self):
         """Test --run-task argument"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--run-task', metavar='TASK_ID')
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--run-task", metavar="TASK_ID")
         args = parser.parse_args(["--run-task", "task-001"])
         assert args.run_task == "task-001"
 
     def test_pause_flag(self):
         """Test --pause flag"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--pause', action='store_true')
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--pause", action="store_true")
         args = parser.parse_args(["--pause"])
         assert args.pause is True
 
     def test_resume_argument(self):
         """Test --resume argument"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--resume', metavar='RUN_ID')
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--resume", metavar="RUN_ID")
         args = parser.parse_args(["--resume", "20251230-142345"])
         assert args.resume == "20251230-142345"
 
     def test_input_json_argument(self):
         """Test --input with JSON string"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--input', metavar='JSON')
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--input", metavar="JSON")
         args = parser.parse_args(["--input", '{"key": "value"}'])
         assert args.input == '{"key": "value"}'
 
     def test_agents_dir_argument(self):
         """Test --agents-dir argument"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--agents-dir', metavar='PATH', default='/default')
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--agents-dir", metavar="PATH", default="/default")
         args = parser.parse_args(["--agents-dir", "/custom/agents"])
         assert args.agents_dir == "/custom/agents"
 
     def test_no_ui_flag(self):
         """Test --no-ui flag"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--no-ui', action='store_true')
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--no-ui", action="store_true")
         args = parser.parse_args(["--no-ui"])
         assert args.no_ui is True
 
     def test_combined_flow_with_task_dir(self):
         """Test --flow combined with --task-dir"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('config', nargs='?')
-        parser.add_argument('--flow', metavar='FLOW_NAME')
-        parser.add_argument('--task-dir', metavar='DIR')
+        parser.add_argument("config", nargs="?")
+        parser.add_argument("--flow", metavar="FLOW_NAME")
+        parser.add_argument("--task-dir", metavar="DIR")
         args = parser.parse_args(["--flow", "analysis", "--task-dir", "/tasks/t1"])
         assert args.flow == "analysis"
         assert args.task_dir == "/tasks/t1"
@@ -200,7 +211,7 @@ class TestHandleStatus:
             "flow": "deliberation",
             "created": "2026-01-01T12:00:00",
             "status": "completed",
-            "input": {"topic": "test topic"}
+            "input": {"topic": "test topic"},
         }
         with open(os.path.join(input_dir, "task.json"), "w") as f:
             json.dump(task_data, f)
@@ -326,9 +337,22 @@ class TestDaemonMode:
 
     def test_daemon_calls_run_daemon(self):
         """Test --daemon calls run_daemon with correct arguments and exits"""
-        with patch("sys.argv", ["rein", "--daemon", "--daemon-interval", "10",
-                                 "--max-workflows", "5", "--ws-port", "9000",
-                                 "--agents-dir", "/tmp/agents", "--no-ui"]):
+        with patch(
+            "sys.argv",
+            [
+                "rein",
+                "--daemon",
+                "--daemon-interval",
+                "10",
+                "--max-workflows",
+                "5",
+                "--ws-port",
+                "9000",
+                "--agents-dir",
+                "/tmp/agents",
+                "--no-ui",
+            ],
+        ):
             with patch("rein.daemon.run_daemon") as mock_daemon:
                 with pytest.raises(SystemExit) as exc_info:
                     main()
@@ -360,9 +384,7 @@ class TestHandleFlow:
                 "name": "test-flow",
                 "team": "test-team",
                 "semaphore": 2,
-                "blocks": [
-                    {"name": "step1", "specialist": "analyzer", "prompt": "Analyze this"}
-                ]
+                "blocks": [{"name": "step1", "specialist": "analyzer", "prompt": "Analyze this"}],
             }
             flow_path = os.path.join(tmpdir, "flows", "test-flow", "test-flow.yaml")
             with open(flow_path, "w") as f:
@@ -404,10 +426,7 @@ class TestHandleFlow:
             MockPM.return_value = mock_manager
 
             with patch("rein.tasks.load_config") as mock_load:
-                mock_load.return_value = {
-                    "semaphore": 2,
-                    "blocks": [{"name": "step1"}]
-                }
+                mock_load.return_value = {"semaphore": 2, "blocks": [{"name": "step1"}]}
 
                 result = _handle_flow(args)
 
@@ -484,7 +503,7 @@ class TestHandleFlow:
             with patch("rein.tasks.load_config") as mock_load:
                 mock_load.return_value = {"semaphore": 3, "blocks": []}
 
-                result = _handle_flow(args)
+                _handle_flow(args)
 
             call_kwargs = MockPM.call_args[1]
             assert "Analyze the codebase" in call_kwargs["task_input"]["task"]
@@ -559,9 +578,7 @@ class TestHandleTask:
                 "schema_version": "3.0",
                 "name": "deliberation",
                 "semaphore": 2,
-                "blocks": [
-                    {"name": "discuss", "specialist": "analyst", "prompt": "Discuss"}
-                ]
+                "blocks": [{"name": "discuss", "specialist": "analyst", "prompt": "Discuss"}],
             }
             flow_path = os.path.join(tmpdir, "flows", "deliberation", "deliberation.yaml")
             with open(flow_path, "w") as f:
@@ -722,9 +739,7 @@ class TestHandleConfig:
                 "schema_version": "3.0",
                 "name": "test-workflow",
                 "semaphore": 4,
-                "blocks": [
-                    {"name": "step1", "specialist": "writer", "prompt": "Write something"}
-                ]
+                "blocks": [{"name": "step1", "specialist": "writer", "prompt": "Write something"}],
             }
             yaml.dump(config_data, f)
             path = f.name
@@ -853,21 +868,21 @@ class TestStepMode:
     def test_step_argument_parsing(self):
         """Test --step parses integer correctly"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('--step', type=int, default=None, metavar='N')
+        parser.add_argument("--step", type=int, default=None, metavar="N")
         args = parser.parse_args(["--step", "3"])
         assert args.step == 3
 
     def test_step_zero_means_unlimited(self):
         """Test --step 0 parses correctly (unlimited mode)"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('--step', type=int, default=None, metavar='N')
+        parser.add_argument("--step", type=int, default=None, metavar="N")
         args = parser.parse_args(["--step", "0"])
         assert args.step == 0
 
     def test_step_default_is_none(self):
         """Test --step defaults to None (continuous mode)"""
         parser = argparse.ArgumentParser()
-        parser.add_argument('--step', type=int, default=None, metavar='N')
+        parser.add_argument("--step", type=int, default=None, metavar="N")
         args = parser.parse_args([])
         assert args.step is None
 
@@ -890,8 +905,7 @@ class TestStepMode:
             with open(flow_yaml, "w") as f:
                 yaml.dump({"blocks": [], "team": "t"}, f)
 
-            with patch("sys.argv", ["rein", "--flow", "test-flow", "--step", "1",
-                                    "--agents-dir", agents_dir]):
+            with patch("sys.argv", ["rein", "--flow", "test-flow", "--step", "1", "--agents-dir", agents_dir]):
                 with patch("rein.orchestrator.ProcessManager") as MockPM:
                     mock_manager = MagicMock()
                     mock_manager.tasks_root = os.path.join(agents_dir, "tasks")
@@ -917,8 +931,7 @@ class TestStepMode:
             with open(flow_yaml, "w") as f:
                 yaml.dump({"blocks": [], "team": "t"}, f)
 
-            with patch("sys.argv", ["rein", "--flow", "test-flow", "--step", "1",
-                                    "--agents-dir", agents_dir]):
+            with patch("sys.argv", ["rein", "--flow", "test-flow", "--step", "1", "--agents-dir", agents_dir]):
                 with patch("rein.orchestrator.ProcessManager") as MockPM:
                     mock_manager = MagicMock()
                     mock_manager.tasks_root = os.path.join(agents_dir, "tasks")
@@ -959,10 +972,12 @@ class TestStepMode:
 
                 with patch("rein.tasks.load_config", return_value={"blocks": []}):
                     args = argparse.Namespace(
-                        step=1, task_dir=task_dir, flow=None,
+                        step=1,
+                        task_dir=task_dir,
+                        flow=None,
                         agents_dir=agents_dir,
                     )
-                    manager = _handle_step_resume(args)
+                    _handle_step_resume(args)
 
                 # Verify ProcessManager was created with correct params
                 call_kwargs = MockPM.call_args[1]

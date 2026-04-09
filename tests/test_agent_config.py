@@ -1,11 +1,11 @@
 """Tests for rein/agent_config.py -- agent.yaml loading and validation."""
+
 import os
 import tempfile
 
-import pytest
 import yaml
 
-from rein.agent_config import load_agent_config, validate_forbidden_behavior, AgentConfig
+from rein.agent_config import AgentConfig, load_agent_config, validate_forbidden_behavior
 
 
 class TestLoadAgentConfig:
@@ -22,25 +22,33 @@ class TestLoadAgentConfig:
     def test_load_by_name(self):
         """Load agent config by name relative to agents_dir."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            self._make_agent(tmpdir, "smm", {
-                "name": "smm",
-                "model": "claude-sonnet-4-20250514",
-                "department": "marketing",
-            })
+            self._make_agent(
+                tmpdir,
+                "smm",
+                {
+                    "name": "smm",
+                    "model": "claude-sonnet-4-20250514",
+                    "department": "marketing",
+                },
+            )
             cfg = load_agent_config("smm", agents_dir=tmpdir)
             assert cfg is not None
             assert cfg.name == "smm"
             assert cfg.model == "claude-sonnet-4-20250514"
             assert cfg.department == "marketing"
 
-    def test_load_by_absolute_path(self):
-        """Load agent config from absolute path."""
+    def test_load_by_name_with_agents_dir(self):
+        """Load agent config by name within agents_dir."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            agent_dir = self._make_agent(tmpdir, "editor", {
-                "name": "editor",
-                "model": "gpt-4o",
-            })
-            cfg = load_agent_config(agent_dir)
+            self._make_agent(
+                tmpdir,
+                "editor",
+                {
+                    "name": "editor",
+                    "model": "gpt-4o",
+                },
+            )
+            cfg = load_agent_config("editor", agents_dir=tmpdir)
             assert cfg is not None
             assert cfg.name == "editor"
             assert cfg.model == "gpt-4o"
@@ -73,27 +81,31 @@ class TestLoadAgentConfig:
     def test_full_config(self):
         """All fields parsed correctly."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            self._make_agent(tmpdir, "full", {
-                "name": "full-agent",
-                "model": "claude-opus-4-20250514",
-                "schedule": "*/5 * * * *",
-                "linux_user": "agent-smm",
-                "department": "marketing",
-                "department_role": "creator",
-                "groups": ["social", "content"],
-                "tools": ["claude-cli", "mesh"],
-                "mcp_servers": ["mesh-server"],
-                "mesh_workspace": "marketing",
-                "forbidden_fs": ["/etc/*", "/root/*"],
-                "forbidden_behavior": ["modify_other_agents", "access_credentials"],
-                "directories": {"read": ["/data"], "write": ["/output"]},
-                "interactions": {
-                    "receives": ["conductor"],
-                    "assigns": ["editor"],
-                    "escalates": ["conductor"],
-                    "notifies": ["telegram"],
+            self._make_agent(
+                tmpdir,
+                "full",
+                {
+                    "name": "full-agent",
+                    "model": "claude-opus-4-20250514",
+                    "schedule": "*/5 * * * *",
+                    "linux_user": "agent-smm",
+                    "department": "marketing",
+                    "department_role": "creator",
+                    "groups": ["social", "content"],
+                    "tools": ["claude-cli", "mesh"],
+                    "mcp_servers": ["mesh-server"],
+                    "mesh_workspace": "marketing",
+                    "forbidden_fs": ["/etc/*", "/root/*"],
+                    "forbidden_behavior": ["modify_other_agents", "access_credentials"],
+                    "directories": {"read": ["/data"], "write": ["/output"]},
+                    "interactions": {
+                        "receives": ["conductor"],
+                        "assigns": ["editor"],
+                        "escalates": ["conductor"],
+                        "notifies": ["telegram"],
+                    },
                 },
-            })
+            )
             cfg = load_agent_config("full", agents_dir=tmpdir)
             assert cfg.name == "full-agent"
             assert cfg.linux_user == "agent-smm"
@@ -127,27 +139,31 @@ class TestValidateForbiddenBehavior:
     def test_forbidden_in_prompt_detected(self):
         """Forbidden behavior keyword in prompt is detected."""
         cfg = AgentConfig(forbidden_behavior=["delete_all_data"])
-        result = validate_forbidden_behavior(cfg, {
-            "prompt": "Please delete_all_data from the database"
-        })
+        result = validate_forbidden_behavior(cfg, {"prompt": "Please delete_all_data from the database"})
         assert result is not None
         assert "delete_all_data" in result
 
     def test_arbitrary_commands_with_custom_script(self):
         """execute_arbitrary_commands rule catches custom logic scripts."""
         cfg = AgentConfig(forbidden_behavior=["execute_arbitrary_commands"])
-        result = validate_forbidden_behavior(cfg, {
-            "prompt": "do thing",
-            "logic": {"custom": "scripts/evil.sh"},
-        })
+        result = validate_forbidden_behavior(
+            cfg,
+            {
+                "prompt": "do thing",
+                "logic": {"custom": "scripts/evil.sh"},
+            },
+        )
         assert result is not None
         assert "execute_arbitrary_commands" in result
 
     def test_clean_block_passes(self):
         """Normal block with strict rules still passes."""
         cfg = AgentConfig(forbidden_behavior=["modify_other_agents", "access_credentials"])
-        result = validate_forbidden_behavior(cfg, {
-            "prompt": "Write a social media post about Easter",
-            "logic": {},
-        })
+        result = validate_forbidden_behavior(
+            cfg,
+            {
+                "prompt": "Write a social media post about Easter",
+                "logic": {},
+            },
+        )
         assert result is None

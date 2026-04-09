@@ -6,21 +6,20 @@ Covers:
 - ProcessManager._validate_task_inputs()
 - Unresolved placeholder detection in assemble_prompt()
 """
+
 import os
-import json
-import pytest
 import tempfile
 
+import pytest
 from pydantic import ValidationError as PydanticValidationError
 
-from models.workflow import InputFieldConfig, WorkflowConfig, BlockConfig
-from rein.models import Process
+from models.workflow import BlockConfig, InputFieldConfig, WorkflowConfig
 from rein.orchestrator import ProcessManager
-
 
 # ---------------------------------------------------------------------------
 # InputFieldConfig
 # ---------------------------------------------------------------------------
+
 
 class TestInputFieldConfig:
     """Tests for InputFieldConfig Pydantic model"""
@@ -80,24 +79,18 @@ class TestInputFieldConfig:
 # WorkflowConfig with inputs
 # ---------------------------------------------------------------------------
 
+
 class TestWorkflowConfigInputs:
     """Tests for WorkflowConfig inputs: section"""
 
     def _make_config(self, inputs=None, blocks=None):
         """Helper to build minimal WorkflowConfig kwargs"""
         if blocks is None:
-            blocks = [BlockConfig(
-                name="step1",
-                specialist="analyzer",
-                prompt="Analyze {{ task.input.topic }}"
-            )]
+            blocks = [BlockConfig(name="step1", specialist="analyzer", prompt="Analyze {{ task.input.topic }}")]
         return {
             "name": "test-workflow",
             "team": "team-test",
-            "blocks": [
-                {"name": b.name, "specialist": b.specialist, "prompt": b.prompt}
-                for b in blocks
-            ],
+            "blocks": [{"name": b.name, "specialist": b.specialist, "prompt": b.prompt} for b in blocks],
             "inputs": inputs,
         }
 
@@ -109,13 +102,7 @@ class TestWorkflowConfigInputs:
             inputs={
                 "topic": InputFieldConfig(description="The topic"),
             },
-            blocks=[
-                BlockConfig(
-                    name="step1",
-                    specialist="analyzer",
-                    prompt="Analyze {{ task.input.topic }}"
-                )
-            ],
+            blocks=[BlockConfig(name="step1", specialist="analyzer", prompt="Analyze {{ task.input.topic }}")],
         )
         assert cfg.inputs is not None
         assert "topic" in cfg.inputs
@@ -125,13 +112,7 @@ class TestWorkflowConfigInputs:
         cfg = WorkflowConfig(
             name="test-workflow",
             team="team-test",
-            blocks=[
-                BlockConfig(
-                    name="step1",
-                    specialist="analyzer",
-                    prompt="Analyze {{ task.input.topic }}"
-                )
-            ],
+            blocks=[BlockConfig(name="step1", specialist="analyzer", prompt="Analyze {{ task.input.topic }}")],
         )
         assert cfg.inputs is None
 
@@ -148,7 +129,7 @@ class TestWorkflowConfigInputs:
                     BlockConfig(
                         name="step1",
                         specialist="analyzer",
-                        prompt="Analyze {{ task.input.topic }} with {{ task.input.files }}"
+                        prompt="Analyze {{ task.input.topic }} with {{ task.input.files }}",
                     )
                 ],
             )
@@ -166,7 +147,7 @@ class TestWorkflowConfigInputs:
                 BlockConfig(
                     name="step1",
                     specialist="analyzer",
-                    prompt="Analyze {{ task.input.topic }} with {{ task.input.files }}"
+                    prompt="Analyze {{ task.input.topic }} with {{ task.input.files }}",
                 )
             ],
         )
@@ -180,13 +161,7 @@ class TestWorkflowConfigInputs:
             inputs={
                 "topic": InputFieldConfig(description="The topic"),
             },
-            blocks=[
-                BlockConfig(
-                    name="step1",
-                    specialist="analyzer",
-                    prompt=""
-                )
-            ],
+            blocks=[BlockConfig(name="step1", specialist="analyzer", prompt="")],
         )
         assert cfg.inputs is not None
 
@@ -199,13 +174,7 @@ class TestWorkflowConfigInputs:
                 "topic": InputFieldConfig(description="The topic"),
                 "extra": InputFieldConfig(required=False, description="Not used in prompts"),
             },
-            blocks=[
-                BlockConfig(
-                    name="step1",
-                    specialist="analyzer",
-                    prompt="Analyze {{ task.input.topic }}"
-                )
-            ],
+            blocks=[BlockConfig(name="step1", specialist="analyzer", prompt="Analyze {{ task.input.topic }}")],
         )
         assert len(cfg.inputs) == 2
 
@@ -213,6 +182,7 @@ class TestWorkflowConfigInputs:
 # ---------------------------------------------------------------------------
 # ProcessManager._validate_task_inputs
 # ---------------------------------------------------------------------------
+
 
 class TestValidateTaskInputs:
     """Tests for ProcessManager._validate_task_inputs method"""
@@ -241,7 +211,7 @@ class TestValidateTaskInputs:
             "inputs": {
                 "topic": {"required": True, "description": "The topic"},
                 "files": {"required": True, "description": "Files to review"},
-            }
+            },
         }
         # Should not raise
         manager._validate_task_inputs(config)
@@ -254,7 +224,7 @@ class TestValidateTaskInputs:
             "inputs": {
                 "topic": {"required": True},
                 "files": {"required": True, "description": "Files to review"},
-            }
+            },
         }
         with pytest.raises(SystemExit) as exc_info:
             manager._validate_task_inputs(config)
@@ -268,7 +238,7 @@ class TestValidateTaskInputs:
             "inputs": {
                 "topic": {"required": True},
                 "project": {"required": False, "description": "Optional project name"},
-            }
+            },
         }
         # Should not raise
         manager._validate_task_inputs(config)
@@ -281,7 +251,7 @@ class TestValidateTaskInputs:
             "inputs": {
                 "topic": {"required": True},
                 "project": {"required": False, "default": "unknown"},
-            }
+            },
         }
         manager._validate_task_inputs(config)
         assert manager.task_input["project"] == "unknown"
@@ -294,7 +264,7 @@ class TestValidateTaskInputs:
             "inputs": {
                 "topic": {"required": True},
                 "project": {"required": False, "default": "unknown"},
-            }
+            },
         }
         manager._validate_task_inputs(config)
         assert manager.task_input["project"] == "my-project"
@@ -306,7 +276,7 @@ class TestValidateTaskInputs:
             "name": "test",
             "inputs": {
                 "topic": {"required": True},
-            }
+            },
         }
         manager._validate_task_inputs(config)
         captured = capfd.readouterr()
@@ -321,7 +291,7 @@ class TestValidateTaskInputs:
                 "topic": {"required": True, "description": "Topic"},
                 "files": {"required": True, "description": "Files"},
                 "project": {"required": True},
-            }
+            },
         }
         with pytest.raises(SystemExit):
             manager._validate_task_inputs(config)
@@ -330,6 +300,7 @@ class TestValidateTaskInputs:
 # ---------------------------------------------------------------------------
 # Unresolved placeholder detection
 # ---------------------------------------------------------------------------
+
 
 class TestUnresolvedPlaceholders:
     """Tests for unresolved placeholder detection in assemble_prompt"""
@@ -356,20 +327,14 @@ class TestUnresolvedPlaceholders:
     def test_unresolved_raises_error(self, manager):
         """Unresolved {{ task.input.X }} raises ValueError"""
         manager.task_input = {}
-        block = {
-            "specialist": "test-spec",
-            "prompt": "Analyze {{ task.input.topic }}"
-        }
+        block = {"specialist": "test-spec", "prompt": "Analyze {{ task.input.topic }}"}
         with pytest.raises(ValueError, match="Unresolved input placeholders"):
             manager.assemble_prompt(block, "professional")
 
     def test_all_resolved_ok(self, manager):
         """All placeholders resolved produces valid prompt"""
         manager.task_input = {"topic": "AI safety"}
-        block = {
-            "specialist": "test-spec",
-            "prompt": "Analyze {{ task.input.topic }}"
-        }
+        block = {"specialist": "test-spec", "prompt": "Analyze {{ task.input.topic }}"}
         result = manager.assemble_prompt(block, "professional")
         assert "AI safety" in result
         assert "task.input" not in result
@@ -377,10 +342,7 @@ class TestUnresolvedPlaceholders:
     def test_file_placeholder_not_flagged(self, manager):
         """{{ file.json }} placeholders are NOT flagged as unresolved task inputs"""
         manager.task_input = {"topic": "test"}
-        block = {
-            "specialist": "test-spec",
-            "prompt": "Analyze {{ task.input.topic }} with {{ analysis.json }}"
-        }
+        block = {"specialist": "test-spec", "prompt": "Analyze {{ task.input.topic }} with {{ analysis.json }}"}
         # Should not raise - {{ analysis.json }} is a file placeholder, not task.input
         result = manager.assemble_prompt(block, "professional")
         assert "test" in result
@@ -388,19 +350,13 @@ class TestUnresolvedPlaceholders:
     def test_multiple_unresolved(self, manager):
         """Multiple unresolved placeholders all reported"""
         manager.task_input = {}
-        block = {
-            "specialist": "test-spec",
-            "prompt": "Review {{ task.input.topic }} files {{ task.input.files }}"
-        }
+        block = {"specialist": "test-spec", "prompt": "Review {{ task.input.topic }} files {{ task.input.files }}"}
         with pytest.raises(ValueError, match="Unresolved input placeholders"):
             manager.assemble_prompt(block, "professional")
 
     def test_partial_resolution(self, manager):
         """Some resolved, some not - raises for unresolved"""
         manager.task_input = {"topic": "AI safety"}
-        block = {
-            "specialist": "test-spec",
-            "prompt": "Review {{ task.input.topic }} files {{ task.input.files }}"
-        }
+        block = {"specialist": "test-spec", "prompt": "Review {{ task.input.topic }} files {{ task.input.files }}"}
         with pytest.raises(ValueError, match="files"):
             manager.assemble_prompt(block, "professional")

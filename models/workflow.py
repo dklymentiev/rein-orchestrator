@@ -5,14 +5,16 @@ Supports state machine flow control with `next` field.
 Supports declarative input validation with `inputs` section.
 """
 
-from typing import List, Dict, Optional, Set, Tuple, Union
-from dataclasses import dataclass, field
-from pydantic import BaseModel, ConfigDict, Field, field_validator
 import re
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Set, Tuple, Union
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class LogicConfig(BaseModel):
     """Logic phase configuration"""
+
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     pre: Optional[str] = None
@@ -24,18 +26,20 @@ class LogicConfig(BaseModel):
 
 class NextCondition(BaseModel):
     """Conditional transition for state machine flow"""
+
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    if_condition: Optional[str] = Field(None, alias="if", pattern=r'^\{\{.*\}\}$')
-    else_target: Optional[str] = Field(None, alias="else", pattern=r'^[a-z0-9_]+$')
-    goto: Optional[str] = Field(None, pattern=r'^[a-z0-9_]+$')
+    if_condition: Optional[str] = Field(None, alias="if", pattern=r"^\{\{.*\}\}$")
+    else_target: Optional[str] = Field(None, alias="else", pattern=r"^[a-z0-9_]+$")
+    goto: Optional[str] = Field(None, pattern=r"^[a-z0-9_]+$")
 
 
 class BlockConfig(BaseModel):
     """Individual workflow block configuration"""
-    name: str = Field(..., pattern=r'^[a-z0-9_]+$', min_length=1, max_length=50)
+
+    name: str = Field(..., pattern=r"^[a-z0-9_]+$", min_length=1, max_length=50)
     phase: Optional[int] = Field(None, ge=1, le=1000)
-    specialist: Optional[str] = Field(None, pattern=r'^[a-z0-9-]+$')  # Optional for pure logic blocks
+    specialist: Optional[str] = Field(None, pattern=r"^[a-z0-9-]+$")  # Optional for pure logic blocks
     prompt: Optional[str] = Field(default="", min_length=0)
     depends_on: List[str] = Field(default_factory=list)
     parallel: bool = False
@@ -43,10 +47,9 @@ class BlockConfig(BaseModel):
     continue_if_failed: bool = False
     timeout: Optional[int] = Field(None, ge=30, le=7200)
     model: Optional[str] = Field(
-        default="",
-        description="LLM model override for this block. Empty = use provider default."
+        default="", description="LLM model override for this block. Empty = use provider default."
     )
-    save_as: Optional[str] = Field(None, pattern=r'^[a-z0-9_.-]+\.json$')
+    save_as: Optional[str] = Field(None, pattern=r"^[a-z0-9_.-]+\.json$")
     logic: Optional[LogicConfig] = None
     # Agent routing for async step mode (v3.3)
     agent: Optional[str] = Field(None, description="Agent identity for step mode routing")
@@ -57,14 +60,14 @@ class BlockConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator('depends_on')
+    @field_validator("depends_on")
     @classmethod
     def validate_depends_on(cls, v):
         """Ensure depends_on contains valid block names"""
         if not isinstance(v, list):
             raise ValueError("depends_on must be a list")
         for dep in v:
-            if not re.match(r'^[a-z0-9_]+$', dep):
+            if not re.match(r"^[a-z0-9_]+$", dep):
                 raise ValueError(f"Invalid block name in depends_on: {dep}")
         return v
 
@@ -82,42 +85,48 @@ class BlockConfig(BaseModel):
 
 class InputFieldConfig(BaseModel):
     """Declares a workflow input field for pre-dispatch validation"""
+
     description: Optional[str] = Field(None, max_length=500)
     required: bool = Field(default=True)
     default: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator('default')
+    @field_validator("default")
     @classmethod
     def default_only_when_optional(cls, v, info):
-        if v is not None and info.data.get('required', True):
+        if v is not None and info.data.get("required", True):
             raise ValueError("'default' only valid when required=false")
         return v
 
 
 class WorkflowConfig(BaseModel):
     """Complete workflow configuration with validation"""
+
     schema_version: str = Field(default="3.3.0")
-    name: str = Field(..., pattern=r'^[a-z0-9-]+$', min_length=1, max_length=100)
-    team: str = Field(..., pattern=r'^team-[a-z0-9-]+$')
+    name: str = Field(..., pattern=r"^[a-z0-9-]+$", min_length=1, max_length=100)
+    team: str = Field(..., pattern=r"^team-[a-z0-9-]+$")
     description: Optional[str] = Field(default="", max_length=1000)
     metadata: Optional[Dict] = None
     timeout: Optional[int] = Field(None, ge=30, le=86400)
     max_parallel: int = Field(default=3, ge=1, le=10)
-    readable_outputs: bool = Field(default=False, description="Generate human-readable .md files alongside .json outputs")
+    readable_outputs: bool = Field(
+        default=False, description="Generate human-readable .md files alongside .json outputs"
+    )
     provider: Optional[Union[str, Dict]] = None
     model: Optional[str] = None
     max_tokens: Optional[int] = Field(None, ge=1, le=200000)
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
-    default_max_runs: Optional[int] = Field(None, ge=1, le=100, description="Default max_runs for blocks without explicit max_runs")
+    default_max_runs: Optional[int] = Field(
+        None, ge=1, le=100, description="Default max_runs for blocks without explicit max_runs"
+    )
     inputs: Optional[Dict[str, InputFieldConfig]] = None
     on_error: Optional[str] = Field(None, description="Global error handler script path (v3.3)")
     blocks: List[BlockConfig] = Field(..., min_length=1, max_length=300)
 
     model_config = ConfigDict(extra="ignore")
 
-    @field_validator('blocks')
+    @field_validator("blocks")
     @classmethod
     def detect_circular_dependencies(cls, blocks):
         """
@@ -162,7 +171,7 @@ class WorkflowConfig(BaseModel):
 
         return blocks
 
-    @field_validator('blocks')
+    @field_validator("blocks")
     @classmethod
     def validate_block_name_uniqueness(cls, blocks):
         """Ensure all block names are unique"""
@@ -172,7 +181,7 @@ class WorkflowConfig(BaseModel):
             raise ValueError(f"Duplicate block names: {set(duplicates)}")
         return blocks
 
-    @field_validator('blocks')
+    @field_validator("blocks")
     @classmethod
     def validate_flow_control_logic(cls, blocks):
         """Validate flow control parameter combinations"""
@@ -190,18 +199,18 @@ class WorkflowConfig(BaseModel):
 
         return blocks
 
-    @field_validator('blocks')
+    @field_validator("blocks")
     @classmethod
     def validate_inputs_match_prompts(cls, blocks, info):
         """If inputs: is declared, verify every {{ task.input.X }} in prompts has a matching declaration"""
-        inputs = info.data.get('inputs')
+        inputs = info.data.get("inputs")
         if not inputs:
             return blocks
         declared = set(inputs.keys())
         for block in blocks:
             if not block.prompt:
                 continue
-            for match in re.finditer(r'\{\{\s*task\.input\.(\w+)\s*\}\}', block.prompt):
+            for match in re.finditer(r"\{\{\s*task\.input\.(\w+)\s*\}\}", block.prompt):
                 field_name = match.group(1)
                 if field_name not in declared:
                     raise ValueError(
@@ -210,7 +219,7 @@ class WorkflowConfig(BaseModel):
                     )
         return blocks
 
-    @field_validator('blocks')
+    @field_validator("blocks")
     @classmethod
     def validate_block_placeholders(cls, blocks):
         """Validate {{ block_name.format }} placeholders in prompts reference valid blocks and use supported formats"""
@@ -230,7 +239,7 @@ class WorkflowConfig(BaseModel):
         transitive_deps = {name: get_all_ancestors(name) for name in all_names}
 
         # Match {{ word.word }} patterns, capturing the two parts
-        placeholder_re = re.compile(r'\{\{\s*(\w+)\.(\w+)\s*\}\}')
+        placeholder_re = re.compile(r"\{\{\s*(\w+)\.(\w+)\s*\}\}")
 
         for block in blocks:
             if not block.prompt:
@@ -240,17 +249,17 @@ class WorkflowConfig(BaseModel):
                 ref_format = match.group(2)
 
                 # Skip task.input.X placeholders (handled by validate_inputs_match_prompts)
-                if ref_name == 'task':
+                if ref_name == "task":
                     continue
                 # Skip result.X placeholders (state machine conditions)
-                if ref_name == 'result':
+                if ref_name == "result":
                     continue
                 # Only validate placeholders where ref_name matches an existing block
                 if ref_name not in all_names:
                     continue
 
                 # Validate format -- only .json is supported
-                if ref_format != 'json':
+                if ref_format != "json":
                     raise ValueError(
                         f"Block '{block.name}' uses '{{{{ {ref_name}.{ref_format} }}}}' -- "
                         f"'.{ref_format}' is not supported. Use '.json' instead."
@@ -329,8 +338,9 @@ class WorkflowConfig(BaseModel):
 
 class SpecialistMapping(BaseModel):
     """Specialist role mapping in a team"""
-    role: str = Field(..., pattern=r'^[a-z0-9_-]+$', min_length=1, max_length=50)
-    specialist: str = Field(..., pattern=r'^[a-z0-9-]+$')
+
+    role: str = Field(..., pattern=r"^[a-z0-9_-]+$", min_length=1, max_length=50)
+    specialist: str = Field(..., pattern=r"^[a-z0-9-]+$")
     bio: Optional[str] = Field(None, max_length=500)
 
     model_config = ConfigDict(extra="forbid")
@@ -338,20 +348,20 @@ class SpecialistMapping(BaseModel):
 
 class TeamConfig(BaseModel):
     """Team configuration"""
+
     schema_version: str = Field(default="3.3.0")
-    name: str = Field(..., pattern=r'^team-[a-z0-9-]+$', min_length=6, max_length=100)
+    name: str = Field(..., pattern=r"^team-[a-z0-9-]+$", min_length=6, max_length=100)
     description: Optional[str] = Field(default="", max_length=1000)
     metadata: Optional[Dict] = None
     collaboration_tone: str = Field(
-        default="professional",
-        pattern=r'^(professional|creative|humorous|academic|casual|formal)$'
+        default="professional", pattern=r"^(professional|creative|humorous|academic|casual|formal)$"
     )
     specialists: List[SpecialistMapping] = Field(..., min_length=1, max_length=50)
     shared_instructions: Optional[str] = Field(None, max_length=2000)
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator('specialists')
+    @field_validator("specialists")
     @classmethod
     def validate_specialist_uniqueness(cls, specialists):
         """Ensure all roles and specialists are unique"""
@@ -372,6 +382,7 @@ class TeamConfig(BaseModel):
 @dataclass
 class ValidationError:
     """Represents a validation error"""
+
     field: str
     message: str
     severity: str = "error"  # error, warning
@@ -380,6 +391,7 @@ class ValidationError:
 @dataclass
 class ValidationResult:
     """Result of workflow validation"""
+
     is_valid: bool
     errors: List[ValidationError] = field(default_factory=list)
     warnings: List[ValidationError] = field(default_factory=list)

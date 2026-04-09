@@ -1,13 +1,14 @@
 """Tests for rein/daemon.py"""
+
 import os
 import sqlite3
-import pytest
 import tempfile
 import time
 from unittest.mock import patch
 
-from rein.daemon import get_tasks_root, get_task_state_snapshot, get_running_tasks
+import pytest
 
+from rein.daemon import get_running_tasks, get_task_state_snapshot, get_tasks_root
 
 # ---------------------------------------------------------------------------
 # Helper: create a rein.db with the processes table and optional rows
@@ -54,10 +55,24 @@ def _create_rein_db(task_dir, rows=None):
 
     if rows:
         columns = [
-            "name", "status", "phase", "progress", "start_time",
-            "updated_at", "exit_code", "pid", "command", "uid",
-            "depends_on", "cpu_percent", "memory_mb", "blocking_pause",
-            "agent", "next_spec", "max_runs", "run_count",
+            "name",
+            "status",
+            "phase",
+            "progress",
+            "start_time",
+            "updated_at",
+            "exit_code",
+            "pid",
+            "command",
+            "uid",
+            "depends_on",
+            "cpu_percent",
+            "memory_mb",
+            "blocking_pause",
+            "agent",
+            "next_spec",
+            "max_runs",
+            "run_count",
         ]
         for row in rows:
             cols = [c for c in columns if c in row]
@@ -77,6 +92,7 @@ def _create_rein_db(task_dir, rows=None):
 # ===========================================================================
 # Tests for get_tasks_root
 # ===========================================================================
+
 
 class TestGetTasksRoot:
     """Tests for get_tasks_root()"""
@@ -104,6 +120,7 @@ class TestGetTasksRoot:
         env.pop("REIN_TASKS_ROOT", None)
         with patch.dict(os.environ, env, clear=True):
             from rein.config import DEFAULT_AGENTS_DIR
+
             result = get_tasks_root()
             assert result == os.path.join(DEFAULT_AGENTS_DIR, "tasks")
 
@@ -113,6 +130,7 @@ class TestGetTasksRoot:
         env.pop("REIN_TASKS_ROOT", None)
         with patch.dict(os.environ, env, clear=True):
             from rein.config import DEFAULT_AGENTS_DIR
+
             result = get_tasks_root(agents_dir="")
             assert result == os.path.join(DEFAULT_AGENTS_DIR, "tasks")
 
@@ -120,6 +138,7 @@ class TestGetTasksRoot:
 # ===========================================================================
 # Tests for get_task_state_snapshot
 # ===========================================================================
+
 
 class TestGetTaskStateSnapshot:
     """Tests for get_task_state_snapshot()"""
@@ -178,10 +197,13 @@ class TestGetTaskStateSnapshot:
         task_id = "task-all-waiting"
         task_dir = os.path.join(tasks_root, task_id)
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "waiting", "phase": 1, "progress": 0},
-            {"name": "block-b", "status": "waiting", "phase": 2, "progress": 0},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "waiting", "phase": 1, "progress": 0},
+                {"name": "block-b", "status": "waiting", "phase": 2, "progress": 0},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
 
@@ -198,11 +220,20 @@ class TestGetTaskStateSnapshot:
         task_dir = os.path.join(tasks_root, task_id)
         os.makedirs(task_dir, exist_ok=True)
         now = time.time()
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "running", "phase": 1, "progress": 50,
-             "start_time": now - 10, "updated_at": now},
-            {"name": "block-b", "status": "waiting", "phase": 2, "progress": 0},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {
+                    "name": "block-a",
+                    "status": "running",
+                    "phase": 1,
+                    "progress": 50,
+                    "start_time": now - 10,
+                    "updated_at": now,
+                },
+                {"name": "block-b", "status": "waiting", "phase": 2, "progress": 0},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
 
@@ -216,10 +247,13 @@ class TestGetTaskStateSnapshot:
         task_id = "task-partial-done"
         task_dir = os.path.join(tasks_root, task_id)
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
-            {"name": "block-b", "status": "waiting", "phase": 2, "progress": 0},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
+                {"name": "block-b", "status": "waiting", "phase": 2, "progress": 0},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
 
@@ -234,12 +268,29 @@ class TestGetTaskStateSnapshot:
         task_dir = os.path.join(tasks_root, task_id)
         os.makedirs(task_dir, exist_ok=True)
         now = time.time()
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "done", "phase": 1, "progress": 100,
-             "start_time": now - 20, "updated_at": now - 10, "exit_code": 0},
-            {"name": "block-b", "status": "done", "phase": 2, "progress": 100,
-             "start_time": now - 10, "updated_at": now, "exit_code": 0},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {
+                    "name": "block-a",
+                    "status": "done",
+                    "phase": 1,
+                    "progress": 100,
+                    "start_time": now - 20,
+                    "updated_at": now - 10,
+                    "exit_code": 0,
+                },
+                {
+                    "name": "block-b",
+                    "status": "done",
+                    "phase": 2,
+                    "progress": 100,
+                    "start_time": now - 10,
+                    "updated_at": now,
+                    "exit_code": 0,
+                },
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
 
@@ -255,11 +306,13 @@ class TestGetTaskStateSnapshot:
         task_id = "task-failed"
         task_dir = os.path.join(tasks_root, task_id)
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
-            {"name": "block-b", "status": "failed", "phase": 2, "progress": 30,
-             "exit_code": 1},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
+                {"name": "block-b", "status": "failed", "phase": 2, "progress": 30, "exit_code": 1},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
 
@@ -272,13 +325,14 @@ class TestGetTaskStateSnapshot:
         task_id = "task-multi-fail"
         task_dir = os.path.join(tasks_root, task_id)
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "failed", "phase": 1, "progress": 0,
-             "exit_code": 2},
-            {"name": "block-b", "status": "failed", "phase": 1, "progress": 0,
-             "exit_code": 1},
-            {"name": "block-c", "status": "waiting", "phase": 2, "progress": 0},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "failed", "phase": 1, "progress": 0, "exit_code": 2},
+                {"name": "block-b", "status": "failed", "phase": 1, "progress": 0, "exit_code": 1},
+                {"name": "block-c", "status": "waiting", "phase": 2, "progress": 0},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
 
@@ -294,10 +348,19 @@ class TestGetTaskStateSnapshot:
         task_dir = os.path.join(tasks_root, task_id)
         os.makedirs(task_dir, exist_ok=True)
         now = time.time()
-        _create_rein_db(task_dir, rows=[
-            {"name": "my-block", "status": "running", "phase": 1, "progress": 42,
-             "start_time": now - 5.0, "updated_at": now},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {
+                    "name": "my-block",
+                    "status": "running",
+                    "phase": 1,
+                    "progress": 42,
+                    "start_time": now - 5.0,
+                    "updated_at": now,
+                },
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
         blocks = result["blocks"]
@@ -318,9 +381,12 @@ class TestGetTaskStateSnapshot:
         task_id = "task-no-times"
         task_dir = os.path.join(tasks_root, task_id)
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "bare-block", "status": "waiting", "phase": 0, "progress": 0},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "bare-block", "status": "waiting", "phase": 0, "progress": 0},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
         b = result["blocks"][0]
@@ -335,10 +401,12 @@ class TestGetTaskStateSnapshot:
         task_dir = os.path.join(tasks_root, task_id)
         os.makedirs(task_dir, exist_ok=True)
         now = time.time()
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-x", "status": "running", "phase": 1, "progress": 10,
-             "updated_at": now},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-x", "status": "running", "phase": 1, "progress": 10, "updated_at": now},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
         b = result["blocks"][0]
@@ -360,9 +428,12 @@ class TestGetTaskStateSnapshot:
         with open(os.path.join(block_output_dir, "result.json"), "w") as f:
             f.write(payload)
 
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
         b = result["blocks"][0]
@@ -381,9 +452,12 @@ class TestGetTaskStateSnapshot:
         with open(os.path.join(block_output_dir, "result.md"), "w") as f:
             f.write(md_content)
 
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
         b = result["blocks"][0]
@@ -396,9 +470,12 @@ class TestGetTaskStateSnapshot:
         task_id = "task-no-output"
         task_dir = os.path.join(tasks_root, task_id)
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "waiting", "phase": 1, "progress": 0},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "waiting", "phase": 1, "progress": 0},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
         b = result["blocks"][0]
@@ -419,9 +496,12 @@ class TestGetTaskStateSnapshot:
         with open(os.path.join(block_output_dir, "result.md"), "w") as f:
             f.write(md_payload)
 
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
         b = result["blocks"][0]
@@ -435,9 +515,12 @@ class TestGetTaskStateSnapshot:
         task_id = "task-struct"
         task_dir = os.path.join(tasks_root, task_id)
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "b", "status": "done", "phase": 1, "progress": 100},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "b", "status": "done", "phase": 1, "progress": 100},
+            ],
+        )
 
         result = get_task_state_snapshot(task_id, tasks_root=tasks_root)
 
@@ -469,9 +552,12 @@ class TestGetTaskStateSnapshot:
             task_id = "task-default-root"
             task_dir = os.path.join(tasks_root, task_id)
             os.makedirs(task_dir, exist_ok=True)
-            _create_rein_db(task_dir, rows=[
-                {"name": "x", "status": "done", "phase": 1, "progress": 100},
-            ])
+            _create_rein_db(
+                task_dir,
+                rows=[
+                    {"name": "x", "status": "done", "phase": 1, "progress": 100},
+                ],
+            )
 
             result = get_task_state_snapshot(task_id)
 
@@ -482,6 +568,7 @@ class TestGetTaskStateSnapshot:
 # ===========================================================================
 # Tests for get_running_tasks
 # ===========================================================================
+
 
 class TestGetRunningTasks:
     """Tests for get_running_tasks()"""
@@ -510,10 +597,13 @@ class TestGetRunningTasks:
         """Task where all processes are done is NOT running"""
         task_dir = os.path.join(tasks_root, "task-done")
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
-            {"name": "block-b", "status": "done", "phase": 2, "progress": 100},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
+                {"name": "block-b", "status": "done", "phase": 2, "progress": 100},
+            ],
+        )
 
         result = get_running_tasks(tasks_root=tasks_root)
         assert result == []
@@ -524,11 +614,13 @@ class TestGetRunningTasks:
         """Task with any failed processes is NOT considered running"""
         task_dir = os.path.join(tasks_root, "task-fail")
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
-            {"name": "block-b", "status": "failed", "phase": 2, "progress": 10,
-             "exit_code": 1},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
+                {"name": "block-b", "status": "failed", "phase": 2, "progress": 10, "exit_code": 1},
+            ],
+        )
 
         result = get_running_tasks(tasks_root=tasks_root)
         assert result == []
@@ -539,10 +631,13 @@ class TestGetRunningTasks:
         """Task with processes still in progress IS returned"""
         task_dir = os.path.join(tasks_root, "task-active")
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
-            {"name": "block-b", "status": "running", "phase": 2, "progress": 50},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
+                {"name": "block-b", "status": "running", "phase": 2, "progress": 50},
+            ],
+        )
 
         result = get_running_tasks(tasks_root=tasks_root)
         assert result == ["task-active"]
@@ -551,10 +646,13 @@ class TestGetRunningTasks:
         """Task with waiting processes (total > done, no failures) IS returned"""
         task_dir = os.path.join(tasks_root, "task-waiting")
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "waiting", "phase": 1, "progress": 0},
-            {"name": "block-b", "status": "waiting", "phase": 2, "progress": 0},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "waiting", "phase": 1, "progress": 0},
+                {"name": "block-b", "status": "waiting", "phase": 2, "progress": 0},
+            ],
+        )
 
         result = get_running_tasks(tasks_root=tasks_root)
         assert result == ["task-waiting"]
@@ -566,31 +664,43 @@ class TestGetRunningTasks:
         # Running task
         running_dir = os.path.join(tasks_root, "task-running")
         os.makedirs(running_dir, exist_ok=True)
-        _create_rein_db(running_dir, rows=[
-            {"name": "block-a", "status": "running", "phase": 1, "progress": 50},
-        ])
+        _create_rein_db(
+            running_dir,
+            rows=[
+                {"name": "block-a", "status": "running", "phase": 1, "progress": 50},
+            ],
+        )
 
         # Completed task
         done_dir = os.path.join(tasks_root, "task-done")
         os.makedirs(done_dir, exist_ok=True)
-        _create_rein_db(done_dir, rows=[
-            {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
-        ])
+        _create_rein_db(
+            done_dir,
+            rows=[
+                {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
+            ],
+        )
 
         # Failed task
         fail_dir = os.path.join(tasks_root, "task-fail")
         os.makedirs(fail_dir, exist_ok=True)
-        _create_rein_db(fail_dir, rows=[
-            {"name": "block-a", "status": "failed", "phase": 1, "progress": 0},
-        ])
+        _create_rein_db(
+            fail_dir,
+            rows=[
+                {"name": "block-a", "status": "failed", "phase": 1, "progress": 0},
+            ],
+        )
 
         # Another running task
         running2_dir = os.path.join(tasks_root, "task-running2")
         os.makedirs(running2_dir, exist_ok=True)
-        _create_rein_db(running2_dir, rows=[
-            {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
-            {"name": "block-b", "status": "waiting", "phase": 2, "progress": 0},
-        ])
+        _create_rein_db(
+            running2_dir,
+            rows=[
+                {"name": "block-a", "status": "done", "phase": 1, "progress": 100},
+                {"name": "block-b", "status": "waiting", "phase": 2, "progress": 0},
+            ],
+        )
 
         result = get_running_tasks(tasks_root=tasks_root)
         assert sorted(result) == ["task-running", "task-running2"]
@@ -616,9 +726,12 @@ class TestGetRunningTasks:
         # Create a valid running task alongside
         task_dir = os.path.join(tasks_root, "task-valid")
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "block-a", "status": "running", "phase": 1, "progress": 25},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "block-a", "status": "running", "phase": 1, "progress": 25},
+            ],
+        )
 
         result = get_running_tasks(tasks_root=tasks_root)
         assert result == ["task-valid"]
@@ -654,9 +767,12 @@ class TestGetRunningTasks:
         with patch.dict(os.environ, {"REIN_TASKS_ROOT": tasks_root}):
             task_dir = os.path.join(tasks_root, "task-env")
             os.makedirs(task_dir, exist_ok=True)
-            _create_rein_db(task_dir, rows=[
-                {"name": "b", "status": "running", "phase": 1, "progress": 10},
-            ])
+            _create_rein_db(
+                task_dir,
+                rows=[
+                    {"name": "b", "status": "running", "phase": 1, "progress": 10},
+                ],
+            )
 
             result = get_running_tasks()
             assert result == ["task-env"]
@@ -667,9 +783,12 @@ class TestGetRunningTasks:
         """Single-block task fully done is NOT running"""
         task_dir = os.path.join(tasks_root, "task-single-done")
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "only-block", "status": "done", "phase": 1, "progress": 100},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "only-block", "status": "done", "phase": 1, "progress": 100},
+            ],
+        )
 
         result = get_running_tasks(tasks_root=tasks_root)
         assert result == []
@@ -678,9 +797,12 @@ class TestGetRunningTasks:
         """Single-block task still running IS returned"""
         task_dir = os.path.join(tasks_root, "task-single-run")
         os.makedirs(task_dir, exist_ok=True)
-        _create_rein_db(task_dir, rows=[
-            {"name": "only-block", "status": "running", "phase": 1, "progress": 50},
-        ])
+        _create_rein_db(
+            task_dir,
+            rows=[
+                {"name": "only-block", "status": "running", "phase": 1, "progress": 50},
+            ],
+        )
 
         result = get_running_tasks(tasks_root=tasks_root)
         assert result == ["task-single-run"]
@@ -689,6 +811,7 @@ class TestGetRunningTasks:
 # ============================================================
 # TASK #1179: WebSocket broadcasting and event parsing
 # ============================================================
+
 
 class TestEventParsing:
     """Tests for parsing BLOCK_START/BLOCK_DONE/TASK_DONE markers from stdout.
@@ -767,7 +890,9 @@ class TestWsBroadcast:
     def test_broadcast_empty_clients_noop(self):
         """Broadcasting with no clients should return without error"""
         import asyncio
-        from rein.daemon import ws_broadcast, WS_CLIENTS
+
+        from rein.daemon import WS_CLIENTS, ws_broadcast
+
         WS_CLIENTS.clear()
 
         async def run():
@@ -778,7 +903,8 @@ class TestWsBroadcast:
     def test_disconnected_clients_removed(self):
         """Clients that raise on send should be removed from WS_CLIENTS"""
         import asyncio
-        from rein.daemon import ws_broadcast, WS_CLIENTS
+
+        from rein.daemon import WS_CLIENTS, ws_broadcast
 
         class MockClient:
             def __init__(self, should_fail=False):
@@ -809,11 +935,13 @@ class TestWsBroadcast:
     def test_multiple_clients_all_receive(self):
         """All connected clients receive the same message"""
         import asyncio
-        from rein.daemon import ws_broadcast, WS_CLIENTS
+
+        from rein.daemon import WS_CLIENTS, ws_broadcast
 
         class MockClient:
             def __init__(self):
                 self.received = []
+
             async def send(self, message):
                 self.received.append(message)
 
@@ -830,6 +958,7 @@ class TestWsBroadcast:
         for c in clients:
             assert len(c.received) == 1
             import json as _json
+
             parsed = _json.loads(c.received[0])
             assert parsed["type"] == "block_done"
             assert parsed["block"] == "x"
@@ -842,6 +971,7 @@ class TestSafeTaskName:
     def test_valid_task_names_match(self):
         """Valid task names should match SAFE_TASK_NAME pattern"""
         from rein.daemon import SAFE_TASK_NAME
+
         valid = [
             "task-20260404-120045-process-demo",
             "task-001",
@@ -854,6 +984,7 @@ class TestSafeTaskName:
     def test_invalid_task_names_rejected(self):
         """Unsafe task names should NOT match"""
         from rein.daemon import SAFE_TASK_NAME
+
         invalid = [
             "../etc/passwd",
             "task/../../evil",

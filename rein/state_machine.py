@@ -11,15 +11,16 @@ Pure functions and helpers for:
 These helpers were extracted from ProcessManager to reduce coupling and
 enable unit testing without a full manager instance.
 """
-from typing import Dict, List, Set, Optional
+
+from typing import Any, Callable, Dict, List, Optional, Set
 
 
 def get_dependents_map(all_blocks: List[dict]) -> Dict[str, List[str]]:
     """Build reverse dependency graph: {block_name: [blocks that depend on it]}"""
     dependents: Dict[str, List[str]] = {}
     for block in all_blocks:
-        name = block.get('name') or block.get('stage', 'unknown')
-        for dep in block.get('depends_on', []):
+        name = block.get("name") or block.get("stage", "unknown")
+        for dep in block.get("depends_on", []):
             if dep not in dependents:
                 dependents[dep] = []
             dependents[dep].append(name)
@@ -29,7 +30,7 @@ def get_dependents_map(all_blocks: List[dict]) -> Dict[str, List[str]]:
 def cascade_invalidation(
     failed_blocks: Set[str],
     dependents_map: Dict[str, List[str]],
-    log_fn: Optional[callable] = None,
+    log_fn: Optional[Callable] = None,
 ) -> Set[str]:
     """BFS from failed blocks through dependents. Returns full set needing re-run."""
     needs_rerun = set(failed_blocks)
@@ -73,7 +74,7 @@ def compute_routing_skip_set(
     # Collect all routing targets except the chosen one and control markers
     non_chosen: Set[str] = set()
     for key, target in routing.items():
-        if not target or target == '_stop' or target == chosen:
+        if not target or target == "_stop" or target == chosen:
             continue
         non_chosen.add(target)
 
@@ -111,7 +112,7 @@ def is_backward_routing(
         block = block_configs.get(current)
         if not block:
             continue
-        for dep in block.get('depends_on', []):
+        for dep in block.get("depends_on", []):
             if dep not in ancestors:
                 ancestors.add(dep)
                 queue.append(dep)
@@ -122,17 +123,14 @@ def is_stuck(pending: dict, completed: Set[str]) -> bool:
     """Check if workflow is stuck: pending blocks exist but none can run."""
     if not pending:
         return False
-    return not any(
-        all(dep in completed for dep in (pending[n].get('depends_on', []) or []))
-        for n in pending
-    )
+    return not any(all(dep in completed for dep in (pending[n].get("depends_on", []) or [])) for n in pending)
 
 
 def detect_orphans(
     pending: dict,
     completed: Set[str],
-    has_running_fn: callable,
-    log_fn: Optional[callable] = None,
+    has_running_fn: Callable,
+    log_fn: Optional[Callable] = None,
 ) -> List[str]:
     """Identify blocks whose dependencies can never be satisfied.
 
@@ -147,7 +145,7 @@ def detect_orphans(
     orphans = []
     for name in list(pending.keys()):
         block = pending[name]
-        deps = block.get('depends_on', [])
+        deps = block.get("depends_on", [])
         if not deps:
             continue
         if all(dep in completed for dep in deps):
@@ -159,13 +157,13 @@ def detect_orphans(
     return orphans
 
 
-def collect_running_names(processes: Dict[str, any], lock) -> Set[str]:
+def collect_running_names(processes: Dict[str, Any], lock) -> Set[str]:
     """Get names of currently running blocks (thread-safe)."""
     with lock:
         return {p.name for p in processes.values() if p.status == "running"}
 
 
-def has_running_or_transitioning(processes: Dict[str, any], completed: Set[str], lock) -> bool:
+def has_running_or_transitioning(processes: Dict[str, Any], completed: Set[str], lock) -> bool:
     """Returns True if any process is running OR in transitional done->completed state.
 
     Transitional state: Process.status is 'done' but Process.name not yet in
@@ -182,7 +180,7 @@ def has_running_or_transitioning(processes: Dict[str, any], completed: Set[str],
 
 
 def sync_completed_from_processes(
-    processes: Dict[str, any],
+    processes: Dict[str, Any],
     completed: Set[str],
     lock,
 ) -> None:
@@ -215,7 +213,7 @@ def find_blocks_needing_repending(
     """
     to_add = []
     for block in all_blocks:
-        name = block.get('name') or block.get('stage', 'unknown')
+        name = block.get("name") or block.get("stage", "unknown")
         if name not in completed and name not in pending and name not in running_names:
             to_add.append(block)
     return to_add
@@ -233,13 +231,13 @@ def find_ready_blocks(
     """
     ready = []
     for name, block in pending.items():
-        depends_on = block.get('depends_on', [])
+        depends_on = block.get("depends_on", [])
         if depends_on and not all(dep in completed for dep in depends_on):
             continue  # deps not met
 
         # Agent routing filter
         if agent_id:
-            block_agent = block.get('agent', '')
+            block_agent = block.get("agent", "")
             if block_agent and block_agent != agent_id:
                 continue
 
@@ -249,15 +247,9 @@ def find_ready_blocks(
 
 def count_remaining_blocks(all_blocks: List[dict], completed: Set[str]) -> int:
     """Count how many blocks haven't been completed yet."""
-    return sum(
-        1 for block in all_blocks
-        if (block.get('name') or block.get('stage', 'unknown')) not in completed
-    )
+    return sum(1 for block in all_blocks if (block.get("name") or block.get("stage", "unknown")) not in completed)
 
 
 def all_blocks_completed(all_blocks: List[dict], completed: Set[str]) -> bool:
     """Check if all blocks are in the completed set."""
-    return all(
-        (block.get('name') or block.get('stage', 'unknown')) in completed
-        for block in all_blocks
-    )
+    return all((block.get("name") or block.get("stage", "unknown")) in completed for block in all_blocks)

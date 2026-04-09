@@ -1,13 +1,15 @@
 """
 Rein Models - Data classes for workflow state
 """
+
 from dataclasses import dataclass, field
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
 
 @dataclass
 class Process:
     """Represents a managed process/block in workflow"""
+
     pid: Optional[int]
     name: str
     status: str  # running, done, failed, waiting, paused
@@ -30,6 +32,7 @@ class Process:
 @dataclass
 class BlockConfig:
     """Configuration for a workflow block"""
+
     name: str
     specialist: Optional[str] = None
     prompt: str = ""

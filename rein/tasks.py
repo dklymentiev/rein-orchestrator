@@ -3,8 +3,10 @@ Rein Tasks - Task execution helpers.
 
 Functions for executing tasks, saving results to memory, and status management.
 """
-import os
+
 import json
+import os
+
 import yaml
 
 from rein.state import ReinState
@@ -24,7 +26,7 @@ def save_task_to_memory(output_dir, memory_config):
         result_files = {}
         if os.path.exists(output_dir):
             for fname in os.listdir(output_dir):
-                if fname.endswith('.json'):
+                if fname.endswith(".json"):
                     fpath = os.path.join(output_dir, fname)
                     try:
                         with open(fpath) as f:
@@ -35,22 +37,23 @@ def save_task_to_memory(output_dir, memory_config):
         if not result_files:
             return
 
-        mem_cli = os.environ.get('REIN_MEM_CLI', '')
+        mem_cli = os.environ.get("REIN_MEM_CLI", "")
         if os.path.exists(mem_cli):
             try:
                 content = "Task completed with results:\n"
                 for fname in sorted(result_files.keys()):
                     content += f"- {fname}\n"
 
-                tags = memory_config.get('tags', [])
-                tags_str = ','.join(tags) if tags else 'type:artifact,stage:completed'
+                tags = memory_config.get("tags", [])
+                tags_str = ",".join(tags) if tags else "type:artifact,stage:completed"
 
-                guid = memory_config.get('guid')
+                guid = memory_config.get("guid")
                 if guid:
                     import subprocess
-                    cmd = [mem_cli, 'register', guid, content, tags_str]
+
+                    cmd = [mem_cli, "register", guid, content, tags_str]
                     subprocess.run(cmd, capture_output=True, timeout=10)
-                    print(f"[MEMORY] Task results saved to memory")
+                    print("[MEMORY] Task results saved to memory")
             except Exception as e:
                 print(f"[WARN] Memory callback failed: {e}")
     except Exception as e:
@@ -59,7 +62,7 @@ def save_task_to_memory(output_dir, memory_config):
 
 def load_config(config_path: str) -> dict:
     """Load YAML config file."""
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         return yaml.safe_load(f)
 
 
@@ -88,7 +91,7 @@ def execute_task(task_id: str, agents_dir: str) -> int:
             print(f"[ERROR] Cannot read task.yaml: {e}", flush=True)
 
     if not flow_name:
-        print(f"[ERROR] No flow specified in task.yaml", flush=True)
+        print("[ERROR] No flow specified in task.yaml", flush=True)
         return 1
 
     print(f"[TASK] Executing: {task_id}", flush=True)
@@ -121,10 +124,7 @@ def execute_task(task_id: str, agents_dir: str) -> int:
                 task_input = {"topic": q, "task": q}
 
         manager = ProcessManager(
-            max_parallel=config.get('semaphore', 3),
-            flow_name=flow_name,
-            task_input=task_input,
-            agents_dir=agents_dir
+            max_parallel=config.get("semaphore", 3), flow_name=flow_name, task_input=task_input, agents_dir=agents_dir
         )
 
         manager.task_id = task_id
@@ -144,6 +144,7 @@ def execute_task(task_id: str, agents_dir: str) -> int:
     except Exception as e:
         print(f"[ERROR] {e}", flush=True)
         import traceback
+
         traceback.print_exc()
         exit_code = 1
 
@@ -160,6 +161,7 @@ def execute_task(task_id: str, agents_dir: str) -> int:
     if os.path.exists(db_path):
         try:
             import sqlite3
+
             conn = sqlite3.connect(db_path)
             cur = conn.cursor()
             cur.execute("SELECT COUNT(*) FROM processes WHERE status='done'")

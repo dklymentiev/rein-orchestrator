@@ -3,10 +3,11 @@
 Extracted from ProcessManager. These functions operate on the processes
 dict and workflow pause flags, taking them as explicit parameters.
 """
+
 import os
 import signal
 import time
-from typing import Callable, Optional, Tuple, Any
+from typing import Any, Callable, Optional, Tuple
 
 
 def _find_process(processes: dict, identifier: str) -> Tuple[Optional[str], Optional[Any]]:
@@ -33,7 +34,7 @@ def pause_single(
             return False
         if process.status in ("done", "failed"):
             return False
-        if not hasattr(process, '_previous_status'):
+        if not hasattr(process, "_previous_status"):
             process._previous_status = process.status
         process.status = "paused"
 
@@ -56,10 +57,10 @@ def resume_single(
             return False
         if process.status != "paused":
             return False
-        previous = getattr(process, '_previous_status', 'waiting')
+        previous = getattr(process, "_previous_status", "waiting")
         process.status = previous
-        if hasattr(process, '_previous_status'):
-            delattr(process, '_previous_status')
+        if hasattr(process, "_previous_status"):
+            delattr(process, "_previous_status")
 
     state_save(process)
     log_fn(f"RESUME_SINGLE | {process.name}[{process_id}] | resumed_to={process.status}")
@@ -99,19 +100,19 @@ def pause_workflow_flags(state: dict, log_fn: Callable[[str], None]) -> bool:
 
     Returns False if already paused.
     """
-    if state.get('paused'):
+    if state.get("paused"):
         return False
-    state['paused'] = True
-    state['paused_at'] = time.time()
+    state["paused"] = True
+    state["paused_at"] = time.time()
     log_fn("PAUSE_WORKFLOW | Workflow paused, no new processes will spawn")
     return True
 
 
 def resume_workflow_flags(state: dict, log_fn: Callable[[str], None]) -> bool:
     """Clear workflow pause flags. Returns False if not paused."""
-    if not state.get('paused'):
+    if not state.get("paused"):
         return False
-    state['paused'] = False
-    state['paused_at'] = None
+    state["paused"] = False
+    state["paused_at"] = None
     log_fn("RESUME_WORKFLOW | Workflow resumed, spawning will continue")
     return True

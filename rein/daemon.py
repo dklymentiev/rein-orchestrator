@@ -4,24 +4,26 @@ Rein Daemon - Background task watcher with WebSocket server.
 Monitors agents/tasks/ for pending tasks and executes them.
 Broadcasts live updates via WebSocket to connected clients.
 """
-import os
-import sys
-import json
-import re
-import yaml
-import sqlite3
+
 import asyncio
 import atexit
 import errno
 import fcntl
+import json
+import os
+import re
 import signal
-from typing import Set, Dict, Optional
+import sqlite3
+import sys
+from typing import Dict, Optional, Set
+
+import yaml
 
 from rein.config import DEFAULT_AGENTS_DIR
 from rein.log import get_logger
 
 # Task directory name must be alphanumeric with hyphens, dots, underscores
-SAFE_TASK_NAME = re.compile(r'^[a-zA-Z0-9._-]+$')
+SAFE_TASK_NAME = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 logger = get_logger(__name__)
 
@@ -106,7 +108,7 @@ def get_task_state_snapshot(task_id: str, tasks_root: str = "") -> dict:
         "done": sum(1 for b in blocks if b["status"] == "done"),
         "failed": sum(1 for b in blocks if b["status"] == "failed"),
         "running": sum(1 for b in blocks if b["status"] == "running"),
-        "blocks": blocks
+        "blocks": blocks,
     }
 
 
@@ -196,7 +198,7 @@ async def monitor_subprocess(proc: asyncio.subprocess.Process, task_id: str, log
             if not line:
                 break
 
-            line_str = line.decode('utf-8', errors='replace')
+            line_str = line.decode("utf-8", errors="replace")
             lf.write(line_str)
             lf.flush()
 
@@ -217,7 +219,7 @@ async def monitor_subprocess(proc: asyncio.subprocess.Process, task_id: str, log
                         k, v = p.split("=", 1)
                         event[k] = v
                 await ws_broadcast(event)
-                logger.info("[DAEMON] Block done: %s / %s", task_id, event.get('block', '?'))
+                logger.info("[DAEMON] Block done: %s / %s", task_id, event.get("block", "?"))
 
             elif "[TASK_DONE]" in line_str:
                 parts = line_str.strip().split()
@@ -313,9 +315,15 @@ async def run_daemon_async(agents_dir: str, interval: int, max_workflows: int, w
                     log_file = os.path.join(task_path, "state", "rein.log")
 
                     proc = await asyncio.create_subprocess_exec(
-                        sys.executable, "-m", "rein", '--run-task', task_name, '--agents-dir', agents_dir,
+                        sys.executable,
+                        "-m",
+                        "rein",
+                        "--run-task",
+                        task_name,
+                        "--agents-dir",
+                        agents_dir,
                         stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.STDOUT
+                        stderr=asyncio.subprocess.STDOUT,
                     )
                     active[task_name] = proc
 
@@ -351,6 +359,7 @@ class PidfileLock:
         with PidfileLock(agents_dir) as lock:
             run_daemon_work()
     """
+
     def __init__(self, agents_dir: str):
         state_dir = os.path.join(agents_dir, "state")
         os.makedirs(state_dir, exist_ok=True)
@@ -449,6 +458,7 @@ def run_daemon(agents_dir: str, interval: int = 2, max_workflows: int = 3, ws_po
     async def main():
         try:
             import websockets
+
             ws_host = os.environ.get("REIN_WS_HOST", "0.0.0.0")
             ws_server = await websockets.serve(ws_handler, ws_host, ws_port)
             logger.info("[DAEMON] WebSocket server started on port %d", ws_port)

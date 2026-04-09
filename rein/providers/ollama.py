@@ -8,8 +8,9 @@ Config:
 Env:
     OLLAMA_URL: Base URL (default: http://localhost:11434)
 """
+
 import os
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 import requests
 
@@ -29,7 +30,7 @@ class OllamaProvider(Provider):
         temperature: float = 0.7,
         logger: Optional[Callable[[str], None]] = None,
         base_url: str = "",
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             model=model or self.DEFAULT_MODEL,
@@ -41,6 +42,7 @@ class OllamaProvider(Provider):
 
     def call(self, prompt: str, stage: str = ""):
         import time as _time
+
         from .base import UsageStats
 
         self.logger(f"OLLAMA CALL | stage={stage} | model={self.model} | url={self.base_url}")

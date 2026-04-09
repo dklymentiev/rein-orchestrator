@@ -1,16 +1,15 @@
 """Tests for on_error and logic.error handlers (T#1146)."""
-import os
-import json
-import tempfile
 
-import pytest
+import json
+import os
+import tempfile
+from unittest.mock import MagicMock, patch
+
 import yaml
 
-from unittest.mock import patch, MagicMock
-
 from rein.orchestrator import ProcessManager
-from rein.state import ReinState
 from rein.providers.base import UsageStats
+from rein.state import ReinState
 
 
 def _mock_provider_failing():
@@ -59,19 +58,17 @@ def _make_flow_with_error_handler(tmpdir, blocks, on_error=None):
     # Create team
     team_path = os.path.join(agents_dir, "teams", "team-test.yaml")
     with open(team_path, "w") as f:
-        yaml.dump({"name": "team-test", "specialists": ["spec-a"],
-                    "collaboration_tone": "Be concise."}, f)
+        yaml.dump({"name": "team-test", "specialists": ["spec-a"], "collaboration_tone": "Be concise."}, f)
 
     return agents_dir, flow_path, flow_dir
 
 
 def _make_manager_with_flow(tmpdir, blocks, on_error=None, provider=None):
     """Create a ProcessManager with a flow that has error handling."""
-    agents_dir, flow_path, flow_dir = _make_flow_with_error_handler(
-        tmpdir, blocks, on_error
-    )
+    agents_dir, flow_path, flow_dir = _make_flow_with_error_handler(tmpdir, blocks, on_error)
 
     from rein.tasks import load_config
+
     config = load_config(flow_path)
 
     manager = ProcessManager(
@@ -93,8 +90,7 @@ def _make_manager_with_flow(tmpdir, blocks, on_error=None, provider=None):
 
     manager._provider = provider or _mock_provider_failing()
     manager.load_team = lambda name: "Be concise."
-    with patch.object(manager, '_init_provider'), \
-         patch.object(manager, '_run_preflight_validation'):
+    with patch.object(manager, "_init_provider"), patch.object(manager, "_run_preflight_validation"):
         manager.load_config(config, workflow_file=flow_path)
 
     return manager, flow_dir
@@ -106,35 +102,30 @@ class TestOnErrorGlobal:
     def test_on_error_loaded_from_config(self):
         """on_error field is read from flow config."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            blocks = [{"name": "a", "specialist": "spec-a",
-                       "prompt": "test", "depends_on": []}]
+            blocks = [{"name": "a", "specialist": "spec-a", "prompt": "test", "depends_on": []}]
             manager, _ = _make_manager_with_flow(tmpdir, blocks, on_error="scripts/notify.sh")
             assert manager.on_error == "scripts/notify.sh"
 
     def test_on_error_none_by_default(self):
         """No on_error in config -> None."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            blocks = [{"name": "a", "specialist": "spec-a",
-                       "prompt": "test", "depends_on": []}]
+            blocks = [{"name": "a", "specialist": "spec-a", "prompt": "test", "depends_on": []}]
             manager, _ = _make_manager_with_flow(tmpdir, blocks)
             assert manager.on_error is None
 
     def test_on_error_called_on_block_failure(self):
         """Global on_error script runs when a block fails."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            blocks = [{"name": "failing-block", "specialist": "spec-a",
-                       "prompt": "test", "depends_on": []}]
+            blocks = [{"name": "failing-block", "specialist": "spec-a", "prompt": "test", "depends_on": []}]
 
-            manager, flow_dir = _make_manager_with_flow(
-                tmpdir, blocks, on_error="scripts/on-error.sh"
-            )
+            manager, flow_dir = _make_manager_with_flow(tmpdir, blocks, on_error="scripts/on-error.sh")
 
             # Create the error handler script
             scripts_dir = os.path.join(flow_dir, "scripts")
             os.makedirs(scripts_dir, exist_ok=True)
             marker = os.path.join(tmpdir, "error-called.json")
             with open(os.path.join(scripts_dir, "on-error.sh"), "w") as f:
-                f.write(f'#!/bin/bash\ncat > {marker}\n')
+                f.write(f"#!/bin/bash\ncat > {marker}\n")
             os.chmod(os.path.join(scripts_dir, "on-error.sh"), 0o755)
 
             manager.run_step(1)
@@ -150,19 +141,17 @@ class TestOnErrorGlobal:
     def test_on_error_not_called_on_success(self):
         """Global on_error does NOT run when block succeeds."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            blocks = [{"name": "ok-block", "specialist": "spec-a",
-                       "prompt": "test", "depends_on": []}]
+            blocks = [{"name": "ok-block", "specialist": "spec-a", "prompt": "test", "depends_on": []}]
 
             manager, flow_dir = _make_manager_with_flow(
-                tmpdir, blocks, on_error="scripts/on-error.sh",
-                provider=_mock_provider_ok()
+                tmpdir, blocks, on_error="scripts/on-error.sh", provider=_mock_provider_ok()
             )
 
             scripts_dir = os.path.join(flow_dir, "scripts")
             os.makedirs(scripts_dir, exist_ok=True)
             marker = os.path.join(tmpdir, "should-not-exist.json")
             with open(os.path.join(scripts_dir, "on-error.sh"), "w") as f:
-                f.write(f'#!/bin/bash\ncat > {marker}\n')
+                f.write(f"#!/bin/bash\ncat > {marker}\n")
             os.chmod(os.path.join(scripts_dir, "on-error.sh"), 0o755)
 
             manager.run_step(1)
@@ -176,13 +165,15 @@ class TestLogicError:
     def test_logic_error_called_on_failure(self):
         """Per-block logic.error runs when block fails."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            blocks = [{
-                "name": "failing-block",
-                "specialist": "spec-a",
-                "prompt": "test",
-                "depends_on": [],
-                "logic": {"error": "scripts/block-error.sh"},
-            }]
+            blocks = [
+                {
+                    "name": "failing-block",
+                    "specialist": "spec-a",
+                    "prompt": "test",
+                    "depends_on": [],
+                    "logic": {"error": "scripts/block-error.sh"},
+                }
+            ]
 
             manager, flow_dir = _make_manager_with_flow(tmpdir, blocks)
 
@@ -190,7 +181,7 @@ class TestLogicError:
             os.makedirs(scripts_dir, exist_ok=True)
             marker = os.path.join(tmpdir, "block-error-called.json")
             with open(os.path.join(scripts_dir, "block-error.sh"), "w") as f:
-                f.write(f'#!/bin/bash\ncat > {marker}\n')
+                f.write(f"#!/bin/bash\ncat > {marker}\n")
             os.chmod(os.path.join(scripts_dir, "block-error.sh"), 0o755)
 
             manager.run_step(1)
@@ -203,17 +194,17 @@ class TestLogicError:
     def test_logic_error_prevents_on_error(self):
         """If logic.error handles it, on_error is NOT called."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            blocks = [{
-                "name": "failing-block",
-                "specialist": "spec-a",
-                "prompt": "test",
-                "depends_on": [],
-                "logic": {"error": "scripts/block-error.sh"},
-            }]
+            blocks = [
+                {
+                    "name": "failing-block",
+                    "specialist": "spec-a",
+                    "prompt": "test",
+                    "depends_on": [],
+                    "logic": {"error": "scripts/block-error.sh"},
+                }
+            ]
 
-            manager, flow_dir = _make_manager_with_flow(
-                tmpdir, blocks, on_error="scripts/global-error.sh"
-            )
+            manager, flow_dir = _make_manager_with_flow(tmpdir, blocks, on_error="scripts/global-error.sh")
 
             scripts_dir = os.path.join(flow_dir, "scripts")
             os.makedirs(scripts_dir, exist_ok=True)
@@ -222,11 +213,11 @@ class TestLogicError:
             global_marker = os.path.join(tmpdir, "global-error.json")
 
             with open(os.path.join(scripts_dir, "block-error.sh"), "w") as f:
-                f.write(f'#!/bin/bash\ncat > {block_marker}\n')
+                f.write(f"#!/bin/bash\ncat > {block_marker}\n")
             os.chmod(os.path.join(scripts_dir, "block-error.sh"), 0o755)
 
             with open(os.path.join(scripts_dir, "global-error.sh"), "w") as f:
-                f.write(f'#!/bin/bash\ncat > {global_marker}\n')
+                f.write(f"#!/bin/bash\ncat > {global_marker}\n")
             os.chmod(os.path.join(scripts_dir, "global-error.sh"), 0o755)
 
             manager.run_step(1)
@@ -237,17 +228,17 @@ class TestLogicError:
     def test_on_error_fallback_when_logic_error_fails(self):
         """If logic.error script fails (non-zero), on_error runs as fallback."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            blocks = [{
-                "name": "failing-block",
-                "specialist": "spec-a",
-                "prompt": "test",
-                "depends_on": [],
-                "logic": {"error": "scripts/bad-handler.sh"},
-            }]
+            blocks = [
+                {
+                    "name": "failing-block",
+                    "specialist": "spec-a",
+                    "prompt": "test",
+                    "depends_on": [],
+                    "logic": {"error": "scripts/bad-handler.sh"},
+                }
+            ]
 
-            manager, flow_dir = _make_manager_with_flow(
-                tmpdir, blocks, on_error="scripts/global-error.sh"
-            )
+            manager, flow_dir = _make_manager_with_flow(tmpdir, blocks, on_error="scripts/global-error.sh")
 
             scripts_dir = os.path.join(flow_dir, "scripts")
             os.makedirs(scripts_dir, exist_ok=True)
@@ -256,12 +247,12 @@ class TestLogicError:
 
             # logic.error script that fails
             with open(os.path.join(scripts_dir, "bad-handler.sh"), "w") as f:
-                f.write('#!/bin/bash\nexit 1\n')
+                f.write("#!/bin/bash\nexit 1\n")
             os.chmod(os.path.join(scripts_dir, "bad-handler.sh"), 0o755)
 
             # on_error script that succeeds
             with open(os.path.join(scripts_dir, "global-error.sh"), "w") as f:
-                f.write(f'#!/bin/bash\ncat > {global_marker}\n')
+                f.write(f"#!/bin/bash\ncat > {global_marker}\n")
             os.chmod(os.path.join(scripts_dir, "global-error.sh"), 0o755)
 
             manager.run_step(1)
@@ -275,17 +266,14 @@ class TestErrorHandlerLogging:
     def test_error_handler_logged(self):
         """Error handler execution is logged in rein.log."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            blocks = [{"name": "a", "specialist": "spec-a",
-                       "prompt": "test", "depends_on": []}]
+            blocks = [{"name": "a", "specialist": "spec-a", "prompt": "test", "depends_on": []}]
 
-            manager, flow_dir = _make_manager_with_flow(
-                tmpdir, blocks, on_error="scripts/handler.sh"
-            )
+            manager, flow_dir = _make_manager_with_flow(tmpdir, blocks, on_error="scripts/handler.sh")
 
             scripts_dir = os.path.join(flow_dir, "scripts")
             os.makedirs(scripts_dir, exist_ok=True)
             with open(os.path.join(scripts_dir, "handler.sh"), "w") as f:
-                f.write('#!/bin/bash\ncat > /dev/null\n')
+                f.write("#!/bin/bash\ncat > /dev/null\n")
             os.chmod(os.path.join(scripts_dir, "handler.sh"), 0o755)
 
             manager.run_step(1)

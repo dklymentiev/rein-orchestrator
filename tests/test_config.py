@@ -1,7 +1,9 @@
 """Tests for rein/config.py"""
+
 import os
-import pytest
 import tempfile
+
+import pytest
 import yaml
 
 from rein.config import ConfigLoader
@@ -20,18 +22,12 @@ class TestConfigLoader:
             os.makedirs(os.path.join(tmpdir, "flows", "test-flow"))
 
             # Create team file
-            team_data = {
-                "name": "test-team",
-                "collaboration_tone": "Professional and focused"
-            }
+            team_data = {"name": "test-team", "collaboration_tone": "Professional and focused"}
             with open(os.path.join(tmpdir, "teams", "test-team.yaml"), "w") as f:
                 yaml.dump(team_data, f)
 
             # Create team with old 'tone' field
-            old_team_data = {
-                "name": "old-team",
-                "tone": "Old style tone"
-            }
+            old_team_data = {"name": "old-team", "tone": "Old style tone"}
             with open(os.path.join(tmpdir, "teams", "old-team.yaml"), "w") as f:
                 yaml.dump(old_team_data, f)
 
@@ -45,9 +41,7 @@ class TestConfigLoader:
                 "schema_version": "2.5.3",
                 "name": "test-flow",
                 "team": "test-team",
-                "blocks": [
-                    {"name": "step1", "specialist": "test-specialist", "prompt": "Test"}
-                ]
+                "blocks": [{"name": "step1", "specialist": "test-specialist", "prompt": "Test"}],
             }
             with open(os.path.join(tmpdir, "flows", "test-flow", "test-flow.yaml"), "w") as f:
                 yaml.dump(workflow_data, f)

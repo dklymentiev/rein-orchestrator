@@ -7,14 +7,16 @@ Installed as the `rein` command via pip:
     rein --flow deliberation --question task.txt
     rein --daemon
 """
-import os
-import sys
-import json
-import yaml
-import time
-import signal
-import threading
+
 import argparse
+import json
+import os
+import signal
+import sys
+import threading
+import time
+
+import yaml
 
 from rein.config import DEFAULT_AGENTS_DIR
 from rein.state import ReinState
@@ -24,36 +26,48 @@ def main():
     """Entry point for the `rein` CLI command."""
 
     from rein import __version__
-    parser = argparse.ArgumentParser(description='Rein - Workflow Orchestrator')
-    parser.add_argument('--version', '-V', action='version', version=f'rein {__version__}')
-    parser.add_argument('config', nargs='?', help='Path to YAML configuration file (or use --flow/--task)')
-    parser.add_argument('--flow', metavar='FLOW_NAME', help='Flow name (creates new task automatically)')
-    parser.add_argument('--input', metavar='JSON', help='Input parameters as JSON (used with --flow)')
-    parser.add_argument('--task-dir', metavar='DIR', help='Task directory with task.md (used with --flow)')
-    parser.add_argument('--question', metavar='FILE', help='Question file path (simple question without task dir)')
-    parser.add_argument('--task', metavar='TASK_DIR', help='Task directory (e.g., /path/to/tasks/task-001)')
-    parser.add_argument('--status', metavar='TASK_ID', help='Show task status')
-    parser.add_argument('--pause', action='store_true', help='Start workflow in paused state')
-    parser.add_argument('--resume', metavar='RUN_ID', help='Resume from previous run (RUN_ID like 20251230-142345)')
-    parser.add_argument('--no-ui', action='store_true', help='Run without Rich UI (for scripts/non-terminals)')
-    parser.add_argument('--agents-dir', metavar='PATH', default=DEFAULT_AGENTS_DIR,
-                        help=f'Agents directory (specialists, teams, flows, tasks). Default: {DEFAULT_AGENTS_DIR}')
-    parser.add_argument('--daemon', action='store_true',
-                        help='Run as daemon, watching for pending tasks')
-    parser.add_argument('--daemon-interval', type=int, default=5,
-                        help='Daemon check interval in seconds (default: 5)')
-    parser.add_argument('--max-workflows', type=int, default=3,
-                        help='Maximum parallel workflows in daemon mode (default: 3)')
-    parser.add_argument('--ws-port', type=int, default=8765,
-                        help='WebSocket server port for live updates (default: 8765)')
-    parser.add_argument('--step', type=int, default=None, metavar='N',
-                        help='Step mode: execute up to N ready blocks then exit (0=unlimited)')
-    parser.add_argument('--agent-id', metavar='NAME', default=None,
-                        help='Agent identity for step mode: only execute blocks matching this agent')
-    parser.add_argument('--state', metavar='TASK_DIR',
-                        help='Print full workflow state as JSON (blocks, edges, events)')
-    parser.add_argument('--run-task', metavar='TASK_ID',
-                        help='Execute specific task (used internally by daemon)')
+
+    parser = argparse.ArgumentParser(description="Rein - Workflow Orchestrator")
+    parser.add_argument("--version", "-V", action="version", version=f"rein {__version__}")
+    parser.add_argument("config", nargs="?", help="Path to YAML configuration file (or use --flow/--task)")
+    parser.add_argument("--flow", metavar="FLOW_NAME", help="Flow name (creates new task automatically)")
+    parser.add_argument("--input", metavar="JSON", help="Input parameters as JSON (used with --flow)")
+    parser.add_argument("--task-dir", metavar="DIR", help="Task directory with task.md (used with --flow)")
+    parser.add_argument("--question", metavar="FILE", help="Question file path (simple question without task dir)")
+    parser.add_argument("--task", metavar="TASK_DIR", help="Task directory (e.g., /path/to/tasks/task-001)")
+    parser.add_argument("--status", metavar="TASK_ID", help="Show task status")
+    parser.add_argument("--pause", action="store_true", help="Start workflow in paused state")
+    parser.add_argument("--resume", metavar="RUN_ID", help="Resume from previous run (RUN_ID like 20251230-142345)")
+    parser.add_argument("--no-ui", action="store_true", help="Run without Rich UI (for scripts/non-terminals)")
+    parser.add_argument(
+        "--agents-dir",
+        metavar="PATH",
+        default=DEFAULT_AGENTS_DIR,
+        help=f"Agents directory (specialists, teams, flows, tasks). Default: {DEFAULT_AGENTS_DIR}",
+    )
+    parser.add_argument("--daemon", action="store_true", help="Run as daemon, watching for pending tasks")
+    parser.add_argument("--daemon-interval", type=int, default=5, help="Daemon check interval in seconds (default: 5)")
+    parser.add_argument(
+        "--max-workflows", type=int, default=3, help="Maximum parallel workflows in daemon mode (default: 3)"
+    )
+    parser.add_argument(
+        "--ws-port", type=int, default=8765, help="WebSocket server port for live updates (default: 8765)"
+    )
+    parser.add_argument(
+        "--step",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Step mode: execute up to N ready blocks then exit (0=unlimited)",
+    )
+    parser.add_argument(
+        "--agent-id",
+        metavar="NAME",
+        default=None,
+        help="Agent identity for step mode: only execute blocks matching this agent",
+    )
+    parser.add_argument("--state", metavar="TASK_DIR", help="Print full workflow state as JSON (blocks, edges, events)")
+    parser.add_argument("--run-task", metavar="TASK_ID", help="Execute specific task (used internally by daemon)")
 
     args = parser.parse_args()
 
@@ -65,18 +79,21 @@ def main():
     # Handle --run-task mode (subprocess spawned by daemon)
     if args.run_task:
         from rein.tasks import execute_task
+
         exit_code = execute_task(args.run_task, args.agents_dir)
         sys.exit(exit_code)
 
     # Handle --daemon mode
     if args.daemon:
         from rein.daemon import run_daemon
+
         run_daemon(args.agents_dir, args.daemon_interval, args.max_workflows, args.ws_port, args.no_ui)
         sys.exit(0)
 
     # Handle --state command (full workflow state as JSON)
     if args.state:
         from rein.flow_state import get_flow_state
+
         state = get_flow_state(args.state, agents_dir=args.agents_dir)
         print(json.dumps(state, indent=2, default=str))
         sys.exit(0)
@@ -131,9 +148,9 @@ def main():
     print(f"\n[DIR] Run Directory: {manager.run_dir}")
     print(f"[DB] Database: {manager.db_path}")
     print(f"[LOGS] Logs: {manager.log_dir}")
-    if 'start_time' in manager.metadata:
+    if "start_time" in manager.metadata:
         print(f"[TIMER] Start Time: {manager.metadata['start_time']}")
-    elif 'resumed_at' in manager.metadata:
+    elif "resumed_at" in manager.metadata:
         print(f"[TIMER] Resumed At: {manager.metadata['resumed_at']}")
     if manager.timeout:
         print(f"[TIMEOUT] Timeout: {manager.timeout}s")
@@ -163,6 +180,7 @@ def main():
         manager.run_workflow()
     else:
         from rein.ui import ReinUI
+
         workflow_thread = threading.Thread(target=manager.run_workflow, daemon=True)
         workflow_thread.start()
         ui = ReinUI(manager)
@@ -181,8 +199,8 @@ def _handle_step_resume(args):
     from rein.orchestrator import ProcessManager
     from rein.tasks import load_config
 
-    task_dir = args.task_dir.rstrip('/')
-    task_json_path = os.path.join(task_dir, 'input', 'task.json')
+    task_dir = args.task_dir.rstrip("/")
+    task_json_path = os.path.join(task_dir, "input", "task.json")
 
     if not os.path.exists(task_json_path):
         print(f"[ERROR] No task.json found in: {task_dir}/input/")
@@ -192,26 +210,23 @@ def _handle_step_resume(args):
     with open(task_json_path) as f:
         task_data = json.load(f)
 
-    flow_name = task_data.get('flow')
+    flow_name = task_data.get("flow")
     if not flow_name:
         print("[ERROR] task.json missing 'flow' field")
         sys.exit(1)
 
     agents_dir = args.agents_dir
-    flow_path = os.path.join(agents_dir, 'flows', flow_name, f'{flow_name}.yaml')
+    flow_path = os.path.join(agents_dir, "flows", flow_name, f"{flow_name}.yaml")
 
     if not os.path.exists(flow_path):
         print(f"[ERROR] Flow not found: {flow_path}")
         sys.exit(1)
 
     config = load_config(flow_path)
-    task_input = task_data.get('input', {})
+    task_input = task_data.get("input", {})
 
     manager = ProcessManager(
-        max_parallel=config.get('semaphore', 3),
-        flow_name=flow_name,
-        task_input=task_input,
-        agents_dir=agents_dir
+        max_parallel=config.get("semaphore", 3), flow_name=flow_name, task_input=task_input, agents_dir=agents_dir
     )
 
     task_id = os.path.basename(task_dir)
@@ -258,7 +273,7 @@ def _handle_status(args):
         print(f"[TASK] Flow: {task_data.get('flow')}")
         print(f"[TASK] Created: {task_data.get('created')}")
         print(f"[TASK] Status: {task_data.get('status')}")
-        if task_data.get('input'):
+        if task_data.get("input"):
             print(f"[TASK] Input: {json.dumps(task_data.get('input'), ensure_ascii=False)}")
 
     if os.path.exists(status_path):
@@ -279,9 +294,9 @@ def _handle_status(args):
 
 def _handle_flow(args):
     """Handle --flow mode: create task and run flow."""
+    from rein.config import SAFE_FLOW_NAME
     from rein.orchestrator import ProcessManager
     from rein.tasks import load_config
-    from rein.config import SAFE_FLOW_NAME
 
     flow_name = args.flow
     # HIGH-005: validate flow_name as a safe filesystem component before
@@ -292,7 +307,7 @@ def _handle_flow(args):
         sys.exit(1)
 
     agents_dir = args.agents_dir
-    flow_path = os.path.join(agents_dir, 'flows', flow_name, f'{flow_name}.yaml')
+    flow_path = os.path.join(agents_dir, "flows", flow_name, f"{flow_name}.yaml")
 
     if not os.path.exists(flow_path):
         print(f"[ERROR] Flow not found: {flow_path}")
@@ -307,19 +322,19 @@ def _handle_flow(args):
         if not os.path.exists(question_file):
             print(f"[ERROR] Question file not found: {question_file}")
             sys.exit(1)
-        with open(question_file, 'r') as f:
+        with open(question_file, "r") as f:
             task_content = f.read()
         task_input = {"task": task_content}
-        context_dir = os.path.join(os.path.dirname(os.path.abspath(question_file)), 'context')
+        context_dir = os.path.join(os.path.dirname(os.path.abspath(question_file)), "context")
         if os.path.isdir(context_dir):
             task_content += f"\n\nContext files available in: {context_dir}"
             task_input = {"task": task_content}
     elif task_dir_provided:
-        task_md_path = os.path.join(task_dir_provided, 'task.md')
+        task_md_path = os.path.join(task_dir_provided, "task.md")
         if not os.path.exists(task_md_path):
             print(f"[ERROR] task.md not found in: {task_dir_provided}")
             sys.exit(1)
-        with open(task_md_path, 'r') as f:
+        with open(task_md_path, "r") as f:
             task_content = f.read()
         task_input = {"task": task_content}
     elif args.input:
@@ -332,14 +347,11 @@ def _handle_flow(args):
     config = load_config(flow_path)
 
     manager = ProcessManager(
-        max_parallel=config.get('semaphore', 3),
-        flow_name=flow_name,
-        task_input=task_input,
-        agents_dir=agents_dir
+        max_parallel=config.get("semaphore", 3), flow_name=flow_name, task_input=task_input, agents_dir=agents_dir
     )
 
     if task_dir_provided:
-        task_dir_provided = task_dir_provided.rstrip('/')
+        task_dir_provided = task_dir_provided.rstrip("/")
         task_id = os.path.basename(task_dir_provided)
         manager.task_id = task_id
         manager.task_dir = task_dir_provided
@@ -361,8 +373,10 @@ def _handle_flow(args):
     print(f"\n[TASK] ID: {task_id}")
     print(f"[TASK] Flow: {flow_name}")
     print(f"[TASK] Directory: {manager.task_dir}")
-    if task_input and task_input.get('task'):
-        task_preview = task_input['task'][:100] + "..." if len(task_input.get('task', '')) > 100 else task_input.get('task', '')
+    if task_input and task_input.get("task"):
+        task_preview = (
+            task_input["task"][:100] + "..." if len(task_input.get("task", "")) > 100 else task_input.get("task", "")
+        )
         print(f"[TASK] Input: {task_preview}")
 
     return manager
@@ -370,21 +384,21 @@ def _handle_flow(args):
 
 def _handle_task(args):
     """Handle --task mode: load flow from task.yaml."""
+    from rein.config import SAFE_FLOW_NAME
     from rein.orchestrator import ProcessManager
     from rein.tasks import load_config
-    from rein.config import SAFE_FLOW_NAME
 
     # HIGH-005: containment-check task_dir against agents_dir/tasks. Same
     # pattern as _handle_status. Prevents --task ../../../etc from being
     # accepted as a valid task location.
     agents_dir = args.agents_dir
-    tasks_root = os.path.realpath(os.path.join(agents_dir, 'tasks'))
-    task_dir = os.path.realpath(args.task.rstrip('/'))
+    tasks_root = os.path.realpath(os.path.join(agents_dir, "tasks"))
+    task_dir = os.path.realpath(args.task.rstrip("/"))
     if not (task_dir == tasks_root or task_dir.startswith(tasks_root + os.sep)):
         print(f"[ERROR] Task directory escapes tasks root: {args.task}")
         sys.exit(1)
 
-    task_yaml_path = os.path.join(task_dir, 'task.yaml')
+    task_yaml_path = os.path.join(task_dir, "task.yaml")
 
     if not os.path.exists(task_yaml_path):
         print(f"[ERROR] Task file not found: {task_yaml_path}")
@@ -393,7 +407,7 @@ def _handle_task(args):
     with open(task_yaml_path) as f:
         task_config = yaml.safe_load(f)
 
-    flow_name = task_config.get('flow')
+    flow_name = task_config.get("flow")
     if not flow_name:
         print("[ERROR] Task must specify 'flow' field")
         sys.exit(1)
@@ -405,25 +419,25 @@ def _handle_task(args):
         print(f"[ERROR] Invalid flow name in task.yaml: {flow_name!r}")
         sys.exit(1)
 
-    flow_path = os.path.join(agents_dir, 'flows', flow_name, f'{flow_name}.yaml')
+    flow_path = os.path.join(agents_dir, "flows", flow_name, f"{flow_name}.yaml")
     if not os.path.exists(flow_path):
         print(f"[ERROR] Flow not found: {flow_path}")
         sys.exit(1)
 
     config = load_config(flow_path)
 
-    output_dir = task_config.get('output_dir', './outputs')
-    output_dir = os.path.join(task_dir, output_dir.lstrip('./'))
-    config['output_dir'] = output_dir
-    config['task_dir'] = task_dir
-    config['task_config'] = task_config
+    output_dir = task_config.get("output_dir", "./outputs")
+    output_dir = os.path.join(task_dir, output_dir.lstrip("./"))
+    config["output_dir"] = output_dir
+    config["task_dir"] = task_dir
+    config["task_config"] = task_config
 
     manager = ProcessManager(
-        max_parallel=config.get('semaphore', 3),
+        max_parallel=config.get("semaphore", 3),
         task_id=os.path.basename(task_dir),
         flow_name=flow_name,
-        task_input=task_config.get('input', {}),
-        agents_dir=agents_dir
+        task_input=task_config.get("input", {}),
+        agents_dir=agents_dir,
     )
     manager.task_dir = task_dir
     manager.run_dir = task_dir
@@ -453,10 +467,7 @@ def _handle_config(args):
             sys.exit(1)
 
     manager = ProcessManager(
-        max_parallel=config.get('semaphore', 3),
-        resume_run_id=args.resume,
-        agents_dir=agents_dir,
-        task_input=task_input
+        max_parallel=config.get("semaphore", 3), resume_run_id=args.resume, agents_dir=agents_dir, task_input=task_input
     )
     manager.load_config(config, workflow_file=args.config)
 

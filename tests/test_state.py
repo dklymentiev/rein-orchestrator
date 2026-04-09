@@ -1,11 +1,13 @@
 """Tests for rein/state.py"""
+
 import os
-import pytest
 import tempfile
 import time
 
-from rein.state import ReinState
+import pytest
+
 from rein.models import Process
+from rein.state import ReinState
 
 
 class TestReinState:
@@ -31,22 +33,19 @@ class TestReinState:
             start_time=time.time(),
             command="python test.py",
             progress=50,
-            phase=1
+            phase=1,
         )
 
     def test_init_creates_db(self, temp_db):
         """Test initialization creates database"""
-        state = ReinState(db_path=temp_db)
+        ReinState(db_path=temp_db)
         assert os.path.exists(temp_db)
 
     def test_init_fresh_run(self, temp_db):
         """Test fresh run drops existing table"""
         # Create initial state
         state1 = ReinState(db_path=temp_db, resume=False)
-        proc = Process(
-            pid=1, name="old", status="done",
-            start_time=0.0, command=""
-        )
+        proc = Process(pid=1, name="old", status="done", start_time=0.0, command="")
         state1.save_process(proc)
 
         # Fresh run should clear data
@@ -58,10 +57,7 @@ class TestReinState:
         """Test resume preserves existing data"""
         # Create initial state
         state1 = ReinState(db_path=temp_db, resume=False)
-        proc = Process(
-            pid=1, name="preserved", status="done",
-            start_time=0.0, command=""
-        )
+        proc = Process(pid=1, name="preserved", status="done", start_time=0.0, command="")
         state1.save_process(proc)
 
         # Resume should preserve data
@@ -160,10 +156,7 @@ class TestReinState:
 
         # Add multiple processes
         for i in range(5):
-            proc = Process(
-                pid=i, name=f"block-{i}", status="done",
-                start_time=0, command=""
-            )
+            proc = Process(pid=i, name=f"block-{i}", status="done", start_time=0, command="")
             state.save_process(proc)
 
         assert len(state.get_all_processes()) == 5
@@ -175,10 +168,7 @@ class TestReinState:
         """Test blocking_pause flag is stored correctly"""
         state = ReinState(db_path=temp_db)
 
-        proc = Process(
-            pid=1, name="paused-block", status="paused",
-            start_time=0, command="", blocking_pause=True
-        )
+        proc = Process(pid=1, name="paused-block", status="paused", start_time=0, command="", blocking_pause=True)
         state.save_process(proc)
 
         retrieved = state.get_process("paused-block")
@@ -191,9 +181,7 @@ class TestReinState:
         names = ["alpha", "beta", "gamma", "delta"]
         for i, name in enumerate(names):
             proc = Process(
-                pid=100 + i, name=name, status="waiting",
-                start_time=float(i), command=f"cmd-{i}",
-                phase=i % 2 + 1
+                pid=100 + i, name=name, status="waiting", start_time=float(i), command=f"cmd-{i}", phase=i % 2 + 1
             )
             state.save_process(proc)
 

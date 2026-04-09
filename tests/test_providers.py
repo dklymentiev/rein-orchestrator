@@ -1,12 +1,14 @@
 """Tests for rein/providers/ - AI-agnostic provider layer"""
-import os
-import pytest
-from unittest.mock import patch, MagicMock
 
-from rein.providers import create_provider, list_providers, Provider
+import os
+from unittest.mock import patch
+
+import pytest
+
+from rein.providers import Provider, create_provider, list_providers
 from rein.providers.anthropic import AnthropicProvider
-from rein.providers.openai import OpenAIProvider
 from rein.providers.ollama import OllamaProvider
+from rein.providers.openai import OpenAIProvider
 from rein.providers.openrouter import OpenRouterProvider
 
 
@@ -62,8 +64,9 @@ class TestCreateProvider:
     def test_auto_detect_anthropic(self):
         """Auto-detect Anthropic from env"""
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-test"}, clear=False):
-            env = {k: v for k, v in os.environ.items()
-                   if k not in ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "OLLAMA_URL")}
+            env = {
+                k: v for k, v in os.environ.items() if k not in ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "OLLAMA_URL")
+            }
             with patch.dict(os.environ, env, clear=True):
                 os.environ["ANTHROPIC_API_KEY"] = "sk-test"
                 p = create_provider()
@@ -145,6 +148,7 @@ class TestConfigIntegration:
 
     def test_simple_provider_config(self):
         from rein.config import ConfigLoader
+
         loader = ConfigLoader(agents_dir="/tmp")
         config = {"provider": "anthropic", "model": "claude-sonnet-4-20250514"}
         result = loader.get_provider_config(config)
@@ -153,6 +157,7 @@ class TestConfigIntegration:
 
     def test_nested_provider_config(self):
         from rein.config import ConfigLoader
+
         loader = ConfigLoader(agents_dir="/tmp")
         config = {
             "provider": {
@@ -170,6 +175,7 @@ class TestConfigIntegration:
 
     def test_empty_provider_config(self):
         from rein.config import ConfigLoader
+
         loader = ConfigLoader(agents_dir="/tmp")
         config = {"blocks": []}
         result = loader.get_provider_config(config)
