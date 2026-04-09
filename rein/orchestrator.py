@@ -542,9 +542,12 @@ class ProcessManager:
             self._write_rein_log(
                 f"RESUME | {len(failed_blocks)} failed/running blocks, {len(needs_rerun)} total to re-run"
             )
-            # Clean outputs for all invalidated blocks
-            for block_name in needs_rerun:
-                self._clean_block_outputs(block_name)
+            # TODO #1203: cleanup disabled -- race condition deletes outputs
+            # of still-running blocks (Gateway response -> FileNotFoundError).
+            # result.json is overwritten on rerun anyway. Re-enable after
+            # implementing result versioning (result-000.json, result-001.json).
+            # for block_name in needs_rerun:
+            #     self._clean_block_outputs(block_name)
 
         # First pass - calculate phases
         block_phases: Dict[str, int] = {}

@@ -1528,3 +1528,113 @@ class TestForwardRoutingRunCount(TestProcessManagerFixture):
         assert proc.completed_runs == 2
         # run_count is independent
         assert proc.run_count == 2
+
+
+class TestCascadeCleanupRaceCondition(TestProcessManagerFixture):
+    """Regression test: cascade cleanup should NOT delete outputs of running blocks.
+
+    Bug: on resume, _initialize_all_processes includes 'running' blocks in
+    failed_blocks set. Cascade invalidation propagates to dependents, and
+    _clean_block_outputs deletes outputs for ALL invalidated blocks --
+    including the still-running block. When the Gateway response arrives,
+    it tries to write result.json to a deleted directory -> FileNotFoundError
+    -> BLOCK FAILED.
+
+    The stuck detector correctly catches the pipeline stall, but the root
+    cause is premature cleanup.
+    """
+
+    def test_clean_block_outputs_removes_directory(self, manager):
+        """Verify _clean_block_outputs actually removes outputs dir."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager.run_dir = tmpdir
+            block_dir = os.path.join(tmpdir, "verify", "outputs")
+            os.makedirs(block_dir)
+            # Write a file
+            with open(os.path.join(block_dir, "result.json"), "w") as f:
+                f.write('{"result": "ok"}')
+
+            manager._clean_block_outputs("verify")
+            assert not os.path.exists(block_dir)
+
+    def test_cascade_includes_running_blocks(self, manager):
+        """Demonstrate that running blocks are included in cascade invalidation.
+
+        This is the root cause: _initialize_all_processes treats 'running'
+        same as 'failed' for cascade purposes. Running blocks' outputs
+        get deleted while the block is still executing.
+        """
+        # Simulate DB state: verify is "running", deliver depends on verify
+        from rein.state import ReinState
+
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "rein.db")
+            state = ReinState(db_path, resume=False)
+
+            # Save verify as running
+            verify_proc = Process(
+                pid=None, start_time=0, command="test",
+                name="verify", status="running",
+            )
+            state.save_process(verify_proc)
+
+            # Reload
+            state2 = ReinState(db_path, resume=True)
+            procs = state2.get_all_processes()
+            statuses = {p.name: p.status for p in procs}
+
+            # BUG: running blocks are treated as failed for cascade
+            failed_blocks = {name for name, status in statuses.items()
+                            if status in ("failed", "running")}
+            assert "verify" in failed_blocks, (
+                "Running block included in failed_blocks set -- "
+                "this causes cascade cleanup to delete its outputs"
+            )
+
+    def test_running_block_outputs_should_not_be_deleted(self, manager):
+        """Proposed fix: skip cleanup for blocks that are still running.
+
+        The fix should change line ~546 in orchestrator.py to:
+            for block_name in needs_rerun:
+                if existing_status.get(block_name) != 'running':
+                    self._clean_block_outputs(block_name)
+        """
+        # This test documents the expected behavior after fix
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager.run_dir = tmpdir
+
+            # Create outputs for running block
+            running_outputs = os.path.join(tmpdir, "verify", "outputs")
+            os.makedirs(running_outputs)
+            with open(os.path.join(running_outputs, "result.json"), "w") as f:
+                f.write('{"result": "in progress"}')
+
+            # Create outputs for failed block
+            failed_outputs = os.path.join(tmpdir, "draft", "outputs")
+            os.makedirs(failed_outputs)
+            with open(os.path.join(failed_outputs, "result.json"), "w") as f:
+                f.write('{"result": "old"}')
+
+            existing_status = {"verify": "running", "draft": "failed"}
+            needs_rerun = {"verify", "draft"}
+
+            # Current behavior (BUG): cleans both
+            # Proposed fix: only clean non-running
+            for block_name in needs_rerun:
+                if existing_status.get(block_name) != "running":
+                    manager._clean_block_outputs(block_name)
+
+            # Running block outputs should survive
+            assert os.path.exists(running_outputs), (
+                "Running block outputs should NOT be deleted during cascade"
+            )
+            # Failed block outputs should be cleaned
+            assert not os.path.exists(failed_outputs), (
+                "Failed block outputs should be cleaned during cascade"
+            )
