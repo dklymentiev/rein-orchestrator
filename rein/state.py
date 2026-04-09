@@ -41,16 +41,19 @@ class ReinState:
                 phase INTEGER,
                 blocking_pause INTEGER,
                 updated_at REAL,
-                run_count INTEGER DEFAULT 0
+                run_count INTEGER DEFAULT 0,
+                completed_runs INTEGER DEFAULT 0
             )
         """)
 
-        # Schema migration: add run_count to existing DBs that lack it
+        # Schema migration: add columns to existing DBs
         if self.resume:
             try:
                 cols = [row[1] for row in conn.execute("PRAGMA table_info(processes)").fetchall()]
                 if "run_count" not in cols:
                     conn.execute("ALTER TABLE processes ADD COLUMN run_count INTEGER DEFAULT 0")
+                if "completed_runs" not in cols:
+                    conn.execute("ALTER TABLE processes ADD COLUMN completed_runs INTEGER DEFAULT 0")
             except sqlite3.OperationalError:
                 pass
 
@@ -63,8 +66,8 @@ class ReinState:
         conn.execute(
             """
             REPLACE INTO processes
-            (name, pid, status, start_time, command, exit_code, cpu_percent, memory_mb, progress, phase, blocking_pause, updated_at, run_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (name, pid, status, start_time, command, exit_code, cpu_percent, memory_mb, progress, phase, blocking_pause, updated_at, run_count, completed_runs)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 proc.name,
@@ -80,6 +83,7 @@ class ReinState:
                 int(proc.blocking_pause),
                 time.time(),
                 proc.run_count,
+                proc.completed_runs,
             ),
         )
         conn.commit()
@@ -89,7 +93,7 @@ class ReinState:
         """Get all tracked processes"""
         conn = sqlite3.connect(self.db_path)
         rows = conn.execute(
-            "SELECT name, pid, status, start_time, command, exit_code, cpu_percent, memory_mb, progress, phase, blocking_pause, run_count FROM processes ORDER BY phase, name"
+            "SELECT name, pid, status, start_time, command, exit_code, cpu_percent, memory_mb, progress, phase, blocking_pause, run_count, completed_runs FROM processes ORDER BY phase, name"
         ).fetchall()
         conn.close()
 
@@ -108,6 +112,7 @@ class ReinState:
                 phase=row[9],
                 blocking_pause=bool(row[10]),
                 run_count=row[11] or 0,
+                completed_runs=row[12] or 0,
             )
             processes.append(proc)
         return processes
@@ -116,7 +121,7 @@ class ReinState:
         """Get single process by name"""
         conn = sqlite3.connect(self.db_path)
         row = conn.execute(
-            "SELECT name, pid, status, start_time, command, exit_code, cpu_percent, memory_mb, progress, phase, blocking_pause, run_count FROM processes WHERE name = ?",
+            "SELECT name, pid, status, start_time, command, exit_code, cpu_percent, memory_mb, progress, phase, blocking_pause, run_count, completed_runs FROM processes WHERE name = ?",
             (name,),
         ).fetchone()
         conn.close()
@@ -135,6 +140,7 @@ class ReinState:
                 phase=row[9],
                 blocking_pause=bool(row[10]),
                 run_count=row[11] or 0,
+                completed_runs=row[12] or 0,
             )
         return None
 

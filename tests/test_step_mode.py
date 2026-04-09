@@ -1186,3 +1186,143 @@ class TestForwardRouting:
             manager.run_step(2)
             assert "target" in manager.completed
             assert "other" in manager.completed
+
+
+# ===========================================================================
+# FORWARD ROUTING + STEP MODE REGRESSION TESTS
+# Bug: forward routing increments run_count before block executes.
+# On --step resume, run_counts restored from DB shows run_count=1,
+# blocking the block via max_runs check even though it never ran.
+# Fix: step resume uses completed_runs (actual executions) not run_count.
+# ===========================================================================
+
+
+class TestForwardRoutingStepResume:
+    """Integration tests: forward routing + step mode with DB persistence."""
+
+    def test_forward_routing_step_resume(self):
+        """Block B should execute after resume even when routing set run_count=1.
+
+        Flow: A -> routing -> B -> C
+        Step 1: execute A, routing fires B (sets run_count=1 in DB)
+        Step 2: resume, B should execute (not be blocked)
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            blocks = [
+                {
+                    "name": "verify",
+                    "specialist": "spec-a",
+                    "prompt": "Verify quality",
+                    "depends_on": [],
+                    "routing": {"pass": "deliver"},
+                },
+                {
+                    "name": "deliver",
+                    "specialist": "spec-a",
+                    "prompt": "Deliver result",
+                    "depends_on": ["verify"],
+                },
+            ]
+            manager = _make_manager(tmpdir, blocks)
+
+            # Mock provider returns VERDICT: pass to trigger routing
+            manager._provider.call.return_value = (
+                'VERDICT: pass\n{"result": "quality ok"}',
+                UsageStats(),
+            )
+
+            # Step 1: execute verify, routing targets deliver
+            result = manager.run_step(1)
+            assert result is False  # deliver still pending
+            assert "verify" in manager.completed
+
+            # Check DB state: deliver should have run_count from routing
+            # but completed_runs=0 (hasn't executed yet)
+            db_proc = manager.state.get_process("deliver")
+            if db_proc:
+                assert db_proc.completed_runs == 0, (
+                    f"deliver should have completed_runs=0 before execution, "
+                    f"got {db_proc.completed_runs}"
+                )
+
+            # Step 2: resume -- create new manager from same task dir
+            manager2 = ProcessManager(
+                max_parallel=3,
+                flow_name="test-flow",
+                agents_dir=manager.agents_dir,
+            )
+            manager2.task_id = manager.task_id
+            manager2.task_dir = manager.task_dir
+            manager2.run_dir = manager.task_dir
+            manager2.log_dir = manager.log_dir
+            manager2.rein_log_file = manager.rein_log_file
+            manager2.db_path = manager.db_path
+            manager2.state = ReinState(manager2.db_path, resume=True)
+            manager2._provider = _mock_provider()
+
+            with patch.object(manager2, "_init_provider"), patch.object(
+                manager2, "_run_preflight_validation"
+            ):
+                from rein.tasks import load_config
+
+                config = load_config(
+                    os.path.join(
+                        manager.agents_dir, "flows", "test-flow", "test-flow.yaml"
+                    )
+                )
+                manager2.load_config(config, workflow_file=os.path.join(
+                    manager.agents_dir, "flows", "test-flow", "test-flow.yaml"
+                ))
+            manager2.load_team = lambda name: "Be concise."
+
+            # Key assertion: deliver should NOT be in completed yet
+            assert "deliver" not in manager2.completed, (
+                "deliver should not be marked completed before step 2 executes it"
+            )
+
+            # Step 2: execute deliver
+            result2 = manager2.run_step(1)
+
+            # deliver should now be completed
+            assert "deliver" in manager2.completed, (
+                "deliver should complete in step 2 (BUG: forward routing "
+                "set run_count=1, step resume saw it as already ran)"
+            )
+
+    def test_backward_routing_still_works(self):
+        """Backward routing (loops) should still respect max_runs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            blocks = [
+                {
+                    "name": "draft",
+                    "specialist": "spec-a",
+                    "prompt": "Write draft",
+                    "depends_on": [],
+                    "max_runs": 3,
+                },
+                {
+                    "name": "review",
+                    "specialist": "spec-a",
+                    "prompt": "Review draft",
+                    "depends_on": ["draft"],
+                    "routing": {"revise": "draft"},
+                },
+            ]
+            manager = _make_manager(tmpdir, blocks)
+
+            # Always return VERDICT: revise to trigger loop
+            manager._provider.call.return_value = (
+                'VERDICT: revise\n{"result": "needs work"}',
+                UsageStats(),
+            )
+
+            # Run until completion or max_runs exhausted
+            for _ in range(10):  # safety limit
+                result = manager.run_step(1)
+                if result:
+                    break
+
+            # draft should have run multiple times via backward routing
+            assert manager.run_counts.get("draft", 0) >= 2, (
+                "backward routing should increment run_counts for reruns"
+            )

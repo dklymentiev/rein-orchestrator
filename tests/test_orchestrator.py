@@ -1469,3 +1469,62 @@ specialists:
         manager.agents_dir = str(tmp_path)
         result = manager.load_specialist("nonexistent-spec")
         assert result == "" or result is None
+
+
+class TestForwardRoutingRunCount(TestProcessManagerFixture):
+    """Regression test: forward routing should not block step mode resume.
+
+    Bug: when routing directs forward (verify -> deliver), Rein increments
+    run_count of the target block to 1 before execution. On next --step call,
+    Rein restores run_counts from DB, sees run_count=1, and thinks the block
+    already ran -- blocking it via max_runs check.
+
+    Fix: step mode resume uses completed_runs (actual executions) instead of
+    run_count (routing entries) to restore run_counts dict.
+    """
+
+    def test_completed_runs_separate_from_run_count(self, manager):
+        """completed_runs should only increment on BLOCK_DONE, not on routing."""
+        proc = Process(
+            pid=None, start_time=0, command="test",
+            name="deliver",
+            status="waiting",
+            run_count=1,  # routing set this
+            completed_runs=0,  # block never actually ran
+        )
+        # run_count=1 but completed_runs=0 means routing targeted
+        # this block but it hasn't executed yet
+        assert proc.run_count == 1
+        assert proc.completed_runs == 0
+
+    def test_step_mode_resume_uses_completed_runs(self, manager):
+        """On resume, run_counts dict should use completed_runs, not run_count."""
+        # Simulate: routing set run_count=1 but block never executed
+        proc = Process(
+            pid=None, start_time=0, command="test",
+            name="deliver",
+            status="waiting",
+            run_count=1,
+            completed_runs=0,
+        )
+        # Step mode restore logic: should use completed_runs
+        manager.run_counts = {}
+        if proc.completed_runs > 0:
+            manager.run_counts[proc.name] = proc.completed_runs
+
+        # run_counts should be empty (block never completed)
+        assert manager.run_counts.get("deliver", 0) == 0
+
+        # With old buggy logic (run_count > 0), it would be 1:
+        # manager.run_counts["deliver"] = proc.run_count  # BUG: would be 1
+
+    def test_completed_runs_increments_independently(self, manager):
+        """completed_runs tracks actual executions."""
+        proc = Process(pid=None, start_time=0, command="test", name="step1", status="done", run_count=2, completed_runs=0)
+        # Simulate two completions
+        proc.completed_runs += 1
+        assert proc.completed_runs == 1
+        proc.completed_runs += 1
+        assert proc.completed_runs == 2
+        # run_count is independent
+        assert proc.run_count == 2

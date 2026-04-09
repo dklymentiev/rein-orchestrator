@@ -525,9 +525,11 @@ class ProcessManager:
         try:
             for db_proc in self.state.get_all_processes():
                 existing_status[db_proc.name] = db_proc.status
-                # Restore run_counts from DB for step mode persistence
-                if db_proc.run_count > 0:
-                    self.run_counts[db_proc.name] = db_proc.run_count
+                # Restore run_counts from completed_runs (actual executions),
+                # not run_count (routing entries). This prevents forward-routed
+                # blocks from being seen as "already ran" in step mode.
+                if db_proc.completed_runs > 0:
+                    self.run_counts[db_proc.name] = db_proc.completed_runs
         except Exception:
             pass
 
@@ -931,6 +933,10 @@ class ProcessManager:
 
             # Event marker for WebSocket broadcast (must be stdout for daemon parsing)
             console.info("[BLOCK_DONE] task=%s block=%s", self.task_id, name)
+
+            # Track actual completion (out_count) for step mode resume
+            process.completed_runs += 1
+            self.state.save_process(process)
 
             # ROUTING: Tag-based routing from block output (v3.3)
             if block.get("routing"):

@@ -26,7 +26,8 @@ class Process:
     agent: str = ""  # Agent or team executing this process
     next_spec: Optional[Any] = None  # str or List[dict] with conditions
     max_runs: int = 1  # Maximum runs for loop protection
-    run_count: int = 0  # How many times this block has run
+    run_count: int = 0  # How many times routing directed to this block (in_count)
+    completed_runs: int = 0  # How many times this block actually finished (out_count)
 
 
 @dataclass
