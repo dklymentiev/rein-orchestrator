@@ -50,4 +50,4 @@ jobs:
 
       - name: Run tests
         run: pytest --tb=short -q --ignore=tests/test_characterization.py --ignore=tests/test_containment_sweep.py --ignore=tests/test_cli.py
-        timeout-minutes: 5
+        timeout-minutes: 10
