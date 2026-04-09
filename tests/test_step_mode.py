@@ -7,29 +7,28 @@ Test levels:
   3. Infrastructure - file system state, task dirs, DB persistence across invocations
   4. E2E           - subprocess calls to `rein --step`, exit codes, real file outputs
 """
-import os
-import sys
-import json
-import time
+
 import fcntl
+import json
+import os
 import sqlite3
-import tempfile
 import subprocess
+import sys
+import tempfile
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
 
-from unittest.mock import patch, MagicMock
-
 from rein.models import Process
-from rein.state import ReinState
 from rein.orchestrator import ProcessManager
 from rein.providers.base import UsageStats
-
+from rein.state import ReinState
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_agents_dir(tmpdir):
     """Create minimal agents directory structure."""
@@ -62,8 +61,7 @@ def _make_flow(agents_dir, flow_name, blocks, team_name="team-test"):
     specialists = list({b.get("specialist", "default-spec") for b in blocks})
     team_path = os.path.join(agents_dir, "teams", f"{team_name}.yaml")
     with open(team_path, "w") as f:
-        yaml.dump({"name": team_name, "specialists": specialists,
-                    "collaboration_tone": "Be concise."}, f)
+        yaml.dump({"name": team_name, "specialists": specialists, "collaboration_tone": "Be concise."}, f)
 
     # Specialist files
     for spec in specialists:
@@ -89,6 +87,7 @@ def _make_manager(tmpdir, blocks, task_input=None):
     flow_path = _make_flow(agents_dir, "test-flow", blocks)
 
     from rein.tasks import load_config
+
     config = load_config(flow_path)
 
     manager = ProcessManager(
@@ -111,8 +110,7 @@ def _make_manager(tmpdir, blocks, task_input=None):
 
     # Mock provider, validation, and team loading BEFORE load_config
     manager._provider = _mock_provider()
-    with patch.object(manager, '_init_provider'), \
-         patch.object(manager, '_run_preflight_validation'):
+    with patch.object(manager, "_init_provider"), patch.object(manager, "_run_preflight_validation"):
         manager.load_config(config, workflow_file=flow_path)
 
     # Patch load_team to return a valid tone (needed for _execute_block to use Claude path)
@@ -125,6 +123,7 @@ def _make_manager(tmpdir, blocks, task_input=None):
 # 1. FUNCTIONAL TESTS - run_step() logic with mocked LLM
 # ===========================================================================
 
+
 class TestFunctionalStepMode:
     """Test run_step() behavior: budget, deps, state transitions, next routing."""
 
@@ -132,8 +131,7 @@ class TestFunctionalStepMode:
         """Single block workflow: --step 1 should complete and return True."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "only-block", "specialist": "spec-a",
-                 "prompt": "Do thing", "depends_on": []},
+                {"name": "only-block", "specialist": "spec-a", "prompt": "Do thing", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
             result = manager.run_step(1)
@@ -144,12 +142,9 @@ class TestFunctionalStepMode:
         """3 sequential blocks, --step 1: only first block runs."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "step a", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "step b", "depends_on": ["a"]},
-                {"name": "c", "specialist": "spec-a",
-                 "prompt": "step c", "depends_on": ["b"]},
+                {"name": "a", "specialist": "spec-a", "prompt": "step a", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "step b", "depends_on": ["a"]},
+                {"name": "c", "specialist": "spec-a", "prompt": "step c", "depends_on": ["b"]},
             ]
             manager = _make_manager(tmpdir, blocks)
             result = manager.run_step(1)
@@ -163,12 +158,9 @@ class TestFunctionalStepMode:
         """3 sequential blocks, --step 2: first two blocks run."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "step a", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "step b", "depends_on": ["a"]},
-                {"name": "c", "specialist": "spec-a",
-                 "prompt": "step c", "depends_on": ["b"]},
+                {"name": "a", "specialist": "spec-a", "prompt": "step a", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "step b", "depends_on": ["a"]},
+                {"name": "c", "specialist": "spec-a", "prompt": "step c", "depends_on": ["b"]},
             ]
             manager = _make_manager(tmpdir, blocks)
             result = manager.run_step(2)
@@ -182,10 +174,8 @@ class TestFunctionalStepMode:
         """--step 0 (unlimited): runs entire workflow."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "step a", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "step b", "depends_on": ["a"]},
+                {"name": "a", "specialist": "spec-a", "prompt": "step a", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "step b", "depends_on": ["a"]},
             ]
             manager = _make_manager(tmpdir, blocks)
             result = manager.run_step(0)
@@ -198,12 +188,9 @@ class TestFunctionalStepMode:
         """3 independent blocks + --step 2: only 2 spawned."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "b", "depends_on": []},
-                {"name": "c", "specialist": "spec-a",
-                 "prompt": "c", "depends_on": []},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "b", "depends_on": []},
+                {"name": "c", "specialist": "spec-a", "prompt": "c", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
             result = manager.run_step(2)
@@ -216,10 +203,8 @@ class TestFunctionalStepMode:
         """Cannot run block B until A is done, even with budget."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "b", "depends_on": ["a"]},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "b", "depends_on": ["a"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -233,14 +218,10 @@ class TestFunctionalStepMode:
         """Diamond: A -> B, A -> C, B+C -> D. Step 1 runs A, step 2 runs B+C, step 1 runs D."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "b", "depends_on": ["a"]},
-                {"name": "c", "specialist": "spec-a",
-                 "prompt": "c", "depends_on": ["a"]},
-                {"name": "d", "specialist": "spec-a",
-                 "prompt": "d", "depends_on": ["b", "c"]},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "b", "depends_on": ["a"]},
+                {"name": "c", "specialist": "spec-a", "prompt": "c", "depends_on": ["a"]},
+                {"name": "d", "specialist": "spec-a", "prompt": "d", "depends_on": ["b", "c"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -264,8 +245,7 @@ class TestFunctionalStepMode:
         """If workflow already done, run_step returns True immediately."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -281,8 +261,7 @@ class TestFunctionalStepMode:
         """A failed block should still allow dependent blocks to see it in completed set."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -300,6 +279,7 @@ class TestFunctionalStepMode:
 # 2. INTEGRATION TESTS - CLI + ProcessManager + SQLite roundtrip
 # ===========================================================================
 
+
 class TestIntegrationStepMode:
     """Test the full path: CLI args -> ProcessManager -> SQLite -> resume."""
 
@@ -307,12 +287,9 @@ class TestIntegrationStepMode:
         """Second invocation resumes from SQLite: completed blocks are skipped."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "b", "depends_on": ["a"]},
-                {"name": "c", "specialist": "spec-a",
-                 "prompt": "c", "depends_on": ["b"]},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "b", "depends_on": ["a"]},
+                {"name": "c", "specialist": "spec-a", "prompt": "c", "depends_on": ["b"]},
             ]
 
             # First invocation: run 1 block
@@ -328,12 +305,15 @@ class TestIntegrationStepMode:
             _make_flow(agents_dir, "test-flow", blocks)
 
             from rein.tasks import load_config
+
             flow_path = os.path.join(agents_dir, "flows", "test-flow", "test-flow.yaml")
             config = load_config(flow_path)
 
             m2 = ProcessManager(
-                max_parallel=3, flow_name="test-flow",
-                task_input={}, agents_dir=agents_dir,
+                max_parallel=3,
+                flow_name="test-flow",
+                task_input={},
+                agents_dir=agents_dir,
             )
             m2.task_id = os.path.basename(task_dir)
             m2.task_dir = task_dir
@@ -345,8 +325,7 @@ class TestIntegrationStepMode:
             m2.state = ReinState(db_path, resume=True)
 
             m2._provider = _mock_provider()
-            with patch.object(m2, '_init_provider'), \
-                 patch.object(m2, '_run_preflight_validation'):
+            with patch.object(m2, "_init_provider"), patch.object(m2, "_run_preflight_validation"):
                 m2.load_config(config, workflow_file=flow_path)
 
             # Block A should be skipped (already done)
@@ -359,8 +338,10 @@ class TestIntegrationStepMode:
 
             # Third invocation: same pattern
             m3 = ProcessManager(
-                max_parallel=3, flow_name="test-flow",
-                task_input={}, agents_dir=agents_dir,
+                max_parallel=3,
+                flow_name="test-flow",
+                task_input={},
+                agents_dir=agents_dir,
             )
             m3.task_id = os.path.basename(task_dir)
             m3.task_dir = task_dir
@@ -371,8 +352,7 @@ class TestIntegrationStepMode:
             m3.state = ReinState(db_path, resume=True)
 
             m3._provider = _mock_provider()
-            with patch.object(m3, '_init_provider'), \
-                 patch.object(m3, '_run_preflight_validation'):
+            with patch.object(m3, "_init_provider"), patch.object(m3, "_run_preflight_validation"):
                 m3.load_config(config, workflow_file=flow_path)
 
             assert "a" in m3.completed
@@ -386,10 +366,8 @@ class TestIntegrationStepMode:
         """--step 1 results in exactly 1 LLM call."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "do thing", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "next thing", "depends_on": ["a"]},
+                {"name": "a", "specialist": "spec-a", "prompt": "do thing", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "next thing", "depends_on": ["a"]},
             ]
             manager = _make_manager(tmpdir, blocks)
             manager.run_step(1)
@@ -401,6 +379,7 @@ class TestIntegrationStepMode:
 # 3. INFRASTRUCTURE TESTS - file system, SQLite, task dirs
 # ===========================================================================
 
+
 class TestInfrastructureStepMode:
     """Test file system artifacts: task dirs, SQLite DB, status files, logs."""
 
@@ -408,19 +387,15 @@ class TestInfrastructureStepMode:
         """After run_step, SQLite DB contains correct block statuses."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "b", "depends_on": ["a"]},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "b", "depends_on": ["a"]},
             ]
             manager = _make_manager(tmpdir, blocks)
             manager.run_step(1)
 
             # Read SQLite directly
             conn = sqlite3.connect(manager.db_path)
-            rows = conn.execute(
-                "SELECT name, status FROM processes ORDER BY name"
-            ).fetchall()
+            rows = conn.execute("SELECT name, status FROM processes ORDER BY name").fetchall()
             conn.close()
 
             status_map = {name: status for name, status in rows}
@@ -431,8 +406,7 @@ class TestInfrastructureStepMode:
         """run_step writes to state/rein.log."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
             manager.run_step(1)
@@ -450,10 +424,8 @@ class TestInfrastructureStepMode:
         """Partial execution logs STEP YIELDING."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "b", "depends_on": ["a"]},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "b", "depends_on": ["a"]},
             ]
             manager = _make_manager(tmpdir, blocks)
             manager.run_step(1)
@@ -468,8 +440,7 @@ class TestInfrastructureStepMode:
         """Full completion logs STEP COMPLETE."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
             manager.run_step(1)
@@ -483,8 +454,7 @@ class TestInfrastructureStepMode:
         """Step mode preserves standard task dir layout."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
             manager.run_step(1)
@@ -499,26 +469,21 @@ class TestInfrastructureStepMode:
         """Completed block should have result.json in outputs dir."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "first-block", "specialist": "spec-a",
-                 "prompt": "do thing", "depends_on": []},
+                {"name": "first-block", "specialist": "spec-a", "prompt": "do thing", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
             manager.run_step(1)
 
             # Check for result.json in block output dir
             # Block outputs go to task_dir/first-block/outputs/result.json
-            result_path = os.path.join(
-                manager.task_dir, "first-block", "outputs", "result.json"
-            )
-            assert os.path.exists(result_path), \
-                f"Expected result.json at {result_path}"
+            result_path = os.path.join(manager.task_dir, "first-block", "outputs", "result.json")
+            assert os.path.exists(result_path), f"Expected result.json at {result_path}"
 
     def test_finalize_creates_summary_on_completion(self):
         """When workflow completes, summary.json is created."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
             result = manager.run_step(1)
@@ -534,10 +499,8 @@ class TestInfrastructureStepMode:
         """Partial execution should NOT create summary.json."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "b", "depends_on": ["a"]},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "b", "depends_on": ["a"]},
             ]
             manager = _make_manager(tmpdir, blocks)
             result = manager.run_step(1)
@@ -550,12 +513,9 @@ class TestInfrastructureStepMode:
         """SQLite DB accumulates state across 3 separate invocations."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
-                {"name": "b", "specialist": "spec-a",
-                 "prompt": "b", "depends_on": ["a"]},
-                {"name": "c", "specialist": "spec-a",
-                 "prompt": "c", "depends_on": ["b"]},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
+                {"name": "b", "specialist": "spec-a", "prompt": "b", "depends_on": ["a"]},
+                {"name": "c", "specialist": "spec-a", "prompt": "c", "depends_on": ["b"]},
             ]
             manager = _make_manager(tmpdir, blocks)
             db_path = manager.db_path
@@ -566,22 +526,21 @@ class TestInfrastructureStepMode:
             manager.run_step(1)
 
             conn = sqlite3.connect(db_path)
-            done_count = conn.execute(
-                "SELECT COUNT(*) FROM processes WHERE status='done'"
-            ).fetchone()[0]
+            done_count = conn.execute("SELECT COUNT(*) FROM processes WHERE status='done'").fetchone()[0]
             conn.close()
             assert done_count == 1
 
             # Invocation 2: new manager, same DB
             from rein.tasks import load_config
-            flow_path = os.path.join(
-                agents_dir, "flows", "test-flow", "test-flow.yaml"
-            )
+
+            flow_path = os.path.join(agents_dir, "flows", "test-flow", "test-flow.yaml")
             config = load_config(flow_path)
 
             m2 = ProcessManager(
-                max_parallel=3, flow_name="test-flow",
-                task_input={}, agents_dir=agents_dir,
+                max_parallel=3,
+                flow_name="test-flow",
+                task_input={},
+                agents_dir=agents_dir,
             )
             m2.task_id = os.path.basename(task_dir)
             m2.task_dir = task_dir
@@ -593,16 +552,13 @@ class TestInfrastructureStepMode:
 
             m2._provider = _mock_provider()
             m2.load_team = lambda name: "Be concise and helpful."
-            with patch.object(m2, '_init_provider'), \
-                 patch.object(m2, '_run_preflight_validation'):
+            with patch.object(m2, "_init_provider"), patch.object(m2, "_run_preflight_validation"):
                 m2.load_config(config, workflow_file=flow_path)
 
             m2.run_step(1)
 
             conn = sqlite3.connect(db_path)
-            done_count = conn.execute(
-                "SELECT COUNT(*) FROM processes WHERE status='done'"
-            ).fetchone()[0]
+            done_count = conn.execute("SELECT COUNT(*) FROM processes WHERE status='done'").fetchone()[0]
             conn.close()
             assert done_count == 2
 
@@ -610,6 +566,7 @@ class TestInfrastructureStepMode:
 # ===========================================================================
 # 4. E2E TESTS - subprocess calls, exit codes, real CLI
 # ===========================================================================
+
 
 class TestE2EStepMode:
     """End-to-end tests using subprocess to call `rein --step`."""
@@ -621,10 +578,8 @@ class TestE2EStepMode:
             agents_dir = _make_agents_dir(tmpdir)
 
             blocks = [
-                {"name": "block-1", "specialist": "spec-a",
-                 "prompt": "Say hello", "depends_on": []},
-                {"name": "block-2", "specialist": "spec-a",
-                 "prompt": "Say goodbye", "depends_on": ["block-1"]},
+                {"name": "block-1", "specialist": "spec-a", "prompt": "Say hello", "depends_on": []},
+                {"name": "block-2", "specialist": "spec-a", "prompt": "Say goodbye", "depends_on": ["block-1"]},
             ]
             _make_flow(agents_dir, "e2e-flow", blocks)
 
@@ -635,9 +590,14 @@ class TestE2EStepMode:
 
     def _run_rein(self, args, agents_dir, env_extra=None):
         """Run rein as subprocess, return (exit_code, stdout, stderr)."""
-        cmd = [sys.executable, "-m", "rein"] + args + [
-            "--agents-dir", agents_dir,
-        ]
+        cmd = (
+            [sys.executable, "-m", "rein"]
+            + args
+            + [
+                "--agents-dir",
+                agents_dir,
+            ]
+        )
         env = os.environ.copy()
         # Ensure no real API key is used; provider will fail but we mock at a different level
         env.pop("ANTHROPIC_API_KEY", None)
@@ -679,8 +639,7 @@ class TestE2EStepMode:
             e2e_env["agents_dir"],
         )
         assert code == 1
-        assert "task.json" in stdout.lower() or "not found" in stdout.lower() \
-            or "error" in stdout.lower()
+        assert "task.json" in stdout.lower() or "not found" in stdout.lower() or "error" in stdout.lower()
 
     def test_help_includes_step(self, e2e_env):
         """--help output mentions --step."""
@@ -697,6 +656,7 @@ class TestE2EStepMode:
 # 5. RUN_COUNT PERSISTENCE + FILE LOCK TESTS
 # ===========================================================================
 
+
 class TestRunCountPersistence:
     """Tests for run_count persistence in SQLite across step invocations."""
 
@@ -706,10 +666,7 @@ class TestRunCountPersistence:
             db_path = os.path.join(tmpdir, "test.db")
             state = ReinState(db_path, resume=False)
 
-            proc = Process(
-                pid=1, name="loop-block", status="waiting",
-                start_time=0, command="", run_count=3
-            )
+            proc = Process(pid=1, name="loop-block", status="waiting", start_time=0, command="", run_count=3)
             state.save_process(proc)
 
             restored = state.get_process("loop-block")
@@ -721,10 +678,7 @@ class TestRunCountPersistence:
             db_path = os.path.join(tmpdir, "test.db")
             state = ReinState(db_path, resume=False)
 
-            proc = Process(
-                pid=1, name="block", status="waiting",
-                start_time=0, command=""
-            )
+            proc = Process(pid=1, name="block", status="waiting", start_time=0, command="")
             state.save_process(proc)
 
             restored = state.get_process("block")
@@ -737,10 +691,7 @@ class TestRunCountPersistence:
 
             # First session: save with run_count=2
             s1 = ReinState(db_path, resume=False)
-            proc = Process(
-                pid=1, name="block", status="done",
-                start_time=0, command="", run_count=2
-            )
+            proc = Process(pid=1, name="block", status="done", start_time=0, command="", run_count=2)
             s1.save_process(proc)
 
             # Second session: resume
@@ -773,7 +724,7 @@ class TestRunCountPersistence:
             """)
             conn.execute(
                 "INSERT INTO processes (name, status, start_time, command) VALUES (?, ?, ?, ?)",
-                ("old-block", "done", 0, "")
+                ("old-block", "done", 0, ""),
             )
             conn.commit()
             conn.close()
@@ -785,10 +736,7 @@ class TestRunCountPersistence:
             assert proc.run_count == 0  # default after migration
 
             # New writes should include run_count
-            new_proc = Process(
-                pid=1, name="new-block", status="waiting",
-                start_time=0, command="", run_count=5
-            )
+            new_proc = Process(pid=1, name="new-block", status="waiting", start_time=0, command="", run_count=5)
             state.save_process(new_proc)
             restored = state.get_process("new-block")
             assert restored.run_count == 5
@@ -797,8 +745,7 @@ class TestRunCountPersistence:
         """ProcessManager.run_counts dict is populated from SQLite on resume."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
             db_path = manager.db_path
@@ -813,12 +760,15 @@ class TestRunCountPersistence:
             # Create new manager with resume
             agents_dir = os.path.join(tmpdir, "agents")
             from rein.tasks import load_config
+
             flow_path = os.path.join(agents_dir, "flows", "test-flow", "test-flow.yaml")
             config = load_config(flow_path)
 
             m2 = ProcessManager(
-                max_parallel=3, flow_name="test-flow",
-                task_input={}, agents_dir=agents_dir,
+                max_parallel=3,
+                flow_name="test-flow",
+                task_input={},
+                agents_dir=agents_dir,
             )
             m2.task_id = os.path.basename(task_dir)
             m2.task_dir = task_dir
@@ -830,8 +780,7 @@ class TestRunCountPersistence:
 
             m2._provider = _mock_provider()
             m2.load_team = lambda name: "Be concise."
-            with patch.object(m2, '_init_provider'), \
-                 patch.object(m2, '_run_preflight_validation'):
+            with patch.object(m2, "_init_provider"), patch.object(m2, "_run_preflight_validation"):
                 m2.load_config(config, workflow_file=flow_path)
 
             assert m2.run_counts.get("a") == 3
@@ -844,8 +793,7 @@ class TestFileLock:
         """Second run_step on same task_dir returns False (locked)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -867,8 +815,7 @@ class TestFileLock:
         """After run_step completes, lock is released."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "a", "specialist": "spec-a",
-                 "prompt": "a", "depends_on": []},
+                {"name": "a", "specialist": "spec-a", "prompt": "a", "depends_on": []},
             ]
             manager = _make_manager(tmpdir, blocks)
             manager.run_step(1)
@@ -893,6 +840,7 @@ class TestFileLock:
 # 6. AGENT ROUTING TESTS
 # ===========================================================================
 
+
 class TestAgentRouting:
     """Tests for --agent-id based block filtering in step mode."""
 
@@ -900,12 +848,21 @@ class TestAgentRouting:
         """--agent-id smm only runs blocks with agent: smm."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "draft", "specialist": "spec-a",
-                 "prompt": "write", "depends_on": [], "agent": "smm"},
-                {"name": "review", "specialist": "spec-a",
-                 "prompt": "review", "depends_on": ["draft"], "agent": "editor"},
-                {"name": "approve", "specialist": "spec-a",
-                 "prompt": "approve", "depends_on": ["review"], "agent": "marketer"},
+                {"name": "draft", "specialist": "spec-a", "prompt": "write", "depends_on": [], "agent": "smm"},
+                {
+                    "name": "review",
+                    "specialist": "spec-a",
+                    "prompt": "review",
+                    "depends_on": ["draft"],
+                    "agent": "editor",
+                },
+                {
+                    "name": "approve",
+                    "specialist": "spec-a",
+                    "prompt": "approve",
+                    "depends_on": ["review"],
+                    "agent": "marketer",
+                },
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -918,15 +875,13 @@ class TestAgentRouting:
         """--agent-id editor skips smm blocks even if they are ready."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "draft", "specialist": "spec-a",
-                 "prompt": "write", "depends_on": [], "agent": "smm"},
-                {"name": "review", "specialist": "spec-a",
-                 "prompt": "review", "depends_on": [], "agent": "editor"},
+                {"name": "draft", "specialist": "spec-a", "prompt": "write", "depends_on": [], "agent": "smm"},
+                {"name": "review", "specialist": "spec-a", "prompt": "review", "depends_on": [], "agent": "editor"},
             ]
             manager = _make_manager(tmpdir, blocks)
 
             # Editor should only run "review", not "draft"
-            result = manager.run_step(10, agent_id="editor")
+            manager.run_step(10, agent_id="editor")
             assert "review" in manager.completed
             assert "draft" not in manager.completed
 
@@ -934,14 +889,12 @@ class TestAgentRouting:
         """Without --agent-id, all ready blocks are executed."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "draft", "specialist": "spec-a",
-                 "prompt": "write", "depends_on": [], "agent": "smm"},
-                {"name": "review", "specialist": "spec-a",
-                 "prompt": "review", "depends_on": [], "agent": "editor"},
+                {"name": "draft", "specialist": "spec-a", "prompt": "write", "depends_on": [], "agent": "smm"},
+                {"name": "review", "specialist": "spec-a", "prompt": "review", "depends_on": [], "agent": "editor"},
             ]
             manager = _make_manager(tmpdir, blocks)
 
-            result = manager.run_step(10, agent_id=None)
+            manager.run_step(10, agent_id=None)
             assert "draft" in manager.completed
             assert "review" in manager.completed
 
@@ -949,10 +902,8 @@ class TestAgentRouting:
         """Blocks without agent: field are executed by any agent."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "setup", "specialist": "spec-a",
-                 "prompt": "setup", "depends_on": []},  # no agent
-                {"name": "draft", "specialist": "spec-a",
-                 "prompt": "write", "depends_on": ["setup"], "agent": "smm"},
+                {"name": "setup", "specialist": "spec-a", "prompt": "setup", "depends_on": []},  # no agent
+                {"name": "draft", "specialist": "spec-a", "prompt": "write", "depends_on": ["setup"], "agent": "smm"},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -966,8 +917,7 @@ class TestAgentRouting:
         """Agent with no matching blocks: nothing executed, returns False."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "draft", "specialist": "spec-a",
-                 "prompt": "write", "depends_on": [], "agent": "smm"},
+                {"name": "draft", "specialist": "spec-a", "prompt": "write", "depends_on": [], "agent": "smm"},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -979,12 +929,21 @@ class TestAgentRouting:
         """Full pipeline: smm -> editor -> marketer, each with --step 1."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "draft", "specialist": "spec-a",
-                 "prompt": "write", "depends_on": [], "agent": "smm"},
-                {"name": "review", "specialist": "spec-a",
-                 "prompt": "review", "depends_on": ["draft"], "agent": "editor"},
-                {"name": "approve", "specialist": "spec-a",
-                 "prompt": "approve", "depends_on": ["review"], "agent": "marketer"},
+                {"name": "draft", "specialist": "spec-a", "prompt": "write", "depends_on": [], "agent": "smm"},
+                {
+                    "name": "review",
+                    "specialist": "spec-a",
+                    "prompt": "review",
+                    "depends_on": ["draft"],
+                    "agent": "editor",
+                },
+                {
+                    "name": "approve",
+                    "specialist": "spec-a",
+                    "prompt": "approve",
+                    "depends_on": ["review"],
+                    "agent": "marketer",
+                },
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -1008,6 +967,7 @@ class TestAgentRouting:
 # 7. REVISION LOOP + GATE TESTS
 # ===========================================================================
 
+
 class TestRevisionLoops:
     """Tests for next: routing, gate deferred completion, and max_runs loops."""
 
@@ -1015,17 +975,26 @@ class TestRevisionLoops:
         """Revision loop terminates when max_runs is reached."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "gate", "specialist": "spec-a",
-                 "prompt": "check", "depends_on": [],
-                 "next": [
-                     {"if": "{{ result.impossible }}", "goto": "downstream"},
-                     {"else": "revision"},
-                 ], "max_runs": 2},
-                {"name": "revision", "specialist": "spec-a",
-                 "prompt": "fix", "depends_on": ["gate"],
-                 "next": "gate", "max_runs": 1},
-                {"name": "downstream", "specialist": "spec-a",
-                 "prompt": "go", "depends_on": ["gate"]},
+                {
+                    "name": "gate",
+                    "specialist": "spec-a",
+                    "prompt": "check",
+                    "depends_on": [],
+                    "next": [
+                        {"if": "{{ result.impossible }}", "goto": "downstream"},
+                        {"else": "revision"},
+                    ],
+                    "max_runs": 2,
+                },
+                {
+                    "name": "revision",
+                    "specialist": "spec-a",
+                    "prompt": "fix",
+                    "depends_on": ["gate"],
+                    "next": "gate",
+                    "max_runs": 1,
+                },
+                {"name": "downstream", "specialist": "spec-a", "prompt": "go", "depends_on": ["gate"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -1039,14 +1008,9 @@ class TestRevisionLoops:
         """First routing (current_runs=0) is forward -- gate completes."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "gate", "specialist": "spec-a",
-                 "prompt": "check", "depends_on": [],
-                 "next": "revision"},
-                {"name": "revision", "specialist": "spec-a",
-                 "prompt": "fix", "depends_on": ["gate"],
-                 "max_runs": 1},
-                {"name": "downstream", "specialist": "spec-a",
-                 "prompt": "go", "depends_on": ["gate"]},
+                {"name": "gate", "specialist": "spec-a", "prompt": "check", "depends_on": [], "next": "revision"},
+                {"name": "revision", "specialist": "spec-a", "prompt": "fix", "depends_on": ["gate"], "max_runs": 1},
+                {"name": "downstream", "specialist": "spec-a", "prompt": "go", "depends_on": ["gate"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -1060,14 +1024,16 @@ class TestRevisionLoops:
         """When loop exhausts max_runs, gate completes and downstream proceeds."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "gate", "specialist": "spec-a",
-                 "prompt": "check", "depends_on": [],
-                 "next": "revision"},
-                {"name": "revision", "specialist": "spec-a",
-                 "prompt": "fix", "depends_on": ["gate"],
-                 "next": "gate", "max_runs": 1},
-                {"name": "downstream", "specialist": "spec-a",
-                 "prompt": "go", "depends_on": ["gate"]},
+                {"name": "gate", "specialist": "spec-a", "prompt": "check", "depends_on": [], "next": "revision"},
+                {
+                    "name": "revision",
+                    "specialist": "spec-a",
+                    "prompt": "fix",
+                    "depends_on": ["gate"],
+                    "next": "gate",
+                    "max_runs": 1,
+                },
+                {"name": "downstream", "specialist": "spec-a", "prompt": "go", "depends_on": ["gate"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -1084,15 +1050,25 @@ class TestRevisionLoops:
         """Revision loop terminates and run_counts stay within limits."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "gate", "specialist": "spec-a",
-                 "prompt": "check", "depends_on": [],
-                 "next": [
-                     {"if": "{{ result.impossible }}", "goto": "done"},
-                     {"else": "revision"},
-                 ], "max_runs": 2},
-                {"name": "revision", "specialist": "spec-a",
-                 "prompt": "fix", "depends_on": ["gate"],
-                 "next": "gate", "max_runs": 1},
+                {
+                    "name": "gate",
+                    "specialist": "spec-a",
+                    "prompt": "check",
+                    "depends_on": [],
+                    "next": [
+                        {"if": "{{ result.impossible }}", "goto": "done"},
+                        {"else": "revision"},
+                    ],
+                    "max_runs": 2,
+                },
+                {
+                    "name": "revision",
+                    "specialist": "spec-a",
+                    "prompt": "fix",
+                    "depends_on": ["gate"],
+                    "next": "gate",
+                    "max_runs": 1,
+                },
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -1109,17 +1085,18 @@ class TestRevisionLoops:
         """Gate with if/else: when condition not met, else branch triggers revision."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "gate", "specialist": "spec-a",
-                 "prompt": "check", "depends_on": [],
-                 "next": [
-                     {"if": "{{ result.impossible_field }}", "goto": "downstream"},
-                     {"else": "revision"},
-                 ]},
-                {"name": "revision", "specialist": "spec-a",
-                 "prompt": "fix", "depends_on": ["gate"],
-                 "max_runs": 1},
-                {"name": "downstream", "specialist": "spec-a",
-                 "prompt": "go", "depends_on": ["gate"]},
+                {
+                    "name": "gate",
+                    "specialist": "spec-a",
+                    "prompt": "check",
+                    "depends_on": [],
+                    "next": [
+                        {"if": "{{ result.impossible_field }}", "goto": "downstream"},
+                        {"else": "revision"},
+                    ],
+                },
+                {"name": "revision", "specialist": "spec-a", "prompt": "fix", "depends_on": ["gate"], "max_runs": 1},
+                {"name": "downstream", "specialist": "spec-a", "prompt": "go", "depends_on": ["gate"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -1133,11 +1110,8 @@ class TestRevisionLoops:
         """Blocks spawned via next_queue skip depends_on check."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "gate", "specialist": "spec-a",
-                 "prompt": "check", "depends_on": [],
-                 "next": "target"},
-                {"name": "target", "specialist": "spec-a",
-                 "prompt": "fix", "depends_on": ["gate"]},
+                {"name": "gate", "specialist": "spec-a", "prompt": "check", "depends_on": [], "next": "target"},
+                {"name": "target", "specialist": "spec-a", "prompt": "fix", "depends_on": ["gate"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -1156,13 +1130,15 @@ class TestForwardRouting:
         """Gate with next: forward_target (first run) should complete normally."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "review", "specialist": "spec-a",
-                 "prompt": "review", "depends_on": [],
-                 "next": "generate"},  # forward: generate hasn't run yet
-                {"name": "generate", "specialist": "spec-a",
-                 "prompt": "generate", "depends_on": ["review"]},
-                {"name": "publish", "specialist": "spec-a",
-                 "prompt": "publish", "depends_on": ["review"]},
+                {
+                    "name": "review",
+                    "specialist": "spec-a",
+                    "prompt": "review",
+                    "depends_on": [],
+                    "next": "generate",
+                },  # forward: generate hasn't run yet
+                {"name": "generate", "specialist": "spec-a", "prompt": "generate", "depends_on": ["review"]},
+                {"name": "publish", "specialist": "spec-a", "prompt": "publish", "depends_on": ["review"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -1176,13 +1152,9 @@ class TestForwardRouting:
         """After forward routing, other dependents of gate can start in next step."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "review", "specialist": "spec-a",
-                 "prompt": "review", "depends_on": [],
-                 "next": "generate"},
-                {"name": "generate", "specialist": "spec-a",
-                 "prompt": "generate", "depends_on": ["review"]},
-                {"name": "publish", "specialist": "spec-a",
-                 "prompt": "publish", "depends_on": ["review"]},
+                {"name": "review", "specialist": "spec-a", "prompt": "review", "depends_on": [], "next": "generate"},
+                {"name": "generate", "specialist": "spec-a", "prompt": "generate", "depends_on": ["review"]},
+                {"name": "publish", "specialist": "spec-a", "prompt": "publish", "depends_on": ["review"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 
@@ -1199,13 +1171,9 @@ class TestForwardRouting:
         """Forward routing (current_runs=0) completes gate, backward (>0) defers."""
         with tempfile.TemporaryDirectory() as tmpdir:
             blocks = [
-                {"name": "gate", "specialist": "spec-a",
-                 "prompt": "check", "depends_on": [],
-                 "next": "target"},
-                {"name": "target", "specialist": "spec-a",
-                 "prompt": "do", "depends_on": ["gate"]},
-                {"name": "other", "specialist": "spec-a",
-                 "prompt": "go", "depends_on": ["gate"]},
+                {"name": "gate", "specialist": "spec-a", "prompt": "check", "depends_on": [], "next": "target"},
+                {"name": "target", "specialist": "spec-a", "prompt": "do", "depends_on": ["gate"]},
+                {"name": "other", "specialist": "spec-a", "prompt": "go", "depends_on": ["gate"]},
             ]
             manager = _make_manager(tmpdir, blocks)
 

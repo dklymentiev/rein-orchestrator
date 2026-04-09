@@ -8,8 +8,9 @@ Config:
 Env:
     ANTHROPIC_API_KEY: API key (required)
 """
+
 import os
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 from .base import Provider
 
@@ -26,7 +27,7 @@ class AnthropicProvider(Provider):
         temperature: float = 0.7,
         logger: Optional[Callable[[str], None]] = None,
         api_key: str = "",
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             model=model or self.DEFAULT_MODEL,
@@ -37,8 +38,10 @@ class AnthropicProvider(Provider):
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
 
     def call(self, prompt: str, stage: str = ""):
-        import anthropic
         import time as _time
+
+        import anthropic
+
         from .base import UsageStats, calculate_cost
 
         self.logger(f"ANTHROPIC CALL | stage={stage} | model={self.model}")
@@ -53,8 +56,8 @@ class AnthropicProvider(Provider):
         duration_ms = int((_time.monotonic() - t0) * 1000)
 
         result = message.content[0].text
-        input_tokens = getattr(message.usage, 'input_tokens', 0)
-        output_tokens = getattr(message.usage, 'output_tokens', 0)
+        input_tokens = getattr(message.usage, "input_tokens", 0)
+        output_tokens = getattr(message.usage, "output_tokens", 0)
         cost = calculate_cost(self.model, input_tokens, output_tokens)
 
         usage = UsageStats(
@@ -66,7 +69,9 @@ class AnthropicProvider(Provider):
             duration_ms=duration_ms,
         )
 
-        self.logger(f"ANTHROPIC RESPONSE | stage={stage} | length={len(result)} | tokens={usage.total_tokens} | cost=${cost:.4f}")
+        self.logger(
+            f"ANTHROPIC RESPONSE | stage={stage} | length={len(result)} | tokens={usage.total_tokens} | cost=${cost:.4f}"
+        )
         return result, usage
 
     @property

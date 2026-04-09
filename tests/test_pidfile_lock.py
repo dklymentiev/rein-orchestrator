@@ -1,4 +1,5 @@
 """Tests for daemon PidfileLock (#1164)."""
+
 import os
 import tempfile
 

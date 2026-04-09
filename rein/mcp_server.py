@@ -21,19 +21,19 @@ Configure in Claude Desktop (claude_desktop_config.json):
       }
     }
 """
-import os
-import sys
+
 import json
-import yaml
+import os
 import sqlite3
 import subprocess
-import tempfile
+import sys
 from datetime import datetime, timezone
 
+import yaml
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import TransportSecuritySettings
 
-from rein.config import ConfigLoader, DEFAULT_AGENTS_DIR
+from rein.config import DEFAULT_AGENTS_DIR, ConfigLoader
 
 
 def _get_agents_dir() -> str:
@@ -52,15 +52,13 @@ def _validate_path_containment(path: str, allowed_root: str, label: str = "path"
 mcp = FastMCP(
     "Rein",
     instructions=(
-        "Rein is a workflow orchestrator for multi-agent AI. "
-        "Use these tools to list, run, and monitor AI workflows."
+        "Rein is a workflow orchestrator for multi-agent AI. Use these tools to list, run, and monitor AI workflows."
     ),
     port=int(os.environ.get("REIN_MCP_PORT", "8300")),
     transport_security=TransportSecuritySettings(
-        allowed_hosts=[h.strip() for h in os.environ.get(
-            "REIN_MCP_ALLOWED_HOSTS",
-            "localhost,localhost:8300"
-        ).split(",")],
+        allowed_hosts=[
+            h.strip() for h in os.environ.get("REIN_MCP_ALLOWED_HOSTS", "localhost,localhost:8300").split(",")
+        ],
     ),
 )
 
@@ -68,6 +66,7 @@ mcp = FastMCP(
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
+
 
 @mcp.tool()
 def list_flows(agents_dir: str = "") -> str:
@@ -181,11 +180,13 @@ def list_teams(agents_dir: str = "") -> str:
         try:
             with open(os.path.join(teams_dir, fname)) as f:
                 cfg = yaml.safe_load(f) or {}
-            teams.append({
-                "name": name,
-                "description": cfg.get("description", ""),
-                "specialists": cfg.get("specialists", []),
-            })
+            teams.append(
+                {
+                    "name": name,
+                    "description": cfg.get("description", ""),
+                    "specialists": cfg.get("specialists", []),
+                }
+            )
         except Exception as e:
             teams.append({"name": name, "error": str(e)})
 
@@ -227,9 +228,7 @@ def run_workflow(
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
 
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600, env=env
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env)
 
         # Find run directory from output
         run_dir = ""
@@ -328,18 +327,21 @@ def create_task(
             with open(os.path.join(task_dir, "task.input.json"), "w") as f:
                 json.dump(parsed, f, indent=2, ensure_ascii=False)
         except json.JSONDecodeError:
-            return json.dumps({"error": f"Invalid input_json: not valid JSON"})
+            return json.dumps({"error": "Invalid input_json: not valid JSON"})
 
     # status marker for daemon
     with open(os.path.join(task_dir, "state", "status"), "w") as f:
         f.write("pending")
 
-    return json.dumps({
-        "task_id": task_id,
-        "flow": flow,
-        "status": "pending",
-        "task_dir": task_dir,
-    }, indent=2)
+    return json.dumps(
+        {
+            "task_id": task_id,
+            "flow": flow,
+            "status": "pending",
+            "task_dir": task_dir,
+        },
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -386,12 +388,14 @@ def task_status(
             for row in cur.execute(
                 "SELECT name, status, phase, progress, start_time, updated_at, exit_code FROM processes"
             ):
-                blocks.append({
-                    "name": row["name"],
-                    "status": row["status"],
-                    "phase": row["phase"],
-                    "progress": row["progress"],
-                })
+                blocks.append(
+                    {
+                        "name": row["name"],
+                        "status": row["status"],
+                        "phase": row["phase"],
+                        "progress": row["progress"],
+                    }
+                )
 
             conn.close()
 
@@ -545,6 +549,7 @@ def list_tasks(
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main():
     transport = "stdio"

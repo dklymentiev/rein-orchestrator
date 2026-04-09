@@ -3,12 +3,13 @@
 Extracted from ProcessManager._finalize_run. Side-effectful functions that
 write JSON files, update task status files, and copy outputs.
 """
+
 import json
 import os
 import shutil
 import time
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 
 def build_summary(
@@ -49,9 +50,7 @@ def build_summary(
     # Usage/cost
     if total_usage.total_tokens > 0:
         summary["usage"] = total_usage.to_dict()
-        summary["block_usage"] = {
-            name: u.to_dict() for name, u in block_usage.items()
-        }
+        summary["block_usage"] = {name: u.to_dict() for name, u in block_usage.items()}
 
     return summary
 
@@ -62,9 +61,9 @@ def write_summary_files(
     summary: Dict[str, Any],
 ) -> None:
     """Persist metadata.json and summary.json to run_dir."""
-    with open(os.path.join(run_dir, "metadata.json"), 'w') as f:
+    with open(os.path.join(run_dir, "metadata.json"), "w") as f:
         json.dump(metadata, f, indent=2)
-    with open(os.path.join(run_dir, "summary.json"), 'w') as f:
+    with open(os.path.join(run_dir, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
 
 
@@ -115,7 +114,7 @@ def copy_workflow_output_files(
         workflow_dir = os.path.dirname(workflow_file) if workflow_file else None
         if workflow_dir:
             for f in os.listdir(workflow_dir):
-                if f.endswith(('.json', '.yaml', '.env')):
+                if f.endswith((".json", ".yaml", ".env")):
                     src = os.path.join(workflow_dir, f)
                     dst = os.path.join(output_dir, f)
                     if os.path.isfile(src):

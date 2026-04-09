@@ -4,15 +4,14 @@ Orchestrates JSON Schema validation, Pydantic model validation, and cross-refere
 """
 
 import json
-import yaml
 from pathlib import Path
-from typing import Dict, Optional, Any, Tuple
+from typing import Dict, Optional, Tuple
+
 import jsonschema
+import yaml
 from pydantic import ValidationError as PydanticValidationError
 
-from .workflow import (
-    WorkflowConfig, TeamConfig, ValidationResult, ValidationError
-)
+from .workflow import TeamConfig, ValidationResult, WorkflowConfig
 
 
 class ValidationEngine:
@@ -37,6 +36,7 @@ class ValidationEngine:
         if schemas_dir is None:
             try:
                 from schemas import SCHEMAS_DIR
+
                 schemas_dir = SCHEMAS_DIR
             except ImportError:
                 schemas_dir = Path(__file__).parent.parent / "schemas"
@@ -56,10 +56,7 @@ class ValidationEngine:
 
     def _load_schemas(self):
         """Load all JSON schemas from schemas directory"""
-        schema_files = {
-            "workflow": "workflow-v3.3.0.json",
-            "team": "team-v2.5.3.json"
-        }
+        schema_files = {"workflow": "workflow-v3.3.0.json", "team": "team-v2.5.3.json"}
 
         for schema_name, filename in schema_files.items():
             schema_path = self.schemas_dir / filename
@@ -78,9 +75,7 @@ class ValidationEngine:
         else:
             raise FileNotFoundError(f"Registry file not found: {registry_path}")
 
-    def validate_workflow(
-        self, workflow_path: Path, cross_reference_check: bool = True
-    ) -> ValidationResult:
+    def validate_workflow(self, workflow_path: Path, cross_reference_check: bool = True) -> ValidationResult:
         """
         Validate a workflow file through all validation layers.
 
@@ -124,8 +119,7 @@ class ValidationEngine:
         version = workflow_data.get("schema_version", "2.5.3")
         if version not in self.registry.get("versions", {}):
             result.add_warning(
-                "version",
-                f"Unknown schema version: {version}. Current version: {self.registry['current_version']}"
+                "version", f"Unknown schema version: {version}. Current version: {self.registry['current_version']}"
             )
 
         # Layer 4: Pydantic model validation
@@ -155,9 +149,8 @@ class ValidationEngine:
                 "schema_version": workflow_config.schema_version,
                 "critical_path_length": len(critical_path),
                 "flow_control_blocks": sum(
-                    1 for b in workflow_config.blocks
-                    if b.skip_if_previous_failed or b.continue_if_failed
-                )
+                    1 for b in workflow_config.blocks if b.skip_if_previous_failed or b.continue_if_failed
+                ),
             }
 
         return result
@@ -218,14 +211,12 @@ class ValidationEngine:
                 "name": team_config.name,
                 "specialists_count": len(team_config.specialists),
                 "schema_version": team_config.schema_version,
-                "collaboration_tone": team_config.collaboration_tone
+                "collaboration_tone": team_config.collaboration_tone,
             }
 
         return result
 
-    def _validate_cross_references(
-        self, workflow: WorkflowConfig, workflow_path: Path, result: ValidationResult
-    ):
+    def _validate_cross_references(self, workflow: WorkflowConfig, workflow_path: Path, result: ValidationResult):
         """
         Cross-reference validation:
         - Check all specialists referenced in workflow exist
@@ -248,7 +239,7 @@ class ValidationEngine:
                 if block.specialist not in specialist_files:
                     result.add_warning(
                         f"blocks.{block.name}.specialist",
-                        f"Specialist file not found: {specialists_dir}/{block.specialist}.md"
+                        f"Specialist file not found: {specialists_dir}/{block.specialist}.md",
                     )
 
         # Check logic scripts exist if referenced
@@ -262,13 +253,10 @@ class ValidationEngine:
                         full_path = workflow_dir / script_path
                         if not full_path.exists():
                             result.add_warning(
-                                f"blocks.{block.name}.logic.{phase}",
-                                f"Logic script not found: {full_path}"
+                                f"blocks.{block.name}.logic.{phase}", f"Logic script not found: {full_path}"
                             )
 
-    def _validate_team_cross_references(
-        self, team: TeamConfig, team_path: Path, result: ValidationResult
-    ):
+    def _validate_team_cross_references(self, team: TeamConfig, team_path: Path, result: ValidationResult):
         """
         Cross-reference validation for teams:
         - Check all specialist files exist
@@ -282,7 +270,7 @@ class ValidationEngine:
                 if mapping.specialist not in specialist_files:
                     result.add_warning(
                         f"specialists.{mapping.role}.specialist",
-                        f"Specialist file not found: {specialists_dir}/{mapping.specialist}.md"
+                        f"Specialist file not found: {specialists_dir}/{mapping.specialist}.md",
                     )
         else:
             if team.specialists:

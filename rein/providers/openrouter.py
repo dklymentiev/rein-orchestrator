@@ -8,8 +8,9 @@ Config:
 Env:
     OPENROUTER_API_KEY: API key (required)
 """
+
 import os
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 import requests
 
@@ -29,7 +30,7 @@ class OpenRouterProvider(Provider):
         temperature: float = 0.7,
         logger: Optional[Callable[[str], None]] = None,
         api_key: str = "",
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             model=model or self.DEFAULT_MODEL,
@@ -41,6 +42,7 @@ class OpenRouterProvider(Provider):
 
     def call(self, prompt: str, stage: str = ""):
         import time as _time
+
         from .base import UsageStats, calculate_cost
 
         self.logger(f"OPENROUTER CALL | stage={stage} | model={self.model}")
@@ -82,7 +84,9 @@ class OpenRouterProvider(Provider):
             duration_ms=duration_ms,
         )
 
-        self.logger(f"OPENROUTER RESPONSE | stage={stage} | length={len(result)} | tokens={usage.total_tokens} | cost=${cost:.4f}")
+        self.logger(
+            f"OPENROUTER RESPONSE | stage={stage} | length={len(result)} | tokens={usage.total_tokens} | cost=${cost:.4f}"
+        )
         return result, usage
 
     @property

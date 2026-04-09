@@ -1,8 +1,10 @@
 """Tests for rein/orchestrator.py - ProcessManager pure logic methods"""
+
 import os
-import time
-import pytest
 import tempfile
+import time
+
+import pytest
 
 from rein.models import Process
 from rein.orchestrator import ProcessManager
@@ -351,10 +353,7 @@ class TestEvaluateNextBlock(TestProcessManagerFixture):
         """Conditional next with matching if condition"""
         block = {
             "name": "review",
-            "next": [
-                {"if": "{{ result.approved }}", "goto": "publish"},
-                {"else": True, "goto": "revision"}
-            ]
+            "next": [{"if": "{{ result.approved }}", "goto": "publish"}, {"else": True, "goto": "revision"}],
         }
         result_data = {"result": {"approved": True}}
         assert manager._evaluate_next_block(block, result_data) == "publish"
@@ -363,10 +362,7 @@ class TestEvaluateNextBlock(TestProcessManagerFixture):
         """Conditional next falls through to else when if is false"""
         block = {
             "name": "review",
-            "next": [
-                {"if": "{{ result.approved }}", "goto": "publish"},
-                {"else": True, "goto": "revision"}
-            ]
+            "next": [{"if": "{{ result.approved }}", "goto": "publish"}, {"else": True, "goto": "revision"}],
         }
         result_data = {"result": {"approved": False}}
         # First condition is False, should fall to else
@@ -376,10 +372,7 @@ class TestEvaluateNextBlock(TestProcessManagerFixture):
         """Conditional with comparison operator"""
         block = {
             "name": "scoring",
-            "next": [
-                {"if": "{{ result.score > 0.8 }}", "goto": "accept"},
-                {"else": True, "goto": "reject"}
-            ]
+            "next": [{"if": "{{ result.score > 0.8 }}", "goto": "accept"}, {"else": True, "goto": "reject"}],
         }
         result_data = {"result": {"score": 0.9}}
         assert manager._evaluate_next_block(block, result_data) == "accept"
@@ -388,10 +381,7 @@ class TestEvaluateNextBlock(TestProcessManagerFixture):
         """Conditional comparison fails, falls to else"""
         block = {
             "name": "scoring",
-            "next": [
-                {"if": "{{ result.score > 0.8 }}", "goto": "accept"},
-                {"else": True, "goto": "reject"}
-            ]
+            "next": [{"if": "{{ result.score > 0.8 }}", "goto": "accept"}, {"else": True, "goto": "reject"}],
         }
         result_data = {"result": {"score": 0.5}}
         assert manager._evaluate_next_block(block, result_data) == "reject"
@@ -403,21 +393,15 @@ class TestEvaluateNextBlock(TestProcessManagerFixture):
             "next": [
                 {"if": "{{ result.status == 'urgent' }}", "goto": "fast-track"},
                 {"if": "{{ result.status == 'normal' }}", "goto": "standard"},
-                {"else": True, "goto": "default"}
-            ]
+                {"else": True, "goto": "default"},
+            ],
         }
         result_data = {"result": {"status": "normal"}}
         assert manager._evaluate_next_block(block, result_data) == "standard"
 
     def test_else_as_goto_value(self, manager):
         """Else clause where else value is the goto target"""
-        block = {
-            "name": "review",
-            "next": [
-                {"if": "{{ result.ok }}", "goto": "done"},
-                {"else": "fallback"}
-            ]
-        }
+        block = {"name": "review", "next": [{"if": "{{ result.ok }}", "goto": "done"}, {"else": "fallback"}]}
         result_data = {"result": {"ok": False}}
         # When "else" key holds the goto value (no separate "goto" key)
         assert manager._evaluate_next_block(block, result_data) == "fallback"
@@ -493,66 +477,36 @@ class TestAllCompleted(TestProcessManagerFixture):
 
     def test_all_done(self, manager):
         """All processes done returns True"""
-        manager.processes["uid1"] = Process(
-            pid=None, name="step-1", status="done",
-            start_time=0, command=""
-        )
-        manager.processes["uid2"] = Process(
-            pid=None, name="step-2", status="done",
-            start_time=0, command=""
-        )
+        manager.processes["uid1"] = Process(pid=None, name="step-1", status="done", start_time=0, command="")
+        manager.processes["uid2"] = Process(pid=None, name="step-2", status="done", start_time=0, command="")
         assert manager.all_completed() is True
 
     def test_all_failed(self, manager):
         """All processes failed also counts as completed"""
-        manager.processes["uid1"] = Process(
-            pid=None, name="step-1", status="failed",
-            start_time=0, command=""
-        )
+        manager.processes["uid1"] = Process(pid=None, name="step-1", status="failed", start_time=0, command="")
         assert manager.all_completed() is True
 
     def test_mixed_done_and_failed(self, manager):
         """Mix of done and failed is still all completed"""
-        manager.processes["uid1"] = Process(
-            pid=None, name="step-1", status="done",
-            start_time=0, command=""
-        )
-        manager.processes["uid2"] = Process(
-            pid=None, name="step-2", status="failed",
-            start_time=0, command=""
-        )
+        manager.processes["uid1"] = Process(pid=None, name="step-1", status="done", start_time=0, command="")
+        manager.processes["uid2"] = Process(pid=None, name="step-2", status="failed", start_time=0, command="")
         assert manager.all_completed() is True
 
     def test_one_running(self, manager):
         """One running process means not all completed"""
-        manager.processes["uid1"] = Process(
-            pid=None, name="step-1", status="done",
-            start_time=0, command=""
-        )
-        manager.processes["uid2"] = Process(
-            pid=None, name="step-2", status="running",
-            start_time=0, command=""
-        )
+        manager.processes["uid1"] = Process(pid=None, name="step-1", status="done", start_time=0, command="")
+        manager.processes["uid2"] = Process(pid=None, name="step-2", status="running", start_time=0, command="")
         assert manager.all_completed() is False
 
     def test_one_waiting(self, manager):
         """One waiting process means not all completed"""
-        manager.processes["uid1"] = Process(
-            pid=None, name="step-1", status="done",
-            start_time=0, command=""
-        )
-        manager.processes["uid2"] = Process(
-            pid=None, name="step-2", status="waiting",
-            start_time=0, command=""
-        )
+        manager.processes["uid1"] = Process(pid=None, name="step-1", status="done", start_time=0, command="")
+        manager.processes["uid2"] = Process(pid=None, name="step-2", status="waiting", start_time=0, command="")
         assert manager.all_completed() is False
 
     def test_one_paused(self, manager):
         """One paused process means not all completed"""
-        manager.processes["uid1"] = Process(
-            pid=None, name="step-1", status="paused",
-            start_time=0, command=""
-        )
+        manager.processes["uid1"] = Process(pid=None, name="step-1", status="paused", start_time=0, command="")
         assert manager.all_completed() is False
 
 
@@ -566,26 +520,17 @@ class TestHasWork(TestProcessManagerFixture):
 
     def test_running_process(self, manager):
         """Running process means has work"""
-        manager.processes["uid1"] = Process(
-            pid=None, name="step-1", status="running",
-            start_time=0, command=""
-        )
+        manager.processes["uid1"] = Process(pid=None, name="step-1", status="running", start_time=0, command="")
         assert manager.has_work() is True
 
     def test_waiting_process(self, manager):
         """Waiting process means has work (processes dict is non-empty)"""
-        manager.processes["uid1"] = Process(
-            pid=None, name="step-1", status="waiting",
-            start_time=0, command=""
-        )
+        manager.processes["uid1"] = Process(pid=None, name="step-1", status="waiting", start_time=0, command="")
         assert manager.has_work() is True
 
     def test_all_done(self, manager):
         """All done processes - has_work True because processes dict is non-empty"""
-        manager.processes["uid1"] = Process(
-            pid=None, name="step-1", status="done",
-            start_time=0, command=""
-        )
+        manager.processes["uid1"] = Process(pid=None, name="step-1", status="done", start_time=0, command="")
         assert manager.has_work() is True
 
 
@@ -627,10 +572,7 @@ class TestFindProcessByName(TestProcessManagerFixture):
 
     def test_find_existing(self, manager):
         """Find existing process by name"""
-        proc = Process(
-            pid=None, name="my-block", status="waiting",
-            start_time=0, command=""
-        )
+        proc = Process(pid=None, name="my-block", status="waiting", start_time=0, command="")
         manager.processes["uid-123"] = proc
         result = manager._find_process_by_name("my-block")
         assert result is not None
@@ -645,18 +587,9 @@ class TestFindProcessByName(TestProcessManagerFixture):
 
     def test_find_among_multiple(self, manager):
         """Find correct process among multiple"""
-        manager.processes["uid-1"] = Process(
-            pid=None, name="alpha", status="waiting",
-            start_time=0, command=""
-        )
-        manager.processes["uid-2"] = Process(
-            pid=None, name="beta", status="running",
-            start_time=0, command=""
-        )
-        manager.processes["uid-3"] = Process(
-            pid=None, name="gamma", status="done",
-            start_time=0, command=""
-        )
+        manager.processes["uid-1"] = Process(pid=None, name="alpha", status="waiting", start_time=0, command="")
+        manager.processes["uid-2"] = Process(pid=None, name="beta", status="running", start_time=0, command="")
+        manager.processes["uid-3"] = Process(pid=None, name="gamma", status="done", start_time=0, command="")
 
         result = manager._find_process_by_name("beta")
         assert result is not None
@@ -670,46 +603,25 @@ class TestGetPreviousBlocksStatus(TestProcessManagerFixture):
 
     def test_no_failed_blocks(self, manager):
         """No failed blocks returns empty list"""
-        manager.processes["uid-1"] = Process(
-            pid=None, name="step-1", status="done",
-            start_time=0, command=""
-        )
-        manager.processes["uid-2"] = Process(
-            pid=None, name="step-2", status="running",
-            start_time=0, command=""
-        )
+        manager.processes["uid-1"] = Process(pid=None, name="step-1", status="done", start_time=0, command="")
+        manager.processes["uid-2"] = Process(pid=None, name="step-2", status="running", start_time=0, command="")
         block = {"name": "step-3"}
         failed = manager._get_previous_blocks_status(block)
         assert failed == []
 
     def test_one_failed_block(self, manager):
         """One failed block is returned"""
-        manager.processes["uid-1"] = Process(
-            pid=None, name="step-1", status="failed",
-            start_time=0, command=""
-        )
-        manager.processes["uid-2"] = Process(
-            pid=None, name="step-2", status="done",
-            start_time=0, command=""
-        )
+        manager.processes["uid-1"] = Process(pid=None, name="step-1", status="failed", start_time=0, command="")
+        manager.processes["uid-2"] = Process(pid=None, name="step-2", status="done", start_time=0, command="")
         block = {"name": "step-3"}
         failed = manager._get_previous_blocks_status(block)
         assert failed == ["step-1"]
 
     def test_multiple_failed_blocks(self, manager):
         """Multiple failed blocks returned"""
-        manager.processes["uid-1"] = Process(
-            pid=None, name="a", status="failed",
-            start_time=0, command=""
-        )
-        manager.processes["uid-2"] = Process(
-            pid=None, name="b", status="failed",
-            start_time=0, command=""
-        )
-        manager.processes["uid-3"] = Process(
-            pid=None, name="c", status="done",
-            start_time=0, command=""
-        )
+        manager.processes["uid-1"] = Process(pid=None, name="a", status="failed", start_time=0, command="")
+        manager.processes["uid-2"] = Process(pid=None, name="b", status="failed", start_time=0, command="")
+        manager.processes["uid-3"] = Process(pid=None, name="c", status="done", start_time=0, command="")
         block = {"name": "d"}
         failed = manager._get_previous_blocks_status(block)
         assert set(failed) == {"a", "b"}
@@ -742,27 +654,18 @@ class TestRunStep(TestProcessManagerFixture):
 
     def test_has_running_processes(self, manager):
         """_has_running_processes returns True when blocks are running"""
-        manager.processes["uid-1"] = Process(
-            pid=None, name="a", status="running",
-            start_time=0, command=""
-        )
+        manager.processes["uid-1"] = Process(pid=None, name="a", status="running", start_time=0, command="")
         assert manager._has_running_processes() is True
 
     def test_has_no_running_processes(self, manager):
         """_has_running_processes returns False when no blocks running"""
-        manager.processes["uid-1"] = Process(
-            pid=None, name="a", status="done",
-            start_time=0, command=""
-        )
+        manager.processes["uid-1"] = Process(pid=None, name="a", status="done", start_time=0, command="")
         manager.completed.add("a")  # done blocks must be in completed set
         assert manager._has_running_processes() is False
 
     def test_wait_for_inflight_returns_immediately_when_none_running(self, manager):
         """_wait_for_inflight returns immediately if no running processes"""
-        manager.processes["uid-1"] = Process(
-            pid=None, name="a", status="done",
-            start_time=0, command=""
-        )
+        manager.processes["uid-1"] = Process(pid=None, name="a", status="done", start_time=0, command="")
         manager.completed.add("a")
         start = time.time()
         manager._wait_for_inflight(timeout=5.0)
@@ -781,20 +684,24 @@ class TestRunStep(TestProcessManagerFixture):
 # ROUTING & CASCADE TESTS (#1171, #1172, #1173)
 # ============================================================
 
+
 class TestDependentsMap(TestProcessManagerFixture):
     """Tests for _get_dependents_map -- reverse dependency graph"""
 
     def _setup(self, manager, blocks):
         manager.all_blocks = blocks
-        manager.block_configs = {b['name']: b for b in blocks}
+        manager.block_configs = {b["name"]: b for b in blocks}
 
     def test_linear_chain(self, manager):
         """A -> B -> C produces {A: [B], B: [C]}"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": ["a"]},
-            {"name": "c", "depends_on": ["b"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "b", "depends_on": ["a"]},
+                {"name": "c", "depends_on": ["b"]},
+            ],
+        )
         dm = manager._get_dependents_map()
         assert set(dm.get("a", [])) == {"b"}
         assert set(dm.get("b", [])) == {"c"}
@@ -802,35 +709,44 @@ class TestDependentsMap(TestProcessManagerFixture):
 
     def test_fan_out(self, manager):
         """A -> {B, C, D}"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": ["a"]},
-            {"name": "c", "depends_on": ["a"]},
-            {"name": "d", "depends_on": ["a"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "b", "depends_on": ["a"]},
+                {"name": "c", "depends_on": ["a"]},
+                {"name": "d", "depends_on": ["a"]},
+            ],
+        )
         dm = manager._get_dependents_map()
         assert set(dm["a"]) == {"b", "c", "d"}
 
     def test_fan_in(self, manager):
         """{A, B, C} -> D"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": []},
-            {"name": "c", "depends_on": []},
-            {"name": "d", "depends_on": ["a", "b", "c"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "b", "depends_on": []},
+                {"name": "c", "depends_on": []},
+                {"name": "d", "depends_on": ["a", "b", "c"]},
+            ],
+        )
         dm = manager._get_dependents_map()
         for name in ("a", "b", "c"):
             assert "d" in dm[name]
 
     def test_diamond(self, manager):
         """A -> {B, C} -> D"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": ["a"]},
-            {"name": "c", "depends_on": ["a"]},
-            {"name": "d", "depends_on": ["b", "c"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "b", "depends_on": ["a"]},
+                {"name": "c", "depends_on": ["a"]},
+                {"name": "d", "depends_on": ["b", "c"]},
+            ],
+        )
         dm = manager._get_dependents_map()
         assert set(dm["a"]) == {"b", "c"}
         assert set(dm["b"]) == {"d"}
@@ -842,14 +758,17 @@ class TestCascadeInvalidation(TestProcessManagerFixture):
 
     def _setup(self, manager, blocks):
         manager.all_blocks = blocks
-        manager.block_configs = {b['name']: b for b in blocks}
+        manager.block_configs = {b["name"]: b for b in blocks}
 
     def test_single_downstream(self, manager):
         """Invalidating A cascades to B (A -> B)"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": ["a"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "b", "depends_on": ["a"]},
+            ],
+        )
         dm = manager._get_dependents_map()
         result = manager._cascade_invalidation({"a"}, dm)
         assert "b" in result
@@ -857,25 +776,31 @@ class TestCascadeInvalidation(TestProcessManagerFixture):
 
     def test_deep_chain(self, manager):
         """Invalidating A cascades through A -> B -> C -> D -> E"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": ["a"]},
-            {"name": "c", "depends_on": ["b"]},
-            {"name": "d", "depends_on": ["c"]},
-            {"name": "e", "depends_on": ["d"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "b", "depends_on": ["a"]},
+                {"name": "c", "depends_on": ["b"]},
+                {"name": "d", "depends_on": ["c"]},
+                {"name": "e", "depends_on": ["d"]},
+            ],
+        )
         dm = manager._get_dependents_map()
         result = manager._cascade_invalidation({"a"}, dm)
         assert result == {"a", "b", "c", "d", "e"}
 
     def test_does_not_cascade_upstream(self, manager):
         """Invalidating C does NOT affect A or B (A -> B -> C -> D)"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": ["a"]},
-            {"name": "c", "depends_on": ["b"]},
-            {"name": "d", "depends_on": ["c"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "b", "depends_on": ["a"]},
+                {"name": "c", "depends_on": ["b"]},
+                {"name": "d", "depends_on": ["c"]},
+            ],
+        )
         dm = manager._get_dependents_map()
         result = manager._cascade_invalidation({"c"}, dm)
         assert result == {"c", "d"}
@@ -884,24 +809,30 @@ class TestCascadeInvalidation(TestProcessManagerFixture):
 
     def test_diamond_cascade(self, manager):
         """Invalidating A cascades to B, C, and D (diamond: A -> {B,C} -> D)"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": ["a"]},
-            {"name": "c", "depends_on": ["a"]},
-            {"name": "d", "depends_on": ["b", "c"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "b", "depends_on": ["a"]},
+                {"name": "c", "depends_on": ["a"]},
+                {"name": "d", "depends_on": ["b", "c"]},
+            ],
+        )
         dm = manager._get_dependents_map()
         result = manager._cascade_invalidation({"a"}, dm)
         assert result == {"a", "b", "c", "d"}
 
     def test_partial_cascade_in_diamond(self, manager):
         """Invalidating B only cascades to D, not C (A -> {B,C} -> D)"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": ["a"]},
-            {"name": "c", "depends_on": ["a"]},
-            {"name": "d", "depends_on": ["b", "c"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "b", "depends_on": ["a"]},
+                {"name": "c", "depends_on": ["a"]},
+                {"name": "d", "depends_on": ["b", "c"]},
+            ],
+        )
         dm = manager._get_dependents_map()
         result = manager._cascade_invalidation({"b"}, dm)
         assert result == {"b", "d"}
@@ -910,10 +841,13 @@ class TestCascadeInvalidation(TestProcessManagerFixture):
 
     def test_isolated_block(self, manager):
         """Invalidating isolated block with no dependents returns just itself"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": []},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "b", "depends_on": []},
+            ],
+        )
         dm = manager._get_dependents_map()
         result = manager._cascade_invalidation({"a"}, dm)
         assert result == {"a"}
@@ -925,10 +859,10 @@ class TestRoutingState(TestProcessManagerFixture):
     def _setup_routing(self, manager, blocks):
         """Setup manager with blocks that have routing"""
         manager.all_blocks = blocks
-        manager.block_configs = {b['name']: b for b in blocks}
+        manager.block_configs = {b["name"]: b for b in blocks}
         manager.default_max_runs = 3
         for b in blocks:
-            manager.run_counts[b['name']] = 0
+            manager.run_counts[b["name"]] = 0
 
     def test_routing_target_removed_from_completed(self, manager):
         """When routing activates, target is removed from completed set"""
@@ -1018,7 +952,7 @@ class TestRePending(TestProcessManagerFixture):
 
     def _setup(self, manager, blocks):
         manager.all_blocks = blocks
-        manager.block_configs = {b['name']: b for b in blocks}
+        manager.block_configs = {b["name"]: b for b in blocks}
 
     def test_re_pending_detects_missing_block(self, manager):
         """Block not in completed and not in pending should be re-added"""
@@ -1035,7 +969,7 @@ class TestRePending(TestProcessManagerFixture):
 
         # RE-PENDING logic
         for block in manager.all_blocks:
-            name = block['name']
+            name = block["name"]
             if name not in manager.completed and name not in pending:
                 pending[name] = block
 
@@ -1053,7 +987,7 @@ class TestRePending(TestProcessManagerFixture):
         pending = {"a": blocks[0]}
 
         for block in manager.all_blocks:
-            name = block['name']
+            name = block["name"]
             if name not in manager.completed and name not in pending:
                 pending[name] = block
 
@@ -1070,7 +1004,7 @@ class TestRePending(TestProcessManagerFixture):
         pending = {}
 
         for block in manager.all_blocks:
-            name = block['name']
+            name = block["name"]
             if name not in manager.completed and name not in pending:
                 pending[name] = block
 
@@ -1092,7 +1026,7 @@ class TestRePending(TestProcessManagerFixture):
         # But fix was the routing target that wasn't taken. Check if deps are met.
         for name in list(pending.keys()):
             block = pending[name]
-            deps = block.get('depends_on', [])
+            deps = block.get("depends_on", [])
             all_deps_done = all(dep in manager.completed for dep in deps)
             if all_deps_done:
                 continue  # deps met, can run -- NOT orphan
@@ -1100,7 +1034,7 @@ class TestRePending(TestProcessManagerFixture):
 
         # In this case gate IS in completed, so fix's deps ARE met -- it can run
         # This is correct: fix should NOT be orphaned if gate is completed
-        assert all(dep in manager.completed for dep in blocks[1].get('depends_on', []))
+        assert all(dep in manager.completed for dep in blocks[1].get("depends_on", []))
 
     def test_stuck_detection_no_progress(self, manager):
         """Stuck detection triggers when no blocks can make progress"""
@@ -1137,6 +1071,7 @@ class TestRePending(TestProcessManagerFixture):
 # HELPER METHOD TESTS (#1174 -- block timeout and model)
 # ============================================================
 
+
 class TestGetRunningNames(TestProcessManagerFixture):
     """Tests for _get_running_names helper"""
 
@@ -1160,12 +1095,12 @@ class TestBlockLevelTimeout(TestProcessManagerFixture):
     def test_block_timeout_read_from_config(self, manager):
         """Block config with timeout field should be extractable"""
         block = {"name": "slow_block", "prompt": "test", "timeout": 60}
-        assert block.get('timeout') == 60
+        assert block.get("timeout") == 60
 
     def test_block_timeout_none_when_not_set(self, manager):
         """Block without timeout field returns None"""
         block = {"name": "default_block", "prompt": "test"}
-        assert block.get('timeout') is None
+        assert block.get("timeout") is None
 
 
 class TestBlockLevelModel(TestProcessManagerFixture):
@@ -1174,13 +1109,15 @@ class TestBlockLevelModel(TestProcessManagerFixture):
     def test_block_model_takes_priority_over_agent(self, manager):
         """block.model should override agent_cfg.model"""
         block = {"name": "fast_block", "prompt": "test", "model": "haiku"}
+
         # Simulate agent config with different model
         class MockAgentCfg:
             model = "sonnet"
+
         agent_cfg = MockAgentCfg()
 
         # Priority logic from orchestrator
-        block_model = block.get('model') or None
+        block_model = block.get("model") or None
         agent_model = agent_cfg.model if agent_cfg and agent_cfg.model else None
         model_override = block_model or agent_model
         assert model_override == "haiku"  # block wins
@@ -1188,11 +1125,13 @@ class TestBlockLevelModel(TestProcessManagerFixture):
     def test_agent_model_used_when_block_has_none(self, manager):
         """When block has no model, agent_cfg.model is used"""
         block = {"name": "normal", "prompt": "test"}
+
         class MockAgentCfg:
             model = "sonnet"
+
         agent_cfg = MockAgentCfg()
 
-        block_model = block.get('model') or None
+        block_model = block.get("model") or None
         agent_model = agent_cfg.model if agent_cfg and agent_cfg.model else None
         model_override = block_model or agent_model
         assert model_override == "sonnet"
@@ -1202,7 +1141,7 @@ class TestBlockLevelModel(TestProcessManagerFixture):
         block = {"name": "normal", "prompt": "test"}
         agent_cfg = None
 
-        block_model = block.get('model') or None
+        block_model = block.get("model") or None
         agent_model = agent_cfg.model if agent_cfg and agent_cfg.model else None
         model_override = block_model or agent_model
         assert model_override is None
@@ -1210,7 +1149,7 @@ class TestBlockLevelModel(TestProcessManagerFixture):
     def test_empty_string_model_treated_as_none(self, manager):
         """Empty string model should not be used as override"""
         block = {"name": "normal", "prompt": "test", "model": ""}
-        block_model = block.get('model') or None
+        block_model = block.get("model") or None
         assert block_model is None
 
 
@@ -1218,23 +1157,20 @@ class TestBlockLevelModel(TestProcessManagerFixture):
 # TASK #1180: process control (pause/resume/cancel single)
 # ============================================================
 
+
 class TestPauseSingle(TestProcessManagerFixture):
     """Tests for pause_single method"""
 
     def test_pause_by_name(self, manager):
         """Pause a process by block name"""
-        manager.processes["u1"] = Process(
-            pid=1, name="block_a", status="running", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=1, name="block_a", status="running", start_time=0, command="")
         result = manager.pause_single("block_a")
         assert result is True
         assert manager.processes["u1"].status == "paused"
 
     def test_pause_by_uid(self, manager):
         """Pause a process by UID"""
-        manager.processes["uid-xyz"] = Process(
-            pid=1, name="block_a", status="running", start_time=0, command=""
-        )
+        manager.processes["uid-xyz"] = Process(pid=1, name="block_a", status="running", start_time=0, command="")
         result = manager.pause_single("uid-xyz")
         assert result is True
         assert manager.processes["uid-xyz"].status == "paused"
@@ -1245,17 +1181,13 @@ class TestPauseSingle(TestProcessManagerFixture):
 
     def test_pause_done_block_returns_false(self, manager):
         """Cannot pause a block that's already done"""
-        manager.processes["u1"] = Process(
-            pid=1, name="block_a", status="done", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=1, name="block_a", status="done", start_time=0, command="")
         assert manager.pause_single("block_a") is False
         assert manager.processes["u1"].status == "done"
 
     def test_pause_failed_block_returns_false(self, manager):
         """Cannot pause a failed block"""
-        manager.processes["u1"] = Process(
-            pid=1, name="block_a", status="failed", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=1, name="block_a", status="failed", start_time=0, command="")
         assert manager.pause_single("block_a") is False
 
 
@@ -1264,9 +1196,7 @@ class TestResumeSingle(TestProcessManagerFixture):
 
     def test_resume_paused_block(self, manager):
         """Resume restores previous status"""
-        manager.processes["u1"] = Process(
-            pid=1, name="block_a", status="running", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=1, name="block_a", status="running", start_time=0, command="")
         manager.pause_single("block_a")
         assert manager.processes["u1"].status == "paused"
 
@@ -1276,9 +1206,7 @@ class TestResumeSingle(TestProcessManagerFixture):
 
     def test_resume_not_paused_returns_false(self, manager):
         """Cannot resume a block that isn't paused"""
-        manager.processes["u1"] = Process(
-            pid=1, name="block_a", status="running", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=1, name="block_a", status="running", start_time=0, command="")
         assert manager.resume_single("block_a") is False
 
     def test_resume_nonexistent_returns_false(self, manager):
@@ -1287,9 +1215,7 @@ class TestResumeSingle(TestProcessManagerFixture):
 
     def test_pause_resume_cycle(self, manager):
         """Multiple pause/resume cycles work correctly"""
-        manager.processes["u1"] = Process(
-            pid=1, name="block_a", status="running", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=1, name="block_a", status="running", start_time=0, command="")
         for _ in range(3):
             manager.pause_single("block_a")
             assert manager.processes["u1"].status == "paused"
@@ -1302,9 +1228,7 @@ class TestCancelSingle(TestProcessManagerFixture):
 
     def test_cancel_by_name(self, manager):
         """Cancel a process by block name"""
-        manager.processes["u1"] = Process(
-            pid=None, name="block_a", status="waiting", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=None, name="block_a", status="waiting", start_time=0, command="")
         result = manager.cancel_single("block_a")
         assert result is True
         assert manager.processes["u1"].status == "cancelled"
@@ -1315,17 +1239,13 @@ class TestCancelSingle(TestProcessManagerFixture):
 
     def test_cancel_waiting_block(self, manager):
         """Can cancel a waiting (not-yet-running) block"""
-        manager.processes["u1"] = Process(
-            pid=None, name="block_a", status="waiting", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=None, name="block_a", status="waiting", start_time=0, command="")
         manager.cancel_single("block_a")
         assert manager.processes["u1"].status == "cancelled"
 
     def test_cancel_done_block(self, manager):
         """Cancelling a done block still returns True but changes status"""
-        manager.processes["u1"] = Process(
-            pid=None, name="block_a", status="done", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=None, name="block_a", status="done", start_time=0, command="")
         result = manager.cancel_single("block_a")
         # cancel_single doesn't check for done -- it just marks as cancelled
         assert result is True
@@ -1364,248 +1284,73 @@ class TestWorkflowPauseResume(TestProcessManagerFixture):
 # TASK #1189: Coverage improvements -- pure logic methods
 # ============================================================
 
-class TestShouldExecuteBlock(TestProcessManagerFixture):
-    """Tests for _should_execute_block flow control"""
-
-    def test_no_failures_no_skip(self, manager):
-        """No previous failures, skip_if_previous_failed=false -> execute"""
-        block = {"name": "a", "skip_if_previous_failed": False}
-        assert manager._should_execute_block(block, []) is True
-
-    def test_no_failures_with_skip_flag(self, manager):
-        """No failures, skip_if_previous_failed=true -> still execute"""
-        block = {"name": "a", "skip_if_previous_failed": True}
-        assert manager._should_execute_block(block, []) is True
-
-    def test_failures_without_skip_flag(self, manager):
-        """Has failures, no skip flag -> execute anyway"""
-        block = {"name": "a", "skip_if_previous_failed": False}
-        assert manager._should_execute_block(block, ["failed_block"]) is True
-
-    def test_failures_with_skip_flag(self, manager):
-        """Has failures, skip flag set -> skip block"""
-        block = {"name": "a", "skip_if_previous_failed": True}
-        assert manager._should_execute_block(block, ["failed_block"]) is False
-
-    def test_default_skip_flag_is_false(self, manager):
-        """Default behavior: no skip_if_previous_failed means execute"""
-        block = {"name": "a"}
-        assert manager._should_execute_block(block, ["failed_block"]) is True
-
-
-class TestShouldContinueAfterFailure(TestProcessManagerFixture):
-    """Tests for _should_continue_after_failure flow control"""
-
-    def test_no_failure_always_continues(self, manager):
-        """block_failed=False always returns True"""
-        block = {"name": "a", "continue_if_failed": False}
-        assert manager._should_continue_after_failure(block, False) is True
-
-    def test_failure_with_continue_flag(self, manager):
-        """block_failed=True, continue_if_failed=True -> continue"""
-        block = {"name": "a", "continue_if_failed": True}
-        assert manager._should_continue_after_failure(block, True) is True
-
-    def test_failure_without_continue_flag(self, manager):
-        """block_failed=True, continue_if_failed=False -> stop"""
-        block = {"name": "a", "continue_if_failed": False}
-        assert manager._should_continue_after_failure(block, True) is False
-
-    def test_default_continue_flag_is_true(self, manager):
-        """Default behavior: no continue_if_failed means continue"""
-        block = {"name": "a"}
-        # Default is True per the code
-        assert manager._should_continue_after_failure(block, True) is True
-
-
-class TestResolvePath(TestProcessManagerFixture):
-    """Tests for _resolve_path dot-notation resolver"""
-
-    def test_simple_key(self, manager):
-        assert manager._resolve_path("key", {"key": "value"}) == "value"
-
-    def test_nested_path(self, manager):
-        data = {"result": {"score": 0.85}}
-        assert manager._resolve_path("result.score", data) == 0.85
-
-    def test_deep_path(self, manager):
-        data = {"a": {"b": {"c": {"d": "deep"}}}}
-        assert manager._resolve_path("a.b.c.d", data) == "deep"
-
-    def test_missing_key_returns_none(self, manager):
-        assert manager._resolve_path("missing", {"key": "value"}) is None
-
-    def test_missing_nested_returns_none(self, manager):
-        data = {"result": {"score": 0.5}}
-        assert manager._resolve_path("result.missing", data) is None
-
-    def test_path_into_non_dict(self, manager):
-        data = {"result": "string_value"}
-        # Trying to access result.field when result is a string
-        assert manager._resolve_path("result.field", data) is None
-
-    def test_boolean_value(self, manager):
-        data = {"approved": True}
-        assert manager._resolve_path("approved", data) is True
-
-    def test_zero_value(self, manager):
-        data = {"count": 0}
-        assert manager._resolve_path("count", data) == 0
-
-
-class TestEvaluateCondition(TestProcessManagerFixture):
-    """Tests for _evaluate_condition expression evaluator"""
-
-    def test_simple_truthy_check(self, manager):
-        """{{ result.approved }} with True value"""
-        data = {"result": {"approved": True}}
-        assert manager._evaluate_condition("{{ result.approved }}", data) is True
-
-    def test_simple_falsy_check(self, manager):
-        data = {"result": {"approved": False}}
-        assert manager._evaluate_condition("{{ result.approved }}", data) is False
-
-    def test_equality_string(self, manager):
-        data = {"result": {"status": "done"}}
-        assert manager._evaluate_condition("{{ result.status == 'done' }}", data) is True
-        assert manager._evaluate_condition("{{ result.status == 'pending' }}", data) is False
-
-    def test_inequality(self, manager):
-        data = {"result": {"status": "done"}}
-        assert manager._evaluate_condition("{{ result.status != 'pending' }}", data) is True
-
-    def test_greater_than(self, manager):
-        data = {"result": {"score": 0.9}}
-        assert manager._evaluate_condition("{{ result.score > 0.8 }}", data) is True
-        assert manager._evaluate_condition("{{ result.score > 0.95 }}", data) is False
-
-    def test_less_than(self, manager):
-        data = {"result": {"score": 0.3}}
-        assert manager._evaluate_condition("{{ result.score < 0.5 }}", data) is True
-
-    def test_greater_equal(self, manager):
-        data = {"result": {"score": 0.8}}
-        assert manager._evaluate_condition("{{ result.score >= 0.8 }}", data) is True
-
-    def test_missing_field_returns_false(self, manager):
-        data = {"result": {}}
-        assert manager._evaluate_condition("{{ result.missing }}", data) is False
-
-    def test_invalid_expression_returns_false(self, manager):
-        data = {"result": {"x": 1}}
-        assert manager._evaluate_condition("not a template", data) is False
-
-    def test_numeric_comparison_with_int(self, manager):
-        data = {"result": {"count": 42}}
-        assert manager._evaluate_condition("{{ result.count > 40 }}", data) is True
-
-    def test_boolean_equality(self, manager):
-        data = {"result": {"ok": True}}
-        assert manager._evaluate_condition("{{ result.ok == 'true' }}", data) is True
-
-
-class TestEvaluateNextBlock(TestProcessManagerFixture):
-    """Tests for _evaluate_next_block state machine"""
-
-    def test_no_next_returns_none(self, manager):
-        block = {"name": "a"}
-        assert manager._evaluate_next_block(block, {}) is None
-
-    def test_simple_string_next(self, manager):
-        block = {"name": "a", "next": "b"}
-        assert manager._evaluate_next_block(block, {}) == "b"
-
-    def test_conditional_if_goto(self, manager):
-        block = {
-            "name": "gate",
-            "next": [
-                {"if": "{{ result.approved }}", "goto": "publish"},
-                {"else": "revise"},
-            ]
-        }
-        data = {"result": {"approved": True}}
-        assert manager._evaluate_next_block(block, data) == "publish"
-
-    def test_conditional_else_branch(self, manager):
-        block = {
-            "name": "gate",
-            "next": [
-                {"if": "{{ result.approved }}", "goto": "publish"},
-                {"else": "revise"},
-            ]
-        }
-        data = {"result": {"approved": False}}
-        assert manager._evaluate_next_block(block, data) == "revise"
-
-    def test_multi_if_first_match(self, manager):
-        block = {
-            "name": "gate",
-            "next": [
-                {"if": "{{ result.score > 0.9 }}", "goto": "excellent"},
-                {"if": "{{ result.score > 0.7 }}", "goto": "good"},
-                {"else": "poor"},
-            ]
-        }
-        # Score 0.95 matches first condition
-        data = {"result": {"score": 0.95}}
-        assert manager._evaluate_next_block(block, data) == "excellent"
-        # Score 0.8 matches second
-        assert manager._evaluate_next_block(block, {"result": {"score": 0.8}}) == "good"
-        # Score 0.5 matches else
-        assert manager._evaluate_next_block(block, {"result": {"score": 0.5}}) == "poor"
-
 
 class TestIsBackwardRouting(TestProcessManagerFixture):
     """Tests for _is_backward_routing helper (#1172, our fix)"""
 
     def _setup(self, manager, blocks):
         manager.all_blocks = blocks
-        manager.block_configs = {b['name']: b for b in blocks}
+        manager.block_configs = {b["name"]: b for b in blocks}
 
     def test_forward_routing_not_backward(self, manager):
         """gate -> next_block where next_block doesn't depend on gate (sibling)"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "gate", "depends_on": ["a"]},
-            {"name": "next_block", "depends_on": ["a"]},  # sibling, not dependent on gate
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "gate", "depends_on": ["a"]},
+                {"name": "next_block", "depends_on": ["a"]},  # sibling, not dependent on gate
+            ],
+        )
         assert manager._is_backward_routing("gate", "next_block") is False
 
     def test_backward_routing_to_ancestor(self, manager):
         """gate -> ancestor: true backward routing"""
-        self._setup(manager, [
-            {"name": "start", "depends_on": []},
-            {"name": "middle", "depends_on": ["start"]},
-            {"name": "gate", "depends_on": ["middle"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "start", "depends_on": []},
+                {"name": "middle", "depends_on": ["start"]},
+                {"name": "gate", "depends_on": ["middle"]},
+            ],
+        )
         # gate routing back to start (its transitive ancestor)
         assert manager._is_backward_routing("gate", "start") is True
         assert manager._is_backward_routing("gate", "middle") is True
 
     def test_forward_to_descendant(self, manager):
         """gate -> its own dependent (not backward)"""
-        self._setup(manager, [
-            {"name": "gate", "depends_on": []},
-            {"name": "downstream", "depends_on": ["gate"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "gate", "depends_on": []},
+                {"name": "downstream", "depends_on": ["gate"]},
+            ],
+        )
         assert manager._is_backward_routing("gate", "downstream") is False
 
     def test_self_reference_not_backward(self, manager):
         """gate -> gate (self-loop): not in ancestors"""
-        self._setup(manager, [
-            {"name": "gate", "depends_on": []},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "gate", "depends_on": []},
+            ],
+        )
         assert manager._is_backward_routing("gate", "gate") is False
 
     def test_deep_ancestor_chain(self, manager):
         """Deep chain: A -> B -> C -> D -> gate, gate back to A"""
-        self._setup(manager, [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": ["a"]},
-            {"name": "c", "depends_on": ["b"]},
-            {"name": "d", "depends_on": ["c"]},
-            {"name": "gate", "depends_on": ["d"]},
-        ])
+        self._setup(
+            manager,
+            [
+                {"name": "a", "depends_on": []},
+                {"name": "b", "depends_on": ["a"]},
+                {"name": "c", "depends_on": ["b"]},
+                {"name": "d", "depends_on": ["c"]},
+                {"name": "gate", "depends_on": ["d"]},
+            ],
+        )
         assert manager._is_backward_routing("gate", "a") is True
         assert manager._is_backward_routing("gate", "b") is True
         assert manager._is_backward_routing("gate", "c") is True
@@ -1616,40 +1361,30 @@ class TestSyncCompletedFromProcesses(TestProcessManagerFixture):
 
     def test_syncs_done_status_to_completed(self, manager):
         """done blocks get added to completed set"""
-        manager.processes["u1"] = Process(
-            pid=None, name="a", status="done", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=None, name="a", status="done", start_time=0, command="")
         manager._sync_completed_from_processes()
         assert "a" in manager.completed
 
     def test_syncs_failed_status_to_completed(self, manager):
         """failed blocks also get added (for cascade/skip logic)"""
-        manager.processes["u1"] = Process(
-            pid=None, name="a", status="failed", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=None, name="a", status="failed", start_time=0, command="")
         manager._sync_completed_from_processes()
         assert "a" in manager.completed
 
     def test_does_not_sync_running(self, manager):
         """running blocks should NOT be in completed"""
-        manager.processes["u1"] = Process(
-            pid=None, name="a", status="running", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=None, name="a", status="running", start_time=0, command="")
         manager._sync_completed_from_processes()
         assert "a" not in manager.completed
 
     def test_does_not_sync_waiting(self, manager):
-        manager.processes["u1"] = Process(
-            pid=None, name="a", status="waiting", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=None, name="a", status="waiting", start_time=0, command="")
         manager._sync_completed_from_processes()
         assert "a" not in manager.completed
 
     def test_idempotent(self, manager):
         """Calling sync multiple times is idempotent"""
-        manager.processes["u1"] = Process(
-            pid=None, name="a", status="done", start_time=0, command=""
-        )
+        manager.processes["u1"] = Process(pid=None, name="a", status="done", start_time=0, command="")
         manager._sync_completed_from_processes()
         manager._sync_completed_from_processes()
         manager._sync_completed_from_processes()
@@ -1702,37 +1437,11 @@ class TestAssemblePromptTemplates(TestProcessManagerFixture):
         assert "Be professional" in result or "Task" in result
 
 
-class TestFindProcessByName(TestProcessManagerFixture):
-    """Tests for _find_process_by_name helper (already have basic tests)"""
-
-    def test_returns_tuple_for_existing(self, manager):
-        manager.processes["uid-123"] = Process(
-            pid=None, name="my_block", status="waiting", start_time=0, command=""
-        )
-        result = manager._find_process_by_name("my_block")
-        assert result is not None
-        uid, proc = result
-        assert uid == "uid-123"
-        assert proc.name == "my_block"
-
-    def test_returns_first_match_when_duplicates(self, manager):
-        """Multiple processes with same name return first"""
-        manager.processes["u1"] = Process(
-            pid=None, name="duplicate", status="done", start_time=0, command=""
-        )
-        manager.processes["u2"] = Process(
-            pid=None, name="duplicate", status="waiting", start_time=1, command=""
-        )
-        result = manager._find_process_by_name("duplicate")
-        assert result is not None
-
-
 class TestLoadSpecialistAndTeam(TestProcessManagerFixture):
     """Tests for load_team and load_specialist file loading"""
 
     def test_load_team_from_file(self, manager, tmp_path):
         """Load team YAML returns collaboration_tone content"""
-        import os
         teams_dir = tmp_path / "teams"
         teams_dir.mkdir()
         team_file = teams_dir / "team-test.yaml"

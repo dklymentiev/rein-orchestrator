@@ -6,10 +6,11 @@ Extracted from ProcessManager. Runs logic.error (per-block) and on_error
 Both handlers receive a JSON context via stdin:
   {block_name, error, task_dir, task_id, flow_name}
 """
+
 import json
 import os
 import subprocess
-from typing import Callable, Optional, Any
+from typing import Any, Callable, Optional
 
 
 def _run_handler_script(
@@ -102,13 +103,15 @@ def run_error_handlers(
     Per-block handler runs first. If it succeeds (exit 0), global on_error
     is skipped (block handler already handled the error).
     """
-    error_context = json.dumps({
-        "block_name": block_name,
-        "error": error_msg,
-        "task_dir": task_dir,
-        "task_id": task_id or "",
-        "flow_name": flow_name or "",
-    })
+    error_context = json.dumps(
+        {
+            "block_name": block_name,
+            "error": error_msg,
+            "task_dir": task_dir,
+            "task_id": task_id or "",
+            "flow_name": flow_name or "",
+        }
+    )
 
     logic_config = block.get("logic", {}) or {}
     error_script = logic_config.get("error") if isinstance(logic_config, dict) else None
@@ -120,14 +123,24 @@ def run_error_handlers(
         if run_log:
             run_log.write("LOGIC.ERROR START", f"script={error_script}")
         handled = _run_handler_script(
-            error_script, workflow_dir, error_context,
-            log_fn, run_log, block_name, "logic.error",
+            error_script,
+            workflow_dir,
+            error_context,
+            log_fn,
+            run_log,
+            block_name,
+            "logic.error",
         )
 
     # Priority 2: global on_error (only if per-block didn't handle it)
     if not handled and global_on_error:
         log_fn(f"ERROR HANDLER | {block_name} | on_error={global_on_error}")
         _run_handler_script(
-            global_on_error, workflow_dir, error_context,
-            log_fn, None, block_name, "on_error",
+            global_on_error,
+            workflow_dir,
+            error_context,
+            log_fn,
+            None,
+            block_name,
+            "on_error",
         )

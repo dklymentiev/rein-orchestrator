@@ -1,14 +1,15 @@
 """
 Rein Logic Runner - Execute logic scripts (Python/Shell) for workflow blocks
 """
+
+import json
 import os
 import re
-import json
 import subprocess
-from typing import Optional, Callable, Dict, Any, List
+from typing import Callable, Dict, List, Optional
 
 # linux_user must be a safe username: alphanumeric, hyphens, underscores
-SAFE_LINUX_USER = re.compile(r'^[a-zA-Z0-9_-]+$')
+SAFE_LINUX_USER = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 class LogicRunner:
@@ -41,7 +42,7 @@ class LogicRunner:
         block_config: Optional[Dict] = None,
         linux_user: Optional[str] = None,
         run_count: int = 0,
-        timeout_override: Optional[int] = None
+        timeout_override: Optional[int] = None,
     ) -> bool:
         """
         Run logic script (Python or Shell)
@@ -90,10 +91,10 @@ class LogicRunner:
             self.logger(f"LOGIC RUN | {script_path} | output={output_file} | task={self.task_id}")
 
             # Build command with optional sudo -u for linux_user isolation
-            if script_path.endswith('.py'):
-                cmd = ['python3', full_path]
-            elif script_path.endswith('.sh'):
-                cmd = ['bash', full_path]
+            if script_path.endswith(".py"):
+                cmd = ["python3", full_path]
+            elif script_path.endswith(".sh"):
+                cmd = ["bash", full_path]
             else:
                 self.logger(f"LOGIC ERROR | unknown script type: {script_path}")
                 return False
@@ -103,30 +104,25 @@ class LogicRunner:
                     self.logger(f"LOGIC ERROR | unsafe linux_user rejected: {linux_user}")
                     return False
                 if linux_user == "root":
-                    self.logger(f"LOGIC ERROR | sudo to root is forbidden")
+                    self.logger("LOGIC ERROR | sudo to root is forbidden")
                     return False
-                cmd = ['sudo', '-u', linux_user] + cmd
+                cmd = ["sudo", "-u", linux_user] + cmd
                 self.logger(f"LOGIC SUDO | running as {linux_user}")
 
             # Run script (use block-level timeout_override if provided)
             effective_timeout = timeout_override if timeout_override else self.timeout
             result = subprocess.run(
-                cmd,
-                input=context_json,
-                capture_output=True,
-                text=True,
-                timeout=effective_timeout,
-                cwd=self.task_dir
+                cmd, input=context_json, capture_output=True, text=True, timeout=effective_timeout, cwd=self.task_dir
             )
             # Log output
             if result.stdout:
-                for line in result.stdout.strip().split('\n'):
+                for line in result.stdout.strip().split("\n"):
                     if line:
                         self.logger(f"LOGIC OUTPUT | {line}")
 
             if result.returncode != 0:
                 if result.stderr:
-                    for line in result.stderr.strip().split('\n'):
+                    for line in result.stderr.strip().split("\n"):
                         if line:
                             self.logger(f"LOGIC ERROR | {line}")
                 return False

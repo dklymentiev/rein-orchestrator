@@ -5,11 +5,13 @@ When a workflow block specifies `agent: smm`, Rein resolves the agent's
 configuration from {agents_dir}/{agent_name}/agent.yaml. This provides
 model overrides, security constraints, and OS user context.
 """
+
 import os
 import re
-import yaml
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import Dict, List, Optional
+
+import yaml
 
 from rein.log import get_logger
 
@@ -30,6 +32,7 @@ SAFE_AGENT_REF = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 @dataclass
 class AgentConfig:
     """Parsed agent configuration from agent.yaml."""
+
     name: str = ""
     model: str = ""
     schedule: str = ""
@@ -43,9 +46,9 @@ class AgentConfig:
     forbidden_fs: List[str] = field(default_factory=list)
     forbidden_behavior: List[str] = field(default_factory=list)
     directories: Dict[str, List[str]] = field(default_factory=lambda: {"read": [], "write": []})
-    interactions: Dict[str, List[str]] = field(default_factory=lambda: {
-        "receives": [], "assigns": [], "escalates": [], "notifies": []
-    })
+    interactions: Dict[str, List[str]] = field(
+        default_factory=lambda: {"receives": [], "assigns": [], "escalates": [], "notifies": []}
+    )
     _source_path: str = ""  # Path to agent.yaml (internal)
 
 
@@ -89,9 +92,7 @@ def load_agent_config(agent_ref: str, agents_dir: str = None) -> Optional[AgentC
         forbidden_fs=data.get("forbidden_fs") or [],
         forbidden_behavior=data.get("forbidden_behavior") or [],
         directories=data.get("directories") or {"read": [], "write": []},
-        interactions=data.get("interactions") or {
-            "receives": [], "assigns": [], "escalates": [], "notifies": []
-        },
+        interactions=data.get("interactions") or {"receives": [], "assigns": [], "escalates": [], "notifies": []},
         _source_path=yaml_path,
     )
     return config

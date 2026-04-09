@@ -1,19 +1,19 @@
 """Tests for rein.mcp_server - MCP tool functions."""
+
 import json
 import os
 import sqlite3
-import tempfile
 
 import pytest
 import yaml
 
 from rein.mcp_server import (
+    create_task,
     list_flows,
     list_specialists,
-    list_teams,
-    create_task,
-    task_status,
     list_tasks,
+    list_teams,
+    task_status,
 )
 
 
@@ -51,12 +51,8 @@ def agents_dir(tmp_path, monkeypatch):
         yaml.dump(flow_yaml, f)
 
     # Create specialists
-    (specs_dir / "researcher.md").write_text(
-        "# Researcher\n\nYou are a research analyst.\n\n## Goal\nFind facts.\n"
-    )
-    (specs_dir / "writer.md").write_text(
-        "# Writer\n\nYou are a technical writer.\n\n## Goal\nWrite articles.\n"
-    )
+    (specs_dir / "researcher.md").write_text("# Researcher\n\nYou are a research analyst.\n\n## Goal\nFind facts.\n")
+    (specs_dir / "writer.md").write_text("# Writer\n\nYou are a technical writer.\n\n## Goal\nWrite articles.\n")
 
     # Create team
     team_yaml = {
@@ -74,6 +70,7 @@ def agents_dir(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # list_flows
 # ---------------------------------------------------------------------------
+
 
 class TestListFlows:
     def test_lists_flows(self, agents_dir):
@@ -109,6 +106,7 @@ class TestListFlows:
 # ---------------------------------------------------------------------------
 # list_specialists
 # ---------------------------------------------------------------------------
+
 
 class TestListSpecialists:
     def test_lists_specialists(self, agents_dir):
@@ -157,6 +155,7 @@ class TestListSpecialists:
 # list_teams
 # ---------------------------------------------------------------------------
 
+
 class TestListTeams:
     def test_lists_teams(self, agents_dir):
         result = json.loads(list_teams(agents_dir=agents_dir))
@@ -176,9 +175,7 @@ class TestListTeams:
         evil_dir = tmp_path / "evil"
         evil_dir.mkdir()
         (evil_dir / "teams").mkdir()
-        (evil_dir / "teams" / "leaked-team.yaml").write_text(
-            "name: leaked\nspecialists: [x]\n"
-        )
+        (evil_dir / "teams" / "leaked-team.yaml").write_text("name: leaked\nspecialists: [x]\n")
         result = json.loads(list_teams(agents_dir=str(evil_dir)))
         names = [t["name"] for t in result["teams"]]
         assert "leaked-team" not in names
@@ -189,13 +186,16 @@ class TestListTeams:
 # create_task
 # ---------------------------------------------------------------------------
 
+
 class TestCreateTask:
     def test_creates_task_structure(self, agents_dir):
-        result = json.loads(create_task(
-            flow="test-flow",
-            question="What is WebSocket?",
-            agents_dir=agents_dir,
-        ))
+        result = json.loads(
+            create_task(
+                flow="test-flow",
+                question="What is WebSocket?",
+                agents_dir=agents_dir,
+            )
+        )
         assert result["status"] == "pending"
         assert result["flow"] == "test-flow"
         task_id = result["task_id"]
@@ -223,17 +223,20 @@ class TestCreateTask:
             assert f.read() == "pending"
 
     def test_invalid_flow(self, agents_dir):
-        result = json.loads(create_task(
-            flow="nonexistent",
-            question="test",
-            agents_dir=agents_dir,
-        ))
+        result = json.loads(
+            create_task(
+                flow="nonexistent",
+                question="test",
+                agents_dir=agents_dir,
+            )
+        )
         assert "error" in result
 
 
 # ---------------------------------------------------------------------------
 # task_status
 # ---------------------------------------------------------------------------
+
 
 class TestTaskStatus:
     def _make_task_with_db(self, agents_dir, task_id, blocks):
@@ -271,29 +274,41 @@ class TestTaskStatus:
         return task_dir
 
     def test_completed_task(self, agents_dir):
-        self._make_task_with_db(agents_dir, "task-001", [
-            {"name": "block1", "status": "done"},
-            {"name": "block2", "status": "done"},
-        ])
+        self._make_task_with_db(
+            agents_dir,
+            "task-001",
+            [
+                {"name": "block1", "status": "done"},
+                {"name": "block2", "status": "done"},
+            ],
+        )
         result = json.loads(task_status("task-001", agents_dir=agents_dir))
         assert result["status"] == "completed"
         assert result["total"] == 2
         assert result["done"] == 2
 
     def test_running_task(self, agents_dir):
-        self._make_task_with_db(agents_dir, "task-002", [
-            {"name": "block1", "status": "done"},
-            {"name": "block2", "status": "running"},
-        ])
+        self._make_task_with_db(
+            agents_dir,
+            "task-002",
+            [
+                {"name": "block1", "status": "done"},
+                {"name": "block2", "status": "running"},
+            ],
+        )
         result = json.loads(task_status("task-002", agents_dir=agents_dir))
         assert result["status"] == "running"
         assert result["running"] == 1
 
     def test_failed_task(self, agents_dir):
-        self._make_task_with_db(agents_dir, "task-003", [
-            {"name": "block1", "status": "done"},
-            {"name": "block2", "status": "failed"},
-        ])
+        self._make_task_with_db(
+            agents_dir,
+            "task-003",
+            [
+                {"name": "block1", "status": "done"},
+                {"name": "block2", "status": "failed"},
+            ],
+        )
         result = json.loads(task_status("task-003", agents_dir=agents_dir))
         assert result["status"] == "failed"
         assert result["failed"] == 1
@@ -317,6 +332,7 @@ class TestTaskStatus:
 # ---------------------------------------------------------------------------
 # list_tasks
 # ---------------------------------------------------------------------------
+
 
 class TestListTasks:
     def _make_task(self, agents_dir, task_id, flow="test-flow"):

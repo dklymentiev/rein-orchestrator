@@ -4,14 +4,16 @@ Base provider interface for LLM API calls.
 All providers implement the same call() interface so the orchestrator
 is completely agnostic to which LLM backend is used.
 """
+
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Optional, Callable, Tuple
+from dataclasses import dataclass
+from typing import Callable, Optional, Tuple
 
 
 @dataclass
 class UsageStats:
     """Token usage and cost statistics for a single LLM call."""
+
     input_tokens: int = 0
     output_tokens: int = 0
     cost: float = 0.0
@@ -80,7 +82,7 @@ class Provider(ABC):
         max_tokens: int = 4096,
         temperature: float = 0.7,
         logger: Optional[Callable[[str], None]] = None,
-        **kwargs
+        **kwargs,
     ):
         self.model = model
         self.max_tokens = max_tokens

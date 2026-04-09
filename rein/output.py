@@ -1,11 +1,12 @@
 """
 Rein Output Helpers - Functions for formatting and saving workflow outputs
 """
-import os
+
 import json
+import os
 import re
 from datetime import datetime
-from typing import Optional, Callable, List
+from typing import Callable, List, Optional
 
 
 def get_block_dir(task_dir: str, workflow_dir: str, block_name: str) -> str:
@@ -74,7 +75,7 @@ def format_json_as_md(data: dict, level: int = 0) -> List[str]:
         return lines
 
     for key, value in data.items():
-        title = key.replace('_', ' ').title()
+        title = key.replace("_", " ").title()
 
         # Use appropriate header level
         if level == 0:
@@ -89,15 +90,17 @@ def format_json_as_md(data: dict, level: int = 0) -> List[str]:
             for i, item in enumerate(value):
                 if isinstance(item, dict):
                     # Format dict items nicely
-                    item_title = item.get('name') or item.get('id') or item.get('gap') or item.get('idea') or f"Item {i+1}"
+                    item_title = (
+                        item.get("name") or item.get("id") or item.get("gap") or item.get("idea") or f"Item {i + 1}"
+                    )
                     if isinstance(item_title, int):
                         item_title = f"#{item_title}"
                     lines.append(f"### {item_title}")
                     lines.append("")
                     for k, v in item.items():
-                        if k in ('name', 'id'):
+                        if k in ("name", "id"):
                             continue  # Already used as title
-                        k_title = k.replace('_', ' ').title()
+                        k_title = k.replace("_", " ").title()
                         if isinstance(v, list):
                             lines.append(f"**{k_title}:**")
                             for sub_item in v:
@@ -127,10 +130,7 @@ def format_json_as_md(data: dict, level: int = 0) -> List[str]:
 
 
 def save_readable_output(
-    json_file: str,
-    block_name: str,
-    result: str,
-    logger: Optional[Callable[[str], None]] = None
+    json_file: str, block_name: str, result: str, logger: Optional[Callable[[str], None]] = None
 ) -> bool:
     """
     Save human-readable MD version of block output
@@ -147,17 +147,17 @@ def save_readable_output(
     log = logger or (lambda x: None)
 
     try:
-        md_file = json_file.replace('.json', '.md')
+        md_file = json_file.replace(".json", ".md")
         lines = [f"# {block_name}", "", f"*{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*", ""]
 
         # Try to extract JSON from markdown code blocks
-        json_match = re.search(r'```json\s*\n(.*?)\n```', result, re.DOTALL)
+        json_match = re.search(r"```json\s*\n(.*?)\n```", result, re.DOTALL)
 
         if json_match:
             # Has text + JSON block
-            text_before = result[:json_match.start()].strip()
+            text_before = result[: json_match.start()].strip()
             json_str = json_match.group(1)
-            text_after = result[json_match.end():].strip()
+            text_after = result[json_match.end() :].strip()
 
             if text_before:
                 lines.append(text_before)
@@ -182,7 +182,7 @@ def save_readable_output(
                 # Plain text - just add it
                 lines.append(result)
 
-        with open(md_file, 'w') as f:
+        with open(md_file, "w") as f:
             f.write("\n".join(lines))
 
         log(f"READABLE OUTPUT | {block_name} | saved={md_file}")

@@ -1,6 +1,7 @@
 """
 Rein State Manager - SQLite-based state persistence for workflow execution
 """
+
 import sqlite3
 import time
 from typing import List
@@ -56,17 +57,31 @@ class ReinState:
         conn.commit()
         conn.close()
 
-
     def save_process(self, proc: Process):
         """Save process state"""
         conn = sqlite3.connect(self.db_path)
-        conn.execute("""
+        conn.execute(
+            """
             REPLACE INTO processes
             (name, pid, status, start_time, command, exit_code, cpu_percent, memory_mb, progress, phase, blocking_pause, updated_at, run_count)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (proc.name, proc.pid, proc.status, proc.start_time, proc.command,
-              proc.exit_code, proc.cpu_percent, proc.memory_mb, proc.progress, proc.phase,
-              int(proc.blocking_pause), time.time(), proc.run_count))
+        """,
+            (
+                proc.name,
+                proc.pid,
+                proc.status,
+                proc.start_time,
+                proc.command,
+                proc.exit_code,
+                proc.cpu_percent,
+                proc.memory_mb,
+                proc.progress,
+                proc.phase,
+                int(proc.blocking_pause),
+                time.time(),
+                proc.run_count,
+            ),
+        )
         conn.commit()
         conn.close()
 
@@ -81,12 +96,18 @@ class ReinState:
         processes = []
         for row in rows:
             proc = Process(
-                name=row[0], pid=row[1], status=row[2],
-                start_time=row[3], command=row[4],
-                exit_code=row[5], cpu_percent=row[6],
-                memory_mb=row[7], progress=row[8],
-                phase=row[9], blocking_pause=bool(row[10]),
-                run_count=row[11] or 0
+                name=row[0],
+                pid=row[1],
+                status=row[2],
+                start_time=row[3],
+                command=row[4],
+                exit_code=row[5],
+                cpu_percent=row[6],
+                memory_mb=row[7],
+                progress=row[8],
+                phase=row[9],
+                blocking_pause=bool(row[10]),
+                run_count=row[11] or 0,
             )
             processes.append(proc)
         return processes
@@ -96,18 +117,24 @@ class ReinState:
         conn = sqlite3.connect(self.db_path)
         row = conn.execute(
             "SELECT name, pid, status, start_time, command, exit_code, cpu_percent, memory_mb, progress, phase, blocking_pause, run_count FROM processes WHERE name = ?",
-            (name,)
+            (name,),
         ).fetchone()
         conn.close()
 
         if row:
             return Process(
-                name=row[0], pid=row[1], status=row[2],
-                start_time=row[3], command=row[4],
-                exit_code=row[5], cpu_percent=row[6],
-                memory_mb=row[7], progress=row[8],
-                phase=row[9], blocking_pause=bool(row[10]),
-                run_count=row[11] or 0
+                name=row[0],
+                pid=row[1],
+                status=row[2],
+                start_time=row[3],
+                command=row[4],
+                exit_code=row[5],
+                cpu_percent=row[6],
+                memory_mb=row[7],
+                progress=row[8],
+                phase=row[9],
+                blocking_pause=bool(row[10]),
+                run_count=row[11] or 0,
             )
         return None
 
@@ -117,13 +144,10 @@ class ReinState:
         if exit_code is not None:
             conn.execute(
                 "UPDATE processes SET status = ?, exit_code = ?, updated_at = ? WHERE name = ?",
-                (status, exit_code, time.time(), name)
+                (status, exit_code, time.time(), name),
             )
         else:
-            conn.execute(
-                "UPDATE processes SET status = ?, updated_at = ? WHERE name = ?",
-                (status, time.time(), name)
-            )
+            conn.execute("UPDATE processes SET status = ?, updated_at = ? WHERE name = ?", (status, time.time(), name))
         conn.commit()
         conn.close()
 

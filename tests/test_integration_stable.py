@@ -7,11 +7,10 @@ These tests use fixtures in tests/fixtures/ with:
 
 All tests should be idempotent and produce identical results every run.
 """
+
 import os
 import sqlite3
 import subprocess
-import pytest
-
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 REIN_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -35,8 +34,11 @@ def _run_fixture_flow(flow_name, timeout=60):
 
     result = subprocess.run(
         ["python3", "-m", "rein", yaml_path, "--no-ui"],
-        capture_output=True, text=True, timeout=timeout,
-        cwd=REIN_DIR, env=_ENV,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        cwd=REIN_DIR,
+        env=_ENV,
     )
     run_dir = None
     for line in result.stdout.split("\n"):
@@ -59,6 +61,7 @@ def _get_block_states(run_dir):
 # ============================================================
 # Linear 3-block flow: A -> B -> C
 # ============================================================
+
 
 class TestLinear3:
     """Simple linear chain, no routing, no retries."""
@@ -103,6 +106,7 @@ class TestLinear3:
 # Fan-out / fan-in: start -> {a, b, c} -> merge
 # ============================================================
 
+
 class TestFanoutFanin:
     """Diamond dependency: parallel branches merge into single block."""
 
@@ -141,6 +145,7 @@ class TestFanoutFanin:
 # Gate that passes on first run (forward routing)
 # ============================================================
 
+
 class TestGatePass:
     """Gate always passes -- forward routing to _default target."""
 
@@ -168,6 +173,7 @@ class TestGatePass:
 # Routing with deterministic retry cycle
 # ============================================================
 
+
 class TestSimpleRouting:
     """Gate fails once then passes -- tests backward routing and cascade."""
 
@@ -178,19 +184,13 @@ class TestSimpleRouting:
     def test_gate_runs_twice(self):
         """Gate runs twice: first REVISE, then PASS"""
         code, stdout, run_dir = _run_fixture_flow("simple-routing", timeout=90)
-        gate_starts = sum(
-            1 for line in stdout.split("\n")
-            if "[BLOCK_START]" in line and "block=gate" in line
-        )
+        gate_starts = sum(1 for line in stdout.split("\n") if "[BLOCK_START]" in line and "block=gate" in line)
         assert gate_starts >= 2, f"Expected 2+ gate runs, got {gate_starts}"
 
     def test_fix_executed_once(self):
         """fix block runs once (called by revise signal)"""
         code, stdout, run_dir = _run_fixture_flow("simple-routing", timeout=90)
-        fix_dones = sum(
-            1 for line in stdout.split("\n")
-            if "[BLOCK_DONE]" in line and "block=fix" in line
-        )
+        fix_dones = sum(1 for line in stdout.split("\n") if "[BLOCK_DONE]" in line and "block=fix" in line)
         assert fix_dones >= 1, "fix should have run at least once"
 
     def test_process_terminates_cleanly(self):

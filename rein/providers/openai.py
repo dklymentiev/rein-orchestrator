@@ -9,8 +9,9 @@ Env:
     OPENAI_API_KEY: API key (required)
     OPENAI_BASE_URL: Custom base URL (optional, for Azure/proxies)
 """
+
 import os
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 from .base import Provider
 
@@ -28,7 +29,7 @@ class OpenAIProvider(Provider):
         logger: Optional[Callable[[str], None]] = None,
         api_key: str = "",
         base_url: str = "",
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             model=model or self.DEFAULT_MODEL,
@@ -40,8 +41,10 @@ class OpenAIProvider(Provider):
         self.base_url = base_url or os.environ.get("OPENAI_BASE_URL", "")
 
     def call(self, prompt: str, stage: str = ""):
-        from openai import OpenAI
         import time as _time
+
+        from openai import OpenAI
+
         from .base import UsageStats, calculate_cost
 
         self.logger(f"OPENAI CALL | stage={stage} | model={self.model}")
@@ -63,8 +66,8 @@ class OpenAIProvider(Provider):
         duration_ms = int((_time.monotonic() - t0) * 1000)
 
         result = response.choices[0].message.content
-        input_tokens = getattr(response.usage, 'prompt_tokens', 0) if response.usage else 0
-        output_tokens = getattr(response.usage, 'completion_tokens', 0) if response.usage else 0
+        input_tokens = getattr(response.usage, "prompt_tokens", 0) if response.usage else 0
+        output_tokens = getattr(response.usage, "completion_tokens", 0) if response.usage else 0
         cost = calculate_cost(self.model, input_tokens, output_tokens)
 
         usage = UsageStats(
@@ -76,7 +79,9 @@ class OpenAIProvider(Provider):
             duration_ms=duration_ms,
         )
 
-        self.logger(f"OPENAI RESPONSE | stage={stage} | length={len(result)} | tokens={usage.total_tokens} | cost=${cost:.4f}")
+        self.logger(
+            f"OPENAI RESPONSE | stage={stage} | length={len(result)} | tokens={usage.total_tokens} | cost=${cost:.4f}"
+        )
         return result, usage
 
     @property
