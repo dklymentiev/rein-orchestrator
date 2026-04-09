@@ -11,6 +11,7 @@ Env:
     AI_GATEWAY_URL: Gateway base URL (e.g. http://localhost:19850)
     BRAIN_API_URL: Legacy alias for AI_GATEWAY_URL
 """
+
 import os
 from typing import Callable, Optional
 
@@ -30,7 +31,7 @@ class GatewayProvider(Provider):
         logger: Optional[Callable[[str], None]] = None,
         base_url: str = "",
         cwd: str = "",
-        **kwargs
+        **kwargs,
     ):
         super().__init__(
             model=model or "haiku",
@@ -39,11 +40,7 @@ class GatewayProvider(Provider):
             logger=logger,
         )
         self.cwd = cwd or ""
-        self.base_url = (
-            base_url
-            or os.environ.get("AI_GATEWAY_URL", "")
-            or os.environ.get("BRAIN_API_URL", "")
-        )
+        self.base_url = base_url or os.environ.get("AI_GATEWAY_URL", "") or os.environ.get("BRAIN_API_URL", "")
         # Strip trailing slash and /api/prompt suffix (legacy)
         self.base_url = self.base_url.rstrip("/")
         if self.base_url.endswith("/api/prompt"):
@@ -56,8 +53,7 @@ class GatewayProvider(Provider):
 
         if not self.base_url:
             raise ValueError(
-                "AI_GATEWAY_URL is required for gateway provider. "
-                "Set AI_GATEWAY_URL=http://your-gateway:port"
+                "AI_GATEWAY_URL is required for gateway provider. Set AI_GATEWAY_URL=http://your-gateway:port"
             )
 
         self.logger(f"GATEWAY CALL | stage={stage} | model={self.model} | url={self.base_url}")
