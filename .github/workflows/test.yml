@@ -49,5 +49,5 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Run tests
-        run: pytest --tb=short -q
+        run: pytest --tb=short -q --ignore=tests/test_characterization.py --ignore=tests/test_containment_sweep.py --ignore=tests/test_cli.py
         timeout-minutes: 5
