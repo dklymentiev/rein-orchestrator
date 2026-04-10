@@ -57,6 +57,18 @@ blocks:
 
 No Python classes. No framework APIs. No graph DSLs. Just text files that describe what each agent does and how they connect.
 
+## Why This Matters
+
+A YAML workflow is more than a config file. It's:
+
+- **Executable code** — agents run it automatically, no human in the loop
+- **Living documentation** — always current, not a 50-page wiki nobody reads
+- **Department playbook** — your process, captured and version-controlled
+- **Audit trail** — see who did what, and when
+- **Reproducible** — same input, same output, every time
+
+The point isn't "the AI figures it out." The point is a clear process, encoded in YAML, that you can read, edit, hand off, and replay.
+
 ## Quick Start
 
 ```bash
