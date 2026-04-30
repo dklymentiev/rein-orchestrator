@@ -7,6 +7,8 @@ import sqlite3
 import pytest
 import yaml
 
+pytest.importorskip("mcp", reason="mcp package not installed (optional dependency)")
+
 from rein.mcp_server import (
     create_task,
     list_flows,

@@ -565,6 +565,206 @@ class TestHandleFlow:
         assert exc_info.value.code == 1
 
 
+class TestFlowInputValidationBeforeCreate:
+    """Tests that _handle_flow validates required inputs BEFORE calling create_task().
+
+    This prevents orphan task directories when agents call rein --flow
+    without providing required inputs (e.g. marketer calling google-ads-report
+    without campaign_id). See task #1458.
+    """
+
+    @pytest.fixture
+    def agents_dir_with_inputs(self):
+        """Create agents dir with a flow that declares required inputs"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.makedirs(os.path.join(tmpdir, "flows", "ads-report"))
+            os.makedirs(os.path.join(tmpdir, "tasks"))
+
+            flow_config = {
+                "schema_version": "3.0",
+                "name": "ads-report",
+                "team": "test-team",
+                "inputs": {
+                    "campaign_id": {"required": True, "description": "Google Ads campaign ID"},
+                    "date_from": {"required": True, "description": "Start date YYYY-MM-DD"},
+                    "mode": {"required": False, "description": "Report mode", "default": "summary"},
+                },
+                "blocks": [{"name": "step1", "specialist": "analyzer", "prompt": "Analyze"}],
+            }
+            flow_path = os.path.join(tmpdir, "flows", "ads-report", "ads-report.yaml")
+            with open(flow_path, "w") as f:
+                yaml.dump(flow_config, f)
+
+            yield tmpdir
+
+    def test_missing_required_inputs_exits_before_create_task(self, agents_dir_with_inputs):
+        """Missing required inputs cause sys.exit(1) BEFORE create_task is called"""
+        args = argparse.Namespace(
+            flow="ads-report",
+            agents_dir=agents_dir_with_inputs,
+            question=None,
+            task_dir=None,
+            input='{"mode": "detailed"}',
+        )
+
+        with patch("rein.orchestrator.ProcessManager") as MockPM:
+            mock_manager = MagicMock()
+            MockPM.return_value = mock_manager
+
+            with pytest.raises(SystemExit) as exc_info:
+                _handle_flow(args)
+            assert exc_info.value.code == 1
+
+            # create_task must NOT have been called
+            mock_manager.create_task.assert_not_called()
+
+    def test_missing_required_inputs_no_orphan_directory(self, agents_dir_with_inputs):
+        """No task directory is created when required inputs are missing"""
+        tasks_dir = os.path.join(agents_dir_with_inputs, "tasks")
+        before = set(os.listdir(tasks_dir))
+
+        args = argparse.Namespace(
+            flow="ads-report",
+            agents_dir=agents_dir_with_inputs,
+            question=None,
+            task_dir=None,
+            input='{"topic": "test"}',
+        )
+
+        with pytest.raises(SystemExit):
+            _handle_flow(args)
+
+        after = set(os.listdir(tasks_dir))
+        assert before == after, f"Orphan directories created: {after - before}"
+
+    def test_all_required_inputs_proceeds(self, agents_dir_with_inputs):
+        """All required inputs provided allows create_task to be called"""
+        args = argparse.Namespace(
+            flow="ads-report",
+            agents_dir=agents_dir_with_inputs,
+            question=None,
+            task_dir=None,
+            input='{"campaign_id": "12345", "date_from": "2026-01-01"}',
+        )
+
+        with patch("rein.orchestrator.ProcessManager") as MockPM:
+            mock_manager = MagicMock()
+            mock_manager.tasks_root = os.path.join(agents_dir_with_inputs, "tasks")
+            mock_manager.create_task.return_value = "task-test"
+            MockPM.return_value = mock_manager
+
+            with patch("rein.tasks.load_config") as mock_load:
+                mock_load.return_value = {"semaphore": 3, "blocks": []}
+                _handle_flow(args)
+
+            mock_manager.create_task.assert_called_once()
+
+    def test_validation_skipped_when_task_dir_provided(self, agents_dir_with_inputs):
+        """Input validation is skipped when --task-dir is provided (resume scenario)"""
+        task_dir = os.path.join(agents_dir_with_inputs, "existing-task")
+        os.makedirs(task_dir)
+        with open(os.path.join(task_dir, "task.md"), "w") as f:
+            f.write("# Resume this task")
+
+        args = argparse.Namespace(
+            flow="ads-report",
+            agents_dir=agents_dir_with_inputs,
+            question=None,
+            task_dir=task_dir,
+            input=None,
+        )
+
+        with patch("rein.orchestrator.ProcessManager") as MockPM:
+            mock_manager = MagicMock()
+            mock_manager.tasks_root = os.path.join(agents_dir_with_inputs, "tasks")
+            MockPM.return_value = mock_manager
+
+            with patch("rein.tasks.load_config") as mock_load:
+                mock_load.return_value = {"semaphore": 3, "blocks": []}
+                # Should NOT exit — validation skipped for --task-dir
+                _handle_flow(args)
+
+            # create_task should NOT be called (task-dir reuse path)
+            mock_manager.create_task.assert_not_called()
+
+    def test_no_inputs_section_skips_validation(self):
+        """Flow without inputs: section proceeds without validation"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.makedirs(os.path.join(tmpdir, "flows", "simple"))
+            os.makedirs(os.path.join(tmpdir, "tasks"))
+
+            flow_config = {
+                "schema_version": "3.0",
+                "name": "simple",
+                "team": "test-team",
+                "blocks": [{"name": "step1", "specialist": "analyzer", "prompt": "Do stuff"}],
+            }
+            flow_path = os.path.join(tmpdir, "flows", "simple", "simple.yaml")
+            with open(flow_path, "w") as f:
+                yaml.dump(flow_config, f)
+
+            args = argparse.Namespace(
+                flow="simple",
+                agents_dir=tmpdir,
+                question=None,
+                task_dir=None,
+                input=None,
+            )
+
+            with patch("rein.orchestrator.ProcessManager") as MockPM:
+                mock_manager = MagicMock()
+                mock_manager.tasks_root = os.path.join(tmpdir, "tasks")
+                mock_manager.create_task.return_value = "task-simple"
+                MockPM.return_value = mock_manager
+
+                with patch("rein.tasks.load_config") as mock_load:
+                    mock_load.return_value = {"semaphore": 3, "blocks": []}
+                    _handle_flow(args)
+
+                mock_manager.create_task.assert_called_once()
+
+    def test_error_message_includes_field_descriptions(self, agents_dir_with_inputs, capfd):
+        """Error message lists missing fields with descriptions"""
+        args = argparse.Namespace(
+            flow="ads-report",
+            agents_dir=agents_dir_with_inputs,
+            question=None,
+            task_dir=None,
+            input='{}',
+        )
+
+        with pytest.raises(SystemExit):
+            _handle_flow(args)
+
+        captured = capfd.readouterr()
+        assert "campaign_id" in captured.out
+        assert "date_from" in captured.out
+        assert "Google Ads campaign ID" in captured.out
+
+    def test_optional_missing_does_not_block(self, agents_dir_with_inputs):
+        """Missing optional input does NOT cause exit"""
+        args = argparse.Namespace(
+            flow="ads-report",
+            agents_dir=agents_dir_with_inputs,
+            question=None,
+            task_dir=None,
+            input='{"campaign_id": "12345", "date_from": "2026-01-01"}',
+        )
+
+        with patch("rein.orchestrator.ProcessManager") as MockPM:
+            mock_manager = MagicMock()
+            mock_manager.tasks_root = os.path.join(agents_dir_with_inputs, "tasks")
+            mock_manager.create_task.return_value = "task-opt"
+            MockPM.return_value = mock_manager
+
+            with patch("rein.tasks.load_config") as mock_load:
+                mock_load.return_value = {"semaphore": 3, "blocks": []}
+                # Should succeed — 'mode' is optional
+                _handle_flow(args)
+
+            mock_manager.create_task.assert_called_once()
+
+
 class TestHandleTask:
     """Tests for _handle_task()"""
 
@@ -632,100 +832,103 @@ class TestHandleTask:
 
     def test_task_with_valid_yaml(self, temp_agents_dir):
         """Test _handle_task creates ProcessManager with correct parameters"""
-        with tempfile.TemporaryDirectory() as task_dir:
-            task_yaml_data = {
-                "id": "task-20260101-120000",
-                "flow": "deliberation",
-                "output_dir": "./outputs",
-                "input": {"topic": "testing"},
-            }
-            with open(os.path.join(task_dir, "task.yaml"), "w") as f:
-                yaml.dump(task_yaml_data, f)
+        task_dir = os.path.join(temp_agents_dir, "tasks", "task-20260101-120000")
+        os.makedirs(task_dir, exist_ok=True)
+        task_yaml_data = {
+            "id": "task-20260101-120000",
+            "flow": "deliberation",
+            "output_dir": "./outputs",
+            "input": {"topic": "testing"},
+        }
+        with open(os.path.join(task_dir, "task.yaml"), "w") as f:
+            yaml.dump(task_yaml_data, f)
 
-            args = argparse.Namespace(
-                task=task_dir,
+        args = argparse.Namespace(
+            task=task_dir,
+            agents_dir=temp_agents_dir,
+        )
+
+        with patch("rein.orchestrator.ProcessManager") as MockPM:
+            mock_manager = MagicMock()
+            MockPM.return_value = mock_manager
+
+            with patch("rein.tasks.load_config") as mock_load:
+                mock_load.return_value = {"semaphore": 2, "blocks": []}
+
+                result = _handle_task(args)
+
+            MockPM.assert_called_once_with(
+                max_parallel=2,
+                task_id="task-20260101-120000",
+                flow_name="deliberation",
+                task_input={"topic": "testing"},
                 agents_dir=temp_agents_dir,
             )
-
-            with patch("rein.orchestrator.ProcessManager") as MockPM:
-                mock_manager = MagicMock()
-                MockPM.return_value = mock_manager
-
-                with patch("rein.tasks.load_config") as mock_load:
-                    mock_load.return_value = {"semaphore": 2, "blocks": []}
-
-                    result = _handle_task(args)
-
-                MockPM.assert_called_once_with(
-                    max_parallel=2,
-                    task_id=os.path.basename(task_dir),
-                    flow_name="deliberation",
-                    task_input={"topic": "testing"},
-                    agents_dir=temp_agents_dir,
-                )
-                assert mock_manager.task_dir == task_dir
-                assert mock_manager.run_dir == task_dir
-                mock_manager.load_config.assert_called_once()
-                assert result is mock_manager
+            assert mock_manager.task_dir == task_dir
+            assert mock_manager.run_dir == task_dir
+            mock_manager.load_config.assert_called_once()
+            assert result is mock_manager
 
     def test_task_trailing_slash_stripped(self, temp_agents_dir):
         """Test _handle_task strips trailing slash from task path"""
-        with tempfile.TemporaryDirectory() as task_dir:
-            task_yaml_data = {
-                "id": "task-002",
-                "flow": "deliberation",
-            }
-            with open(os.path.join(task_dir, "task.yaml"), "w") as f:
-                yaml.dump(task_yaml_data, f)
+        task_dir = os.path.join(temp_agents_dir, "tasks", "task-002")
+        os.makedirs(task_dir, exist_ok=True)
+        task_yaml_data = {
+            "id": "task-002",
+            "flow": "deliberation",
+        }
+        with open(os.path.join(task_dir, "task.yaml"), "w") as f:
+            yaml.dump(task_yaml_data, f)
 
-            args = argparse.Namespace(
-                task=task_dir + "/",
-                agents_dir=temp_agents_dir,
-            )
+        args = argparse.Namespace(
+            task=task_dir + "/",
+            agents_dir=temp_agents_dir,
+        )
 
-            with patch("rein.orchestrator.ProcessManager") as MockPM:
-                mock_manager = MagicMock()
-                MockPM.return_value = mock_manager
+        with patch("rein.orchestrator.ProcessManager") as MockPM:
+            mock_manager = MagicMock()
+            MockPM.return_value = mock_manager
 
-                with patch("rein.tasks.load_config") as mock_load:
-                    mock_load.return_value = {"semaphore": 3, "blocks": []}
+            with patch("rein.tasks.load_config") as mock_load:
+                mock_load.return_value = {"semaphore": 3, "blocks": []}
 
-                    _handle_task(args)
+                _handle_task(args)
 
-                # task_dir should not end with /
-                assert not mock_manager.task_dir.endswith("/")
+            # task_dir should not end with /
+            assert not mock_manager.task_dir.endswith("/")
 
     def test_task_output_dir_from_config(self, temp_agents_dir):
         """Test _handle_task passes output_dir from task.yaml to config"""
-        with tempfile.TemporaryDirectory() as task_dir:
-            task_yaml_data = {
-                "id": "task-003",
-                "flow": "deliberation",
-                "output_dir": "./custom-output",
-            }
-            with open(os.path.join(task_dir, "task.yaml"), "w") as f:
-                yaml.dump(task_yaml_data, f)
+        task_dir = os.path.join(temp_agents_dir, "tasks", "task-003")
+        os.makedirs(task_dir, exist_ok=True)
+        task_yaml_data = {
+            "id": "task-003",
+            "flow": "deliberation",
+            "output_dir": "./custom-output",
+        }
+        with open(os.path.join(task_dir, "task.yaml"), "w") as f:
+            yaml.dump(task_yaml_data, f)
 
-            args = argparse.Namespace(
-                task=task_dir,
-                agents_dir=temp_agents_dir,
-            )
+        args = argparse.Namespace(
+            task=task_dir,
+            agents_dir=temp_agents_dir,
+        )
 
-            with patch("rein.orchestrator.ProcessManager") as MockPM:
-                mock_manager = MagicMock()
-                MockPM.return_value = mock_manager
+        with patch("rein.orchestrator.ProcessManager") as MockPM:
+            mock_manager = MagicMock()
+            MockPM.return_value = mock_manager
 
-                with patch("rein.tasks.load_config") as mock_load:
-                    loaded_config = {"semaphore": 2, "blocks": []}
-                    mock_load.return_value = loaded_config
+            with patch("rein.tasks.load_config") as mock_load:
+                loaded_config = {"semaphore": 2, "blocks": []}
+                mock_load.return_value = loaded_config
 
-                    _handle_task(args)
+                _handle_task(args)
 
-                # Check that load_config's returned dict was modified
-                call_args = mock_manager.load_config.call_args
-                config_passed = call_args[0][0] if call_args[0] else call_args[1].get("config")
-                assert "output_dir" in config_passed
-                assert config_passed["output_dir"].endswith("custom-output")
+            # Check that load_config's returned dict was modified
+            call_args = mock_manager.load_config.call_args
+            config_passed = call_args[0][0] if call_args[0] else call_args[1].get("config")
+            assert "output_dir" in config_passed
+            assert config_passed["output_dir"].endswith("custom-output")
 
 
 class TestHandleConfig:
