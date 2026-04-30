@@ -1241,8 +1241,7 @@ class TestForwardRoutingStepResume:
             db_proc = manager.state.get_process("deliver")
             if db_proc:
                 assert db_proc.completed_runs == 0, (
-                    f"deliver should have completed_runs=0 before execution, "
-                    f"got {db_proc.completed_runs}"
+                    f"deliver should have completed_runs=0 before execution, got {db_proc.completed_runs}"
                 )
 
             # Step 2: resume -- create new manager from same task dir
@@ -1260,19 +1259,13 @@ class TestForwardRoutingStepResume:
             manager2.state = ReinState(manager2.db_path, resume=True)
             manager2._provider = _mock_provider()
 
-            with patch.object(manager2, "_init_provider"), patch.object(
-                manager2, "_run_preflight_validation"
-            ):
+            with patch.object(manager2, "_init_provider"), patch.object(manager2, "_run_preflight_validation"):
                 from rein.tasks import load_config
 
-                config = load_config(
-                    os.path.join(
-                        manager.agents_dir, "flows", "test-flow", "test-flow.yaml"
-                    )
+                config = load_config(os.path.join(manager.agents_dir, "flows", "test-flow", "test-flow.yaml"))
+                manager2.load_config(
+                    config, workflow_file=os.path.join(manager.agents_dir, "flows", "test-flow", "test-flow.yaml")
                 )
-                manager2.load_config(config, workflow_file=os.path.join(
-                    manager.agents_dir, "flows", "test-flow", "test-flow.yaml"
-                ))
             manager2.load_team = lambda name: "Be concise."
 
             # Key assertion: deliver should NOT be in completed yet
@@ -1281,7 +1274,7 @@ class TestForwardRoutingStepResume:
             )
 
             # Step 2: execute deliver
-            result2 = manager2.run_step(1)
+            manager2.run_step(1)
 
             # deliver should now be completed
             assert "deliver" in manager2.completed, (
@@ -1323,6 +1316,4 @@ class TestForwardRoutingStepResume:
                     break
 
             # draft should have run multiple times via backward routing
-            assert manager.run_counts.get("draft", 0) >= 2, (
-                "backward routing should increment run_counts for reruns"
-            )
+            assert manager.run_counts.get("draft", 0) >= 2, "backward routing should increment run_counts for reruns"
