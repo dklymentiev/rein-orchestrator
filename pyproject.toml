@@ -41,7 +41,7 @@ all = ["anthropic>=0.40.0", "openai>=1.0.0"]
 daemon = ["websockets>=12.0"]
 mcp = ["mcp>=1.0.0"]
 dev = [
-    "pytest>=7.0",
+    "pytest>=9.0.3",
     "pytest-cov>=4.0",
     "mypy>=1.0",
     "anthropic>=0.40.0",
