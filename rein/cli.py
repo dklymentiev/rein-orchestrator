@@ -351,16 +351,24 @@ def _handle_flow(args):
     if inputs_spec and not task_dir_provided:
         missing = []
         for field_name, field_config in inputs_spec.items():
-            is_required = field_config.get("required", True) if isinstance(field_config, dict) else getattr(field_config, "required", True)
+            is_required = (
+                field_config.get("required", True)
+                if isinstance(field_config, dict)
+                else getattr(field_config, "required", True)
+            )
             if is_required and field_name not in task_input:
-                desc = field_config.get("description", "") if isinstance(field_config, dict) else getattr(field_config, "description", "")
+                desc = (
+                    field_config.get("description", "")
+                    if isinstance(field_config, dict)
+                    else getattr(field_config, "description", "")
+                )
                 hint = f" ({desc})" if desc else ""
                 missing.append(f"  - '{field_name}'{hint}")
         if missing:
             workflow_name = config.get("name", "unknown")
             print(f"\n[ERROR] Missing required inputs for workflow '{workflow_name}':")
             print("\n".join(missing))
-            print(f"\nProvide inputs via --input '{{\"field\": \"value\"}}' or task.input.json")
+            print('\nProvide inputs via --input \'{"field": "value"}\' or task.input.json')
             sys.exit(1)
 
     manager = ProcessManager(

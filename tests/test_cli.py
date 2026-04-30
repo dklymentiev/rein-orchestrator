@@ -730,7 +730,7 @@ class TestFlowInputValidationBeforeCreate:
             agents_dir=agents_dir_with_inputs,
             question=None,
             task_dir=None,
-            input='{}',
+            input="{}",
         )
 
         with pytest.raises(SystemExit):

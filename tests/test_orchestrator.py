@@ -1486,7 +1486,9 @@ class TestForwardRoutingRunCount(TestProcessManagerFixture):
     def test_completed_runs_separate_from_run_count(self, manager):
         """completed_runs should only increment on BLOCK_DONE, not on routing."""
         proc = Process(
-            pid=None, start_time=0, command="test",
+            pid=None,
+            start_time=0,
+            command="test",
             name="deliver",
             status="waiting",
             run_count=1,  # routing set this
@@ -1501,7 +1503,9 @@ class TestForwardRoutingRunCount(TestProcessManagerFixture):
         """On resume, run_counts dict should use completed_runs, not run_count."""
         # Simulate: routing set run_count=1 but block never executed
         proc = Process(
-            pid=None, start_time=0, command="test",
+            pid=None,
+            start_time=0,
+            command="test",
             name="deliver",
             status="waiting",
             run_count=1,
@@ -1520,7 +1524,9 @@ class TestForwardRoutingRunCount(TestProcessManagerFixture):
 
     def test_completed_runs_increments_independently(self, manager):
         """completed_runs tracks actual executions."""
-        proc = Process(pid=None, start_time=0, command="test", name="step1", status="done", run_count=2, completed_runs=0)
+        proc = Process(
+            pid=None, start_time=0, command="test", name="step1", status="done", run_count=2, completed_runs=0
+        )
         # Simulate two completions
         proc.completed_runs += 1
         assert proc.completed_runs == 1
@@ -1567,9 +1573,9 @@ class TestCascadeCleanupRaceCondition(TestProcessManagerFixture):
         get deleted while the block is still executing.
         """
         # Simulate DB state: verify is "running", deliver depends on verify
-        from rein.state import ReinState
-
         import tempfile
+
+        from rein.state import ReinState
 
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "rein.db")
@@ -1577,8 +1583,11 @@ class TestCascadeCleanupRaceCondition(TestProcessManagerFixture):
 
             # Save verify as running
             verify_proc = Process(
-                pid=None, start_time=0, command="test",
-                name="verify", status="running",
+                pid=None,
+                start_time=0,
+                command="test",
+                name="verify",
+                status="running",
             )
             state.save_process(verify_proc)
 
@@ -1588,11 +1597,9 @@ class TestCascadeCleanupRaceCondition(TestProcessManagerFixture):
             statuses = {p.name: p.status for p in procs}
 
             # BUG: running blocks are treated as failed for cascade
-            failed_blocks = {name for name, status in statuses.items()
-                            if status in ("failed", "running")}
+            failed_blocks = {name for name, status in statuses.items() if status in ("failed", "running")}
             assert "verify" in failed_blocks, (
-                "Running block included in failed_blocks set -- "
-                "this causes cascade cleanup to delete its outputs"
+                "Running block included in failed_blocks set -- this causes cascade cleanup to delete its outputs"
             )
 
     def test_running_block_outputs_should_not_be_deleted(self, manager):
@@ -1631,10 +1638,6 @@ class TestCascadeCleanupRaceCondition(TestProcessManagerFixture):
                     manager._clean_block_outputs(block_name)
 
             # Running block outputs should survive
-            assert os.path.exists(running_outputs), (
-                "Running block outputs should NOT be deleted during cascade"
-            )
+            assert os.path.exists(running_outputs), "Running block outputs should NOT be deleted during cascade"
             # Failed block outputs should be cleaned
-            assert not os.path.exists(failed_outputs), (
-                "Failed block outputs should be cleaned during cascade"
-            )
+            assert not os.path.exists(failed_outputs), "Failed block outputs should be cleaned during cascade"
