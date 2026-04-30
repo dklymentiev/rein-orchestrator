@@ -43,7 +43,7 @@ mcp = ["mcp>=1.0.0"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "mypy>=1.0",
+    "mypy>=1.20.2",
     "anthropic>=0.40.0",
     "openai>=1.0.0",
     "websockets>=12.0",
