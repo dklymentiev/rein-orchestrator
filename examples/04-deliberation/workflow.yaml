@@ -18,7 +18,7 @@ blocks:
     specialist: analyst-strategic
     prompt: |
       QUESTION: Should a small dev team (2-3 people) build their own AI agent
-      framework or use an existing one like LangChain/CrewAI?
+      framework or use an existing open-source one?
 
       Analyze from a STRATEGIC perspective. Consider long-term implications,
       competitive advantage, and opportunity cost.
@@ -38,7 +38,7 @@ blocks:
     specialist: analyst-technical
     prompt: |
       QUESTION: Should a small dev team (2-3 people) build their own AI agent
-      framework or use an existing one like LangChain/CrewAI?
+      framework or use an existing open-source one?
 
       Analyze from a TECHNICAL perspective. Consider complexity, maintenance,
       and architecture implications.
@@ -58,7 +58,7 @@ blocks:
     specialist: analyst-practical
     prompt: |
       QUESTION: Should a small dev team (2-3 people) build their own AI agent
-      framework or use an existing one like LangChain/CrewAI?
+      framework or use an existing open-source one?
 
       Analyze from a PRACTICAL perspective. Consider timeline, resources,
       and team capabilities.

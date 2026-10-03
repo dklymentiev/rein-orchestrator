@@ -7,7 +7,7 @@ Each block execution creates a log at:
 Where NNN is the zero-padded run_count (supports revision loops).
 
 All lines are passed through scrub_secrets() so leaked run logs never
-expose provider API keys or bearer tokens (HIGH-003).
+expose provider API keys or bearer tokens.
 """
 
 import os
@@ -32,8 +32,7 @@ class RunLogger:
     def write(self, category: str, message: str):
         """Write a structured log line: TIMESTAMP | CATEGORY | message
 
-        Message is scrubbed for API keys / bearer tokens before write
-        (HIGH-003).
+        Message is scrubbed for API keys / bearer tokens before write.
         """
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         safe_message = scrub_secrets(str(message))

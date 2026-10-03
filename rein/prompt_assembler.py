@@ -42,7 +42,7 @@ def _contained(candidate: str, root: str) -> bool:
     """Return True if `candidate` resolves inside `root` after realpath.
 
     Used to enforce that file placeholders cannot traverse out of their
-    intended directory via '..' segments or symlink escapes (HIGH-001).
+    intended directory via '..' segments or symlink escapes.
     """
     try:
         real_root = os.path.realpath(root)
@@ -66,7 +66,7 @@ def resolve_file_placeholder(
     4. Workflow directory: workflow_dir/filename (static data)
 
     All resolved paths are containment-checked against their respective
-    roots (task_dir, workflow_dir) via realpath (HIGH-001). Placeholders
+    roots (task_dir, workflow_dir) via realpath. Placeholders
     that resolve outside those roots return None.
     """
     # 1. Block output by name (filename = "block_name.json")

@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, Optional
 import yaml
 
 # Flow names must be safe filesystem components: alphanumerics, dash,
-# underscore, dot. No slashes, no leading dots (HIGH-004). Applied to
+# underscore, dot. No slashes, no leading dots. Applied to
 # values sourced from task.yaml or external callers before any path join.
 SAFE_FLOW_NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
@@ -198,7 +198,7 @@ class ConfigLoader:
         Args:
             flow_name: Name of the flow. Must match SAFE_FLOW_NAME regex
                 -- alphanumerics, dots, dashes, underscores only, no
-                leading dot. Rejects path traversal (HIGH-004).
+                leading dot. Rejects path traversal.
 
         Returns:
             Full path to flow YAML file

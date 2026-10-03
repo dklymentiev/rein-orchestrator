@@ -299,7 +299,7 @@ def _handle_flow(args):
     from rein.tasks import load_config
 
     flow_name = args.flow
-    # HIGH-005: validate flow_name as a safe filesystem component before
+    # Validate flow_name as a safe filesystem component before
     # joining into agents_dir. Matches the SAFE_TASK_NAME pattern enforced
     # by the daemon for task IDs.
     if not flow_name or not SAFE_FLOW_NAME.match(flow_name):
@@ -413,7 +413,7 @@ def _handle_task(args):
     from rein.orchestrator import ProcessManager
     from rein.tasks import load_config
 
-    # HIGH-005: containment-check task_dir against agents_dir/tasks. Same
+    # Containment-check task_dir against agents_dir/tasks. Same
     # pattern as _handle_status. Prevents --task ../../../etc from being
     # accepted as a valid task location.
     agents_dir = args.agents_dir
@@ -437,7 +437,7 @@ def _handle_task(args):
         print("[ERROR] Task must specify 'flow' field")
         sys.exit(1)
 
-    # HIGH-004: validate flow_name from task.yaml before joining into
+    # Validate flow_name from task.yaml before joining into
     # agents_dir. A hostile task.yaml could otherwise specify
     # flow: "../../../etc/passwd" and load arbitrary YAML from the host.
     if not SAFE_FLOW_NAME.match(flow_name):

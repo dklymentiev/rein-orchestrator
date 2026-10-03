@@ -175,7 +175,7 @@ class ProcessManager:
             self._write_rein_log(f"REIN STARTED | run_id={timestamp} | db={self.db_path} | max_parallel={max_parallel}")
 
     def _write_rein_log(self, message):
-        """Write to rein's own log file with shared credential scrubbing (HIGH-003)."""
+        """Write to rein's own log file with shared credential scrubbing."""
         try:
             clean_message = scrub_secrets(str(message))
             with open(self.rein_log_file, "a") as f:
@@ -859,7 +859,7 @@ class ProcessManager:
 
                 # Save result from Claude (only if not custom - custom script saves its own result).
                 # Scrub credentials from result before persistence so a leaked
-                # task directory never exposes provider API keys (HIGH-003).
+                # task directory never exposes provider API keys.
                 block_usage = self._block_usage.get(name)
                 save_data = {
                     "stage": name,

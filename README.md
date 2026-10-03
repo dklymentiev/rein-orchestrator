@@ -148,18 +148,6 @@ blocks:
 
 If you can edit a YAML file, you can orchestrate a team of AI agents.
 
-## Comparison
-
-| | Rein | CrewAI | LangGraph | AutoGen |
-|---|---|---|---|---|
-| Config format | YAML + Markdown | Python classes | Python code | Python code |
-| Code required | No | Yes | Yes | Yes |
-| LLM providers | 4+ (Claude, GPT, Ollama, OpenRouter) | Limited | Limited | Limited |
-| Crash recovery | SQLite state | No | Checkpointing | No |
-| MCP server | Built-in | No | No | No |
-| Local/free models | Ollama | Limited | No | No |
-| Learning curve | Edit YAML files | Learn framework API | Learn graph DSL | Learn agent API |
-
 ## Examples
 
 Five progressive examples in the `examples/` directory:

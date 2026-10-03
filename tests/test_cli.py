@@ -584,7 +584,7 @@ class TestFlowInputValidationBeforeCreate:
                 "name": "ads-report",
                 "team": "test-team",
                 "inputs": {
-                    "campaign_id": {"required": True, "description": "Google Ads campaign ID"},
+                    "campaign_id": {"required": True, "description": "Campaign ID"},
                     "date_from": {"required": True, "description": "Start date YYYY-MM-DD"},
                     "mode": {"required": False, "description": "Report mode", "default": "summary"},
                 },
@@ -738,7 +738,7 @@ class TestFlowInputValidationBeforeCreate:
         captured = capfd.readouterr()
         assert "campaign_id" in captured.out
         assert "date_from" in captured.out
-        assert "Google Ads campaign ID" in captured.out
+        assert "Campaign ID" in captured.out
 
     def test_optional_missing_does_not_block(self, agents_dir_with_inputs):
         """Missing optional input does NOT cause exit"""

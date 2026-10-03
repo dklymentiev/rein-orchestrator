@@ -33,8 +33,7 @@ def _run_handler_script(
         # failed relative lookup, AND Python's os.path.join silently does
         # the same thing when its second argument is absolute. An absolute
         # script_path_rel is therefore rejected explicitly so a workflow
-        # cannot designate /bin/ls or /tmp/attacker.sh as an error handler
-        # (SEC-06).
+        # cannot designate /bin/ls or /tmp/attacker.sh as an error handler.
         if os.path.isabs(script_path_rel):
             log_fn(
                 f"ERROR HANDLER REJECTED | {block_name} | {handler_kind} | "
