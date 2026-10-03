@@ -1,8 +1,7 @@
 """
 Rein CLI - Command-line interface and argument parsing.
 
-Installed as the `rein` command via pip:
-    pip install rein-ai
+Installed as the `rein` command by `pip install .` in a clone of the repository:
     rein workflow.yaml
     rein --flow deliberation --question task.txt
     rein --daemon

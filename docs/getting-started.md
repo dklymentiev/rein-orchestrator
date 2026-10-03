@@ -18,18 +18,27 @@ YAML workflows. No Python code required.
 
 Pick the provider you want to use:
 
+Rein is installed from its GitHub repository (it is not on PyPI):
+
+```bash
+git clone https://github.com/dklymentiev/rein-orchestrator.git
+cd rein-orchestrator
+```
+
+Then pick the provider you want to use:
+
 ```bash
 # Anthropic Claude (recommended)
-pip install rein-ai[anthropic]
+pip install ".[anthropic]"
 
 # OpenAI GPT
-pip install rein-ai[openai]
+pip install ".[openai]"
 
 # All providers
-pip install rein-ai[all]
+pip install ".[all]"
 
 # Ollama -- no extra SDK needed, just core
-pip install rein-ai
+pip install .
 ```
 
 Verify it installed:
@@ -299,11 +308,12 @@ Use these in block prompts to pass data between blocks:
 
 **`rein: command not found`**
 Make sure the pip install directory is on your PATH. Try `python -m rein --help`
-as a fallback, or re-install with `pip install --user rein-ai[anthropic]`.
+as a fallback, or re-install from the repository folder with
+`pip install --user ".[anthropic]"`.
 
 **`Python 3.10+ required` / syntax errors on import**
 Rein requires Python 3.10 or later. Check with `python3 --version`. If you have
-multiple Python versions, use `python3.10 -m pip install rein-ai[anthropic]`.
+multiple Python versions, use `python3.10 -m pip install ".[anthropic]"`.
 
 **`API key not found` / authentication errors**
 Verify your key is exported in the current shell:

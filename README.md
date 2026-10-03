@@ -1,7 +1,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://github.com/rein-orchestrator/rein/actions/workflows/test.yml/badge.svg)](https://github.com/rein-orchestrator/rein/actions/workflows/test.yml)
-[![PyPI](https://img.shields.io/pypi/v/rein-ai.svg)](https://pypi.org/project/rein-ai/)
+[![Tests](https://github.com/dklymentiev/rein-orchestrator/actions/workflows/test.yml/badge.svg)](https://github.com/dklymentiev/rein-orchestrator/actions/workflows/test.yml)
 
 # Rein
 
@@ -73,7 +72,9 @@ The point isn't "the AI figures it out." The point is a clear process, encoded i
 
 ```bash
 # Install
-pip install rein-ai[anthropic]
+git clone https://github.com/dklymentiev/rein-orchestrator.git
+cd rein-orchestrator
+pip install ".[anthropic]"
 
 # Set your API key
 export ANTHROPIC_API_KEY=sk-...
@@ -169,30 +170,33 @@ rein --agents-dir ./agents workflow.yaml --no-ui
 
 ## Installation
 
+Rein is installed from this repository; it is not published on PyPI.
+
 ```bash
-# Core (picks provider from environment)
-pip install rein-ai
+git clone https://github.com/dklymentiev/rein-orchestrator.git
+cd rein-orchestrator
 
-# With specific provider SDK
-pip install rein-ai[anthropic]    # Claude (anthropic SDK)
-pip install rein-ai[openai]       # GPT-4o (openai SDK)
-pip install rein-ai[all]          # Both SDK-based providers (anthropic + openai)
+# Core (picks provider from environment). Ollama, OpenRouter and gateway
+# providers use the `requests` library of the base install -- nothing more needed.
+pip install .
 
-# Ollama and OpenRouter providers use the `requests` library that is
-# already part of the base install -- no extras needed.
-
-# For daemon mode (WebSocket support)
-pip install rein-ai[daemon]
-
-# For MCP server (Claude Desktop, Cursor, Claude Code)
-pip install rein-ai[mcp]
+# Optional extras -- add the ones you use
+pip install ".[anthropic]"   # Claude (anthropic SDK)
+pip install ".[openai]"      # GPT (openai SDK)
+pip install ".[all]"         # Both SDK-based providers (anthropic + openai)
+pip install ".[daemon]"      # Daemon mode (WebSocket support)
+pip install ".[mcp]"         # MCP server (Claude Desktop, Cursor, Claude Code)
 ```
 
-Or from source:
+Without cloning, pip can install straight from GitHub; extras go in brackets:
 
 ```bash
-git clone https://github.com/rein-orchestrator/rein.git
-cd rein
+pip install "rein-orchestrator[anthropic] @ git+https://github.com/dklymentiev/rein-orchestrator"
+```
+
+For development:
+
+```bash
 pip install -e ".[dev]"
 ```
 
@@ -455,7 +459,7 @@ prompt: |
 Rein includes an MCP (Model Context Protocol) server, so you can run workflows directly from Claude Desktop, Cursor, Claude Code, or any MCP-compatible client.
 
 ```bash
-pip install rein-ai[mcp]
+pip install ".[mcp]"
 ```
 
 ### Claude Desktop / Cursor

@@ -13,7 +13,7 @@ If you discover a security vulnerability in Rein, please report it responsibly. 
 
 **How to report:**
 
-- GitHub Security Advisories: https://github.com/rein-orchestrator/rein/security/advisories/new
+- GitHub Security Advisories: https://github.com/dklymentiev/rein-orchestrator/security/advisories/new
 
 Include as much detail as possible:
 
