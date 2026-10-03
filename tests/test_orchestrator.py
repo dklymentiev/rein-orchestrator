@@ -681,7 +681,7 @@ class TestRunStep(TestProcessManagerFixture):
 
 
 # ============================================================
-# ROUTING & CASCADE TESTS (#1171, #1172, #1173)
+# ROUTING & CASCADE TESTS
 # ============================================================
 
 
@@ -1068,7 +1068,7 @@ class TestRePending(TestProcessManagerFixture):
 
 
 # ============================================================
-# HELPER METHOD TESTS (#1174 -- block timeout and model)
+# HELPER METHOD TESTS (block timeout and model)
 # ============================================================
 
 
@@ -1090,7 +1090,7 @@ class TestGetRunningNames(TestProcessManagerFixture):
 
 
 class TestBlockLevelTimeout(TestProcessManagerFixture):
-    """Tests for block-level timeout override (#1183 fix)"""
+    """Tests for block-level timeout override"""
 
     def test_block_timeout_read_from_config(self, manager):
         """Block config with timeout field should be extractable"""
@@ -1104,7 +1104,7 @@ class TestBlockLevelTimeout(TestProcessManagerFixture):
 
 
 class TestBlockLevelModel(TestProcessManagerFixture):
-    """Tests for block-level model override (#1184 fix)"""
+    """Tests for block-level model override"""
 
     def test_block_model_takes_priority_over_agent(self, manager):
         """block.model should override agent_cfg.model"""
@@ -1154,7 +1154,7 @@ class TestBlockLevelModel(TestProcessManagerFixture):
 
 
 # ============================================================
-# TASK #1180: process control (pause/resume/cancel single)
+# Process control (pause/resume/cancel single)
 # ============================================================
 
 
@@ -1281,12 +1281,12 @@ class TestWorkflowPauseResume(TestProcessManagerFixture):
 
 
 # ============================================================
-# TASK #1189: Coverage improvements -- pure logic methods
+# Coverage improvements -- pure logic methods
 # ============================================================
 
 
 class TestIsBackwardRouting(TestProcessManagerFixture):
-    """Tests for _is_backward_routing helper (#1172, our fix)"""
+    """Tests for _is_backward_routing helper"""
 
     def _setup(self, manager, blocks):
         manager.all_blocks = blocks

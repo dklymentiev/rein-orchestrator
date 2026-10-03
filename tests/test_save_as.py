@@ -1,4 +1,4 @@
-"""Tests for block-level save_as field (fix #1185).
+"""Tests for block-level save_as field.
 
 Covers two pieces:
 1. resolve_file_placeholder falls back to scanning block output dirs

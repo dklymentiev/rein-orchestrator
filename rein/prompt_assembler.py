@@ -76,7 +76,7 @@ def resolve_file_placeholder(
         if os.path.exists(block_output) and _contained(block_output, task_dir):
             return block_output
 
-    # 2. save_as alias: search across all block output dirs (fix #1185)
+    # 2. save_as alias: search across all block output dirs
     if task_dir and os.path.isdir(task_dir):
         for entry in os.listdir(task_dir):
             candidate = os.path.join(task_dir, entry, "outputs", filename)

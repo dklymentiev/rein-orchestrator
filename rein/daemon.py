@@ -349,7 +349,7 @@ async def run_daemon_async(agents_dir: str, interval: int, max_workflows: int, w
 
 
 class PidfileLock:
-    """Exclusive pidfile lock for the Rein daemon (#1164).
+    """Exclusive pidfile lock for the Rein daemon.
 
     Prevents accidental double-daemon by holding an fcntl advisory lock on
     <agents_dir>/state/rein-daemon.pid. On acquire, writes the current PID.
@@ -436,7 +436,7 @@ def run_daemon(agents_dir: str, interval: int = 2, max_workflows: int = 3, ws_po
     Run Rein as daemon with WebSocket server.
 
     Spawns separate subprocess for each workflow (up to max_workflows parallel).
-    Protected by an exclusive pidfile lock to prevent duplicate instances (#1164).
+    Protected by an exclusive pidfile lock to prevent duplicate instances.
     """
     # Acquire exclusive lock -- fail fast if another daemon is already running
     try:

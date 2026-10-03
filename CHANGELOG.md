@@ -12,21 +12,21 @@ Focus: make the orchestrator core robust enough for pre-release handoff.
 
 ### Fixed
 
-- **#1166** Blocks no longer stuck in `waiting` after routing cascade -- pending re-evaluation now correctly re-queues cascade-invalidated blocks.
-- **#1167** Busy-wait 99% CPU eliminated -- main loop now sleeps when no blocks are ready to spawn.
-- **#1168** Daemon process now exits cleanly after all blocks complete (was hanging on orphaned threads).
-- **#1169** Cascade invalidation no longer re-runs unrelated blocks -- BFS walk respects dependency boundaries.
-- **#1170** JSON Schema and Pydantic validator now agree on allowed fields.
-- **#1181** Fixed RE-PENDING duplicate execution during routing loops.
-- **#1183** Per-block `timeout:` now actually applied to execution.
-- **#1184** Per-block `model:` override now correctly reaches the provider call.
-- **#1185** Block-level `save_as:` field now writes an alias of `result.json` under the custom filename; `{{ custom_name.json }}` placeholders resolve across all block output dirs.
-- **#1190** Routing no longer races with `depends_on` scheduling -- when a gate routes to one branch, all non-chosen branches (and their exclusive descendants) are marked `skipped` so the main loop does not spawn them. Reconverging paths are preserved.
+- Blocks no longer stuck in `waiting` after routing cascade -- pending re-evaluation now correctly re-queues cascade-invalidated blocks.
+- Busy-wait 99% CPU eliminated -- main loop now sleeps when no blocks are ready to spawn.
+- Daemon process now exits cleanly after all blocks complete (was hanging on orphaned threads).
+- Cascade invalidation no longer re-runs unrelated blocks -- BFS walk respects dependency boundaries.
+- JSON Schema and Pydantic validator now agree on allowed fields.
+- Fixed RE-PENDING duplicate execution during routing loops.
+- Per-block `timeout:` now actually applied to execution.
+- Per-block `model:` override now correctly reaches the provider call.
+- Block-level `save_as:` field now writes an alias of `result.json` under the custom filename; `{{ custom_name.json }}` placeholders resolve across all block output dirs.
+- Routing no longer races with `depends_on` scheduling -- when a gate routes to one branch, all non-chosen branches (and their exclusive descendants) are marked `skipped` so the main loop does not spawn them. Reconverging paths are preserved.
 
 ### Added
 
-- **#1164** Daemon pidfile lock (`state/rein-daemon.pid`) with exclusive `fcntl.flock`. A second daemon instance exits immediately with a clear error instead of causing duplicate task execution. Lock is released on SIGTERM/SIGINT/normal exit.
-- **#1186** Orchestrator decomposition: the monolithic `orchestrator.py` (2501 lines) was split into 9 focused modules:
+- Daemon pidfile lock (`state/rein-daemon.pid`) with exclusive `fcntl.flock`. A second daemon instance exits immediately with a clear error instead of causing duplicate task execution. Lock is released on SIGTERM/SIGINT/normal exit.
+- Orchestrator decomposition: the monolithic `orchestrator.py` (2501 lines) was split into 9 focused modules:
   - `state_machine` -- dependency graph, cascade, routing direction, orphan/stuck detection
   - `block_resolver` -- flow control predicates, condition evaluation, `next:` resolution
   - `process_control` -- pause / resume / cancel semantics
@@ -38,7 +38,7 @@ Focus: make the orchestrator core robust enough for pre-release handoff.
   - Internal `_apply_routing`, `_apply_next_state_machine`, `_reset_block_for_rerun`, `_invalidate_cascade` helpers
   
   `orchestrator.py` is now **1832 lines (-27%)**, with the remaining content tightly focused on threading and subprocess lifecycle.
-- **#1187 / #1188 / #1189** Test suite expanded from 129 to ~390 tests (characterization, in-process integration, stable subprocess integration, and new unit tests). Coverage on `orchestrator.py` rose from ~14% to ~51%.
+- Test suite expanded from 129 to ~390 tests (characterization, in-process integration, stable subprocess integration, and new unit tests). Coverage on `orchestrator.py` rose from ~14% to ~51%.
 
 ### Changed
 
@@ -49,7 +49,7 @@ Focus: make the orchestrator core robust enough for pre-release handoff.
 ### Notes
 
 - No breaking changes. Existing 3.3.0 workflows run unmodified.
-- Known limitations (tracked for a future release): per-block budget limits (#1156), WebSocket full-state push (#1159), async wait blocks and sub-flow triggers (#1163).
+- Known limitations (tracked for a future release): per-block budget limits, WebSocket full-state push, async wait blocks and sub-flow triggers.
 
 ## [3.3.0] - 2026-04-03
 

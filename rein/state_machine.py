@@ -57,7 +57,7 @@ def compute_routing_skip_set(
     When a gate uses `routing:` with several branches, only the chosen branch
     should execute. All other named targets (and their exclusive descendants)
     must be marked skipped so the main loop does not spawn them via depends_on
-    scheduling (fix #1190).
+    scheduling.
 
     A descendant of a non-chosen branch is kept alive if it is also a descendant
     of the chosen branch (i.e., paths reconverge).

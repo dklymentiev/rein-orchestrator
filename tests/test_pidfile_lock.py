@@ -1,4 +1,4 @@
-"""Tests for daemon PidfileLock (#1164)."""
+"""Tests for daemon PidfileLock."""
 
 import os
 import tempfile

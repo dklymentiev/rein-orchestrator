@@ -569,8 +569,7 @@ class TestFlowInputValidationBeforeCreate:
     """Tests that _handle_flow validates required inputs BEFORE calling create_task().
 
     This prevents orphan task directories when agents call rein --flow
-    without providing required inputs (e.g. marketer calling google-ads-report
-    without campaign_id). See task #1458.
+    without providing required inputs.
     """
 
     @pytest.fixture
