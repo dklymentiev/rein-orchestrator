@@ -1,70 +1,59 @@
 # Releasing Rein
 
-Step-by-step process for publishing a new version.
+Rein is released from this repository as a git tag plus a GitHub release.
+It is not published on PyPI; users install it from the repository.
 
-## Pre-release Checklist
+## Before the release
 
-1. Ensure `main` is green -- all CI checks passing
-2. Review open PRs and decide what makes the cut
-3. Run the full test suite locally:
+1. `main` is green in CI.
+2. Decide which open pull requests make the cut.
+3. Run the checks locally, the same way CI does:
    ```bash
-   make lint && make test && make typecheck
+   make lint && make test
    ```
+4. Check what will actually ship, not the working directory:
+   ```bash
+   git archive HEAD | tar -t
+   ```
+   The exported tree must not contain credentials, private host names,
+   personal data or references to private trackers.
 
-## Bump Version
+## Bump the version
 
-1. Update `rein/__init__.py`:
+1. Update `rein/__init__.py` (the package version is read from it):
    ```python
    __version__ = "X.Y.Z"
    ```
-2. Update `VERSION` file:
-   ```
-   X.Y.Z
-   ```
-3. Update `CHANGELOG.md` -- move Unreleased items under the new version heading with today's date
+2. Update `CHANGELOG.md`: move the Unreleased items under the new version
+   heading with today's date.
 
-## Create Release Commit
+## Commit, tag and push
 
 ```bash
-git add rein/__init__.py VERSION CHANGELOG.md
+git add rein/__init__.py CHANGELOG.md
 git commit -m "Release vX.Y.Z"
-git push origin main
-```
-
-## Tag and Push
-
-```bash
 git tag vX.Y.Z
-git push origin vX.Y.Z
+git push origin main vX.Y.Z
 ```
 
-This triggers the `release.yml` workflow which builds and publishes to PyPI via trusted publishing.
+The tag triggers `.github/workflows/release.yml`, which builds the sdist and
+wheel and runs the tests on Python 3.10 and 3.12. The built files are kept as
+artifacts of that workflow run.
 
-## Post-release
+## GitHub release
 
-1. Verify the package appears on [PyPI](https://pypi.org/project/rein-ai/)
-2. Create a GitHub Release from the tag with highlights from CHANGELOG
-3. Test install from PyPI:
+1. Create a GitHub release from the tag, with the highlights from `CHANGELOG.md`.
+2. Attach any release assets (demo media, built files) to it.
+3. Verify a clean install from the tag:
    ```bash
-   pip install rein-ai==X.Y.Z
+   pip install "rein-orchestrator @ git+https://github.com/dklymentiev/rein-orchestrator@vX.Y.Z"
    rein --version
    ```
 
-## Hotfix Process
+## Hotfix process
 
-For urgent fixes against a released version:
+For an urgent fix against a released version:
 
 1. Branch from the release tag: `git checkout -b hotfix/X.Y.Z+1 vX.Y.Z`
-2. Apply the fix and bump patch version
-3. Merge to `main`, tag, and release as above
-
-## Yanking a Release
-
-If a release has a critical defect:
-
-```bash
-pip install twine
-twine yank rein-ai X.Y.Z --reason "brief reason"
-```
-
-Then publish a fixed version immediately.
+2. Apply the fix and bump the patch version.
+3. Merge to `main`, tag, and release as above.

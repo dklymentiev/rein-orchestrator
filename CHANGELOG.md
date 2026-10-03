@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.3] - 2026-10-03
+
+### Fixed
+
+- A branch that routing did not choose stays skipped when a run is resumed one step at a time (`rein --step`). Before, the skipped mark was lost on resume and the non-chosen branch ran on the next step, so a "cancel" or "reject" path still ran the block it was meant to stop.
+- When a block result matches several routing keys, routing takes the first key in YAML declaration order. Before, the choice depended on hash order and could differ between runs.
+- Forward routing no longer blocks step-mode resume.
+- Output cleanup during cascade invalidation is disabled: it could delete the outputs of blocks that were still running.
+- Required workflow inputs are checked before the task directory is created, so a missing input no longer leaves an empty task directory behind.
+- The gateway provider module is included in the repository; a clean install no longer fails importing it.
+- The Flow Board derives its WebSocket address from the page (`wss`/`ws`, same host, port 8765) instead of a fixed host name. `window.REIN_WS` still overrides it.
+- `rein --version` reports the release it belongs to (3.3.2 reported 3.3.1).
+
+### Changed
+
+- The package is named `rein-orchestrator` and is installed from this repository; Rein is not published on PyPI. The `rein` command and `import rein` are unchanged. See Installation in the README.
+- Repository, issue and security-advisory links point to this repository.
+- The release workflow builds and tests on tags and no longer tries to upload to PyPI.
+- The gateway provider documents the session API it calls.
+- The README no longer carries a comparison table with other frameworks.
+
+### Removed
+
+- `BRAIN_API_URL`, a legacy alias of `AI_GATEWAY_URL`. Set `AI_GATEWAY_URL` instead.
+- The `mesh_workspace` field of `agent.yaml`. It was parsed and never used; the key is now ignored.
+
+## [3.3.2] - 2026-04-08
+
+Tagged and released on GitHub without a changelog entry; recorded here afterwards from the commit history.
+
+### Added
+
+- Flow Board v6: state-diff animation, grid layout for very large flows, minimal embed mode.
+- Any `VERDICT:` value is emitted as a lowercase routing signal, so a workflow can route on its own verdicts (`VERDICT: bounced` routes on `bounced`). The legacy aliases PASS/APPROVED and REVISE still map as before.
+
+### Changed
+
+- Workflow depth calculation is memoized (linear instead of exponential in the number of blocks).
+- Schema: maximum number of blocks raised from 100 to 300.
+
+### Security
+
+- The MCP server ignores a caller-supplied `agents_dir` and uses the configured one, closing a path traversal through `list_specialists` and `list_teams`.
+- Path containment for file placeholders, flow names, task directories and agent references.
+- Provider credentials are scrubbed from run logs and from `result.json`.
+- Error handler scripts must be relative to the workflow directory; the fallback to absolute paths is removed.
+- The trust model (workflow YAML is trusted input) is documented in `SECURITY.md`.
+
 ## [3.3.1] - 2026-04-04
 
 Stability and hardening release. No API changes; 3.3.0 flows run unchanged.
