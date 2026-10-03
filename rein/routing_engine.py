@@ -68,6 +68,14 @@ def match_routing_rule(
 ) -> Tuple[Optional[str], Optional[str]]:
     """Match signals against routing rules, with _default fallback.
 
+    Routing keys are checked in YAML declaration order (Python dicts preserve
+    insertion order since 3.7). The first declared key that appears in the
+    signal set wins; _default is always last.
+
+    This guarantees deterministic routing when a block emits two signals that
+    are both routing keys. The flow author controls priority by placing the
+    higher-priority key first in the routing dict.
+
     Args:
         routing: Block's routing dict, e.g. {'revise': 'fix', '_default': 'next'}
         signals: Set of detected signals from result
@@ -75,20 +83,14 @@ def match_routing_rule(
     Returns:
         Tuple of (next_block_name, matched_signal). Either may be None.
     """
-    next_block_name: Optional[str] = None
-    matched_signal: Optional[str] = None
+    for key, target in routing.items():
+        if key == "_default":
+            continue
+        if key in signals:
+            return target, key
 
-    for signal in signals:
-        if signal in routing:
-            next_block_name = routing[signal]
-            matched_signal = signal
-            break
-
-    if not next_block_name:
-        next_block_name = routing.get("_default")
-        matched_signal = "_default"
-
-    return next_block_name, matched_signal
+    # No explicit key matched; fall back to _default.
+    return routing.get("_default"), "_default"
 
 
 def parse_result_data(save_file: str) -> dict:
