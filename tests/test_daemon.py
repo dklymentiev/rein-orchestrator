@@ -809,7 +809,7 @@ class TestGetRunningTasks:
 
 
 # ============================================================
-# TASK #1179: WebSocket broadcasting and event parsing
+# WebSocket broadcasting and event parsing
 # ============================================================
 
 

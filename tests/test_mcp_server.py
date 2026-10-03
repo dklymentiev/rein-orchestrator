@@ -136,7 +136,7 @@ class TestListSpecialists:
         assert "error" in result
 
     def test_caller_agents_dir_is_ignored(self, agents_dir, tmp_path):
-        """SEC-04: caller-supplied agents_dir must NOT break out of REIN_AGENTS_DIR.
+        """Caller-supplied agents_dir must NOT break out of REIN_AGENTS_DIR.
 
         The fixture pins REIN_AGENTS_DIR to a dir with 2 specialists. A malicious
         caller passing agents_dir=tmp_path (which has no specialists) must still
@@ -173,7 +173,7 @@ class TestListTeams:
         assert "error" in result
 
     def test_caller_agents_dir_is_ignored(self, agents_dir, tmp_path):
-        """SEC-04: caller-supplied agents_dir must NOT break out of REIN_AGENTS_DIR."""
+        """Caller-supplied agents_dir must NOT break out of REIN_AGENTS_DIR."""
         evil_dir = tmp_path / "evil"
         evil_dir.mkdir()
         (evil_dir / "teams").mkdir()

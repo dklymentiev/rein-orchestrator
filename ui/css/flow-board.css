@@ -1,4 +1,4 @@
-/* Rein Flow Board -- dark neutral theme (Mesh-compatible)
+/* Rein Flow Board -- dark neutral theme
  * Version: 2.0.0
  */
 
@@ -31,7 +31,7 @@ html, body {
   overflow: hidden;
 }
 
-/* ---- Top bar (Mesh style) ---- */
+/* ---- Top bar ---- */
 .topbar {
   display: flex;
   align-items: center;
@@ -230,7 +230,7 @@ canvas {
 .zoom-btn:active { background: var(--accent); color: var(--bg-body); }
 .zoom-fit { font-size: 11px; }
 
-/* ---- Scrollbar (Mesh style) ---- */
+/* ---- Scrollbar ---- */
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg-body); }
 ::-webkit-scrollbar-thumb { background: var(--bg-accent); border-radius: 4px; }

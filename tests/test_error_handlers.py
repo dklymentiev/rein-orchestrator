@@ -1,4 +1,4 @@
-"""Tests for on_error and logic.error handlers (T#1146)."""
+"""Tests for on_error and logic.error handlers."""
 
 import json
 import os

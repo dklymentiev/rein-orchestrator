@@ -1,4 +1,4 @@
-"""Characterization tests for ProcessManager (#1187).
+"""Characterization tests for ProcessManager.
 
 These tests FREEZE current behavior. They don't judge correctness -- they
 ensure refactoring doesn't silently change what the code does.
@@ -174,7 +174,7 @@ def _compare_or_save(name: str, fingerprint: dict):
 
 @pytest.fixture
 def mock_provider_env(monkeypatch):
-    monkeypatch.setenv("AI_GATEWAY_URL", "http://mock-gateway.invalid:19850")
+    monkeypatch.setenv("AI_GATEWAY_URL", "http://mock-gateway.invalid:8080")
     yield
 
 
@@ -404,7 +404,7 @@ class TestCharacterizationRouting:
 
     def test_gate_retry_cycle_reaches_completion(self, mock_provider_env, isolated_tasks_dir, tmp_path):
         """Smoke test: routing cycle terminates with gate completed.
-        Does not use golden comparison due to cascade nondeterminism (#1190).
+        Does not use golden comparison due to cascade nondeterminism.
         """
         mgr = _run_scenario(
             isolated_tasks_dir,

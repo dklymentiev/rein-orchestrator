@@ -175,7 +175,7 @@ class ProcessManager:
             self._write_rein_log(f"REIN STARTED | run_id={timestamp} | db={self.db_path} | max_parallel={max_parallel}")
 
     def _write_rein_log(self, message):
-        """Write to rein's own log file with shared credential scrubbing (HIGH-003)."""
+        """Write to rein's own log file with shared credential scrubbing."""
         try:
             clean_message = scrub_secrets(str(message))
             with open(self.rein_log_file, "a") as f:
@@ -458,7 +458,7 @@ class ProcessManager:
                     self.processes[db_proc.name].pid = db_proc.pid
 
                     # Mark completed processes in our tracking set
-                    if db_proc.status in ("done", "failed"):
+                    if db_proc.status in ("done", "failed", "skipped"):
                         self.completed.add(db_proc.name)
 
             completed_count = len(self.completed)
@@ -542,7 +542,7 @@ class ProcessManager:
             self._write_rein_log(
                 f"RESUME | {len(failed_blocks)} failed/running blocks, {len(needs_rerun)} total to re-run"
             )
-            # TODO #1203: cleanup disabled -- race condition deletes outputs
+            # TODO: cleanup disabled -- race condition deletes outputs
             # of still-running blocks (Gateway response -> FileNotFoundError).
             # result.json is overwritten on rerun anyway. Re-enable after
             # implementing result versioning (result-000.json, result-001.json).
@@ -576,15 +576,15 @@ class ProcessManager:
 
             # Check if block already completed and not invalidated - skip reinitializing
             prev_status = existing_status.get(name)
-            if prev_status == "done" and name not in needs_rerun:
-                self._write_rein_log(f"RESUME SKIP | {name} | already done")
+            if prev_status in ("done", "skipped") and name not in needs_rerun:
+                self._write_rein_log(f"RESUME SKIP | {name} | already {prev_status}")
                 self.completed.add(name)
                 restored_count += 1
                 # Still need to track the process in memory
                 process = Process(
                     pid=None,
                     name=name,
-                    status="done",
+                    status=prev_status,
                     start_time=time.time(),
                     command=command,
                     uid=uid,
@@ -859,7 +859,7 @@ class ProcessManager:
 
                 # Save result from Claude (only if not custom - custom script saves its own result).
                 # Scrub credentials from result before persistence so a leaked
-                # task directory never exposes provider API keys (HIGH-003).
+                # task directory never exposes provider API keys.
                 block_usage = self._block_usage.get(name)
                 save_data = {
                     "stage": name,
@@ -901,7 +901,7 @@ class ProcessManager:
                     raise Exception(f"Validate-phase logic failed: {logic_config['validate']}")
 
             # save_as: write an alias copy of result.json under a custom filename
-            # so other blocks can reference it as {{ custom_name.json }} (fix #1185).
+            # so other blocks can reference it as {{ custom_name.json }}.
             save_as = block.get("save_as")
             if save_as and os.path.exists(save_file):
                 try:
@@ -1064,7 +1064,7 @@ class ProcessManager:
                     self._write_rein_log(f"ROUTING CASCADE | invalidated: {cascade}")
 
                 # Skip non-chosen routing branches so main loop won't spawn them
-                # via depends_on scheduling (fix #1190).
+                # via depends_on scheduling.
                 skip_set = state_machine.compute_routing_skip_set(routing, next_block_name, name, dependents_map)
                 for skipped_name in skip_set:
                     self.completed.add(skipped_name)

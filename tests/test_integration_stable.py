@@ -154,7 +154,7 @@ class TestGatePass:
         assert code == 0
 
     def test_fix_is_skipped_when_gate_routes_to_finish(self):
-        """After fix #1190: non-chosen routing branches are explicitly skipped.
+        """Non-chosen routing branches are explicitly skipped.
         Gate routes to _default=finish, so fix must NOT execute."""
         code, stdout, run_dir = _run_fixture_flow("gate-pass")
         states = _get_block_states(run_dir)
@@ -162,7 +162,7 @@ class TestGatePass:
         assert states["fix"]["status"] == "skipped"
 
     def test_finish_executes_under_routing_default(self):
-        """After fix #1190: finish (routing _default target) runs to completion
+        """finish (routing _default target) runs to completion
         without being blocked by depends_on race with the fix branch."""
         code, stdout, run_dir = _run_fixture_flow("gate-pass")
         states = _get_block_states(run_dir)
@@ -194,7 +194,7 @@ class TestSimpleRouting:
         assert fix_dones >= 1, "fix should have run at least once"
 
     def test_process_terminates_cleanly(self):
-        """Process exits cleanly (no hang). finish state may vary due to #1190."""
+        """Process exits cleanly (no hang). finish state may vary with routing timing."""
         code, stdout, run_dir = _run_fixture_flow("simple-routing", timeout=90)
         assert code == 0
         states = _get_block_states(run_dir)
@@ -203,7 +203,7 @@ class TestSimpleRouting:
         assert states["gate"]["status"] == "done"
 
     def test_gate_and_prepare_done(self):
-        """gate and prepare must reach done state (finish subject to #1190 race)"""
+        """gate and prepare must reach done state (finish is subject to a routing race)"""
         code, stdout, run_dir = _run_fixture_flow("simple-routing", timeout=90)
         states = _get_block_states(run_dir)
         assert states["gate"]["status"] == "done"

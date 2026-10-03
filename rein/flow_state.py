@@ -2,7 +2,7 @@
 Rein Flow State - Build complete workflow state as JSON.
 
 Returns blocks with layout coordinates, edges, events, and status.
-Used by MCP tools, CLI, and external APIs (HQ dashboard).
+Used by MCP tools, CLI, and external APIs.
 """
 
 import json

@@ -20,7 +20,7 @@ blocks:
       "An open-source CLI tool that lets developers define multi-agent AI
       workflows in YAML files instead of writing Python code. Targets
       developers who want to coordinate multiple AI agents but don't want
-      to learn LangChain/CrewAI/AutoGen frameworks."
+      to learn a Python agent framework."
 
       Focus on market size, competitors, and opportunities.
     depends_on: []
@@ -33,7 +33,7 @@ blocks:
       "An open-source CLI tool that lets developers define multi-agent AI
       workflows in YAML files instead of writing Python code. Targets
       developers who want to coordinate multiple AI agents but don't want
-      to learn LangChain/CrewAI/AutoGen frameworks."
+      to learn a Python agent framework."
 
       Focus on architecture, tech stack, and scalability.
     depends_on: []
@@ -46,7 +46,7 @@ blocks:
       "An open-source CLI tool that lets developers define multi-agent AI
       workflows in YAML files instead of writing Python code. Targets
       developers who want to coordinate multiple AI agents but don't want
-      to learn LangChain/CrewAI/AutoGen frameworks."
+      to learn a Python agent framework."
 
       Focus on personas, pain points, and adoption barriers.
     depends_on: []

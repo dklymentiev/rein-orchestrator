@@ -7,7 +7,7 @@ Two loggers:
 
 Also provides scrub_secrets() — the shared credential redaction function
 applied to rein.log, block run logs (runs/run-NNN.log), and the result
-field of result.json before persistence (HIGH-003).
+field of result.json before persistence.
 """
 
 import logging
@@ -32,8 +32,8 @@ def scrub_secrets(text: str) -> str:
     """Redact API keys, tokens, and credential env assignments from text.
 
     Applied to all persisted log streams and serialized result data so
-    that a leaked task directory does not expose provider credentials
-    (HIGH-003). Idempotent and safe on non-string input (returns as-is).
+    that a leaked task directory does not expose provider credentials.
+    Idempotent and safe on non-string input (returns as-is).
     """
     if not isinstance(text, str):
         return text

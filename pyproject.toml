@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rein-ai"
+name = "rein-orchestrator"
 dynamic = ["version"]
 description = "Declarative YAML workflow orchestrator for multi-agent AI"
 readme = "README.md"
@@ -39,7 +39,7 @@ anthropic = ["anthropic>=0.40.0"]
 openai = ["openai>=1.0.0"]
 all = ["anthropic>=0.40.0", "openai>=1.0.0"]
 daemon = ["websockets>=12.0"]
-mcp = ["mcp>=1.0.0"]
+mcp = ["mcp>=1.0.0,<2"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -47,7 +47,7 @@ dev = [
     "anthropic>=0.40.0",
     "openai>=1.0.0",
     "websockets>=12.0",
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",
 ]
 
 [project.scripts]
@@ -55,10 +55,10 @@ rein = "rein.cli:main"
 rein-mcp = "rein.mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/rein-orchestrator/rein"
-Documentation = "https://github.com/rein-orchestrator/rein#readme"
-Repository = "https://github.com/rein-orchestrator/rein"
-Issues = "https://github.com/rein-orchestrator/rein/issues"
+Homepage = "https://github.com/dklymentiev/rein-orchestrator"
+Documentation = "https://github.com/dklymentiev/rein-orchestrator#readme"
+Repository = "https://github.com/dklymentiev/rein-orchestrator"
+Issues = "https://github.com/dklymentiev/rein-orchestrator/issues"
 
 [tool.setuptools.dynamic]
 version = {attr = "rein.__version__"}

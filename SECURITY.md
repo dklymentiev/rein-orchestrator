@@ -13,7 +13,7 @@ If you discover a security vulnerability in Rein, please report it responsibly. 
 
 **How to report:**
 
-- GitHub Security Advisories: https://github.com/rein-orchestrator/rein/security/advisories/new
+- GitHub Security Advisories: https://github.com/dklymentiev/rein-orchestrator/security/advisories/new
 
 Include as much detail as possible:
 
@@ -54,12 +54,11 @@ the Rein process itself. This means:
   these hooks, and script paths are **not** containment-checked against
   the workflow directory. A workflow may legitimately reference
   `../lib/helper.py` or `../../shared/util.sh` to share helpers between
-  flows under the same `agents_dir`. This covers the SEC-05 path-traversal
-  finding from pre-release audit #3.
+  flows under the same `agents_dir`.
 - The legacy `command:` block field executes its argument as a subprocess.
 - `logic.error` and the global `on_error` hook have a narrower contract:
   paths must be **relative** to the workflow directory. Absolute paths
-  are explicitly rejected (SEC-06) because the previous implicit
+  are explicitly rejected because the previous implicit
   fallback could turn a mis-configured handler into an invocation of
   an unrelated system binary.
 - Consequence: do not accept workflow YAML from untrusted sources. Treat
@@ -73,7 +72,8 @@ against prompt injection.**
 Task inputs are substituted verbatim into specialist prompts. A hostile
 task input can instruct the model to ignore specialist constraints. This
 is accepted because task creation itself requires authenticated access
-(CLI, MCP with `REIN_AGENTS_DIR` pin, or the HQ API behind Authum).
+(CLI, MCP with `REIN_AGENTS_DIR` pin, or an HTTP API behind your own
+authentication).
 Prompt-injection hardening for externally-exposed task creation is a
 separate deployment-level concern handled at the ingress layer.
 

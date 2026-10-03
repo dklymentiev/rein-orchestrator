@@ -218,7 +218,7 @@ with open(output_file, "w") as f:
 
 
 # ============================================================
-# TASK #1175: logic scripts (validate, custom string, error, timeout)
+# Logic scripts (validate, custom string, error, timeout)
 # ============================================================
 
 

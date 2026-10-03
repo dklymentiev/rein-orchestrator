@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.3] - 2026-10-03
+
+### Fixed
+
+- A branch that routing did not choose stays skipped when a run is resumed one step at a time (`rein --step`). Before, the skipped mark was lost on resume and the non-chosen branch ran on the next step, so a "cancel" or "reject" path still ran the block it was meant to stop.
+- When a block result matches several routing keys, routing takes the first key in YAML declaration order. Before, the choice depended on hash order and could differ between runs.
+- Forward routing no longer blocks step-mode resume.
+- Output cleanup during cascade invalidation is disabled: it could delete the outputs of blocks that were still running.
+- Required workflow inputs are checked before the task directory is created, so a missing input no longer leaves an empty task directory behind.
+- The gateway provider module is included in the repository; a clean install no longer fails importing it.
+- The Flow Board derives its WebSocket address from the page (`wss`/`ws`, same host, port 8765) instead of a fixed host name. `window.REIN_WS` still overrides it.
+- `rein --version` reports the release it belongs to (3.3.2 reported 3.3.1).
+- The MCP server (`rein-mcp`) starts again on a fresh install. `mcp` 2.x renamed the API Rein uses, so the `mcp` dependency is now limited to 1.x.
+
+### Changed
+
+- The package is named `rein-orchestrator` and is installed from this repository; Rein is not published on PyPI. The `rein` command and `import rein` are unchanged. See Installation in the README.
+- Repository, issue and security-advisory links point to this repository.
+- The release workflow builds and tests on tags and no longer tries to upload to PyPI.
+- The gateway provider documents the session API it calls.
+- The README no longer carries a comparison table with other frameworks.
+
+### Removed
+
+- `BRAIN_API_URL`, a legacy alias of `AI_GATEWAY_URL`. Set `AI_GATEWAY_URL` instead.
+- The `mesh_workspace` field of `agent.yaml`. It was parsed and never used; the key is now ignored.
+
+## [3.3.2] - 2026-04-08
+
+Tagged and released on GitHub without a changelog entry; recorded here afterwards from the commit history.
+
+### Added
+
+- Flow Board v6: state-diff animation, grid layout for very large flows, minimal embed mode.
+- Any `VERDICT:` value is emitted as a lowercase routing signal, so a workflow can route on its own verdicts (`VERDICT: bounced` routes on `bounced`). The legacy aliases PASS/APPROVED and REVISE still map as before.
+
+### Changed
+
+- Workflow depth calculation is memoized (linear instead of exponential in the number of blocks).
+- Schema: maximum number of blocks raised from 100 to 300.
+
+### Security
+
+- The MCP server ignores a caller-supplied `agents_dir` and uses the configured one, closing a path traversal through `list_specialists` and `list_teams`.
+- Path containment for file placeholders, flow names, task directories and agent references.
+- Provider credentials are scrubbed from run logs and from `result.json`.
+- Error handler scripts must be relative to the workflow directory; the fallback to absolute paths is removed.
+- The trust model (workflow YAML is trusted input) is documented in `SECURITY.md`.
+
 ## [3.3.1] - 2026-04-04
 
 Stability and hardening release. No API changes; 3.3.0 flows run unchanged.
@@ -12,21 +61,21 @@ Focus: make the orchestrator core robust enough for pre-release handoff.
 
 ### Fixed
 
-- **#1166** Blocks no longer stuck in `waiting` after routing cascade -- pending re-evaluation now correctly re-queues cascade-invalidated blocks.
-- **#1167** Busy-wait 99% CPU eliminated -- main loop now sleeps when no blocks are ready to spawn.
-- **#1168** Daemon process now exits cleanly after all blocks complete (was hanging on orphaned threads).
-- **#1169** Cascade invalidation no longer re-runs unrelated blocks -- BFS walk respects dependency boundaries.
-- **#1170** JSON Schema and Pydantic validator now agree on allowed fields.
-- **#1181** Fixed RE-PENDING duplicate execution during routing loops.
-- **#1183** Per-block `timeout:` now actually applied to execution.
-- **#1184** Per-block `model:` override now correctly reaches the provider call.
-- **#1185** Block-level `save_as:` field now writes an alias of `result.json` under the custom filename; `{{ custom_name.json }}` placeholders resolve across all block output dirs.
-- **#1190** Routing no longer races with `depends_on` scheduling -- when a gate routes to one branch, all non-chosen branches (and their exclusive descendants) are marked `skipped` so the main loop does not spawn them. Reconverging paths are preserved.
+- Blocks no longer stuck in `waiting` after routing cascade -- pending re-evaluation now correctly re-queues cascade-invalidated blocks.
+- Busy-wait 99% CPU eliminated -- main loop now sleeps when no blocks are ready to spawn.
+- Daemon process now exits cleanly after all blocks complete (was hanging on orphaned threads).
+- Cascade invalidation no longer re-runs unrelated blocks -- BFS walk respects dependency boundaries.
+- JSON Schema and Pydantic validator now agree on allowed fields.
+- Fixed RE-PENDING duplicate execution during routing loops.
+- Per-block `timeout:` now actually applied to execution.
+- Per-block `model:` override now correctly reaches the provider call.
+- Block-level `save_as:` field now writes an alias of `result.json` under the custom filename; `{{ custom_name.json }}` placeholders resolve across all block output dirs.
+- Routing no longer races with `depends_on` scheduling -- when a gate routes to one branch, all non-chosen branches (and their exclusive descendants) are marked `skipped` so the main loop does not spawn them. Reconverging paths are preserved.
 
 ### Added
 
-- **#1164** Daemon pidfile lock (`state/rein-daemon.pid`) with exclusive `fcntl.flock`. A second daemon instance exits immediately with a clear error instead of causing duplicate task execution. Lock is released on SIGTERM/SIGINT/normal exit.
-- **#1186** Orchestrator decomposition: the monolithic `orchestrator.py` (2501 lines) was split into 9 focused modules:
+- Daemon pidfile lock (`state/rein-daemon.pid`) with exclusive `fcntl.flock`. A second daemon instance exits immediately with a clear error instead of causing duplicate task execution. Lock is released on SIGTERM/SIGINT/normal exit.
+- Orchestrator decomposition: the monolithic `orchestrator.py` (2501 lines) was split into 9 focused modules:
   - `state_machine` -- dependency graph, cascade, routing direction, orphan/stuck detection
   - `block_resolver` -- flow control predicates, condition evaluation, `next:` resolution
   - `process_control` -- pause / resume / cancel semantics
@@ -38,7 +87,7 @@ Focus: make the orchestrator core robust enough for pre-release handoff.
   - Internal `_apply_routing`, `_apply_next_state_machine`, `_reset_block_for_rerun`, `_invalidate_cascade` helpers
   
   `orchestrator.py` is now **1832 lines (-27%)**, with the remaining content tightly focused on threading and subprocess lifecycle.
-- **#1187 / #1188 / #1189** Test suite expanded from 129 to ~390 tests (characterization, in-process integration, stable subprocess integration, and new unit tests). Coverage on `orchestrator.py` rose from ~14% to ~51%.
+- Test suite expanded from 129 to ~390 tests (characterization, in-process integration, stable subprocess integration, and new unit tests). Coverage on `orchestrator.py` rose from ~14% to ~51%.
 
 ### Changed
 
@@ -49,7 +98,7 @@ Focus: make the orchestrator core robust enough for pre-release handoff.
 ### Notes
 
 - No breaking changes. Existing 3.3.0 workflows run unmodified.
-- Known limitations (tracked for a future release): per-block budget limits (#1156), WebSocket full-state push (#1159), async wait blocks and sub-flow triggers (#1163).
+- Known limitations (tracked for a future release): per-block budget limits, WebSocket full-state push, async wait blocks and sub-flow triggers.
 
 ## [3.3.0] - 2026-04-03
 

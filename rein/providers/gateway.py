@@ -1,15 +1,19 @@
 """
-Gateway provider - AI Gateway (internal use, not shipped in open-source).
+Gateway provider - an HTTP AI gateway with a session API.
 
-Session-based provider: creates a session per call, sends prompt, closes session.
+Session-based provider: creates a session per call, sends the prompt, closes
+the session. The gateway is expected to expose:
+
+    POST   /api/v1/sessions                {"service", "model", "cwd"?} -> {"session_id"}
+    POST   /api/v1/sessions/{id}/chat      {"content"} -> {"content", "usage"?}
+    DELETE /api/v1/sessions/{id}
 
 Config:
     provider: gateway
-    model: haiku|sonnet|opus (default: haiku)
+    model: model name understood by the gateway (default: haiku)
 
 Env:
-    AI_GATEWAY_URL: Gateway base URL (e.g. http://localhost:19850)
-    BRAIN_API_URL: Legacy alias for AI_GATEWAY_URL
+    AI_GATEWAY_URL: Gateway base URL (e.g. http://localhost:8080)
 """
 
 import os
@@ -21,7 +25,7 @@ from .base import Provider
 
 
 class GatewayProvider(Provider):
-    """AI Gateway provider (session-based, internal use)."""
+    """AI gateway provider (session-based)."""
 
     def __init__(
         self,
@@ -40,7 +44,7 @@ class GatewayProvider(Provider):
             logger=logger,
         )
         self.cwd = cwd or ""
-        self.base_url = base_url or os.environ.get("AI_GATEWAY_URL", "") or os.environ.get("BRAIN_API_URL", "")
+        self.base_url = base_url or os.environ.get("AI_GATEWAY_URL", "")
         # Strip trailing slash and /api/prompt suffix (legacy)
         self.base_url = self.base_url.rstrip("/")
         if self.base_url.endswith("/api/prompt"):

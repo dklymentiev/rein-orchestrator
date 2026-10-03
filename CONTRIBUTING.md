@@ -5,8 +5,8 @@ Thanks for your interest in contributing to Rein. This guide covers what you nee
 ## Development Setup
 
 ```bash
-git clone https://github.com/rein-orchestrator/rein.git
-cd rein
+git clone https://github.com/dklymentiev/rein-orchestrator.git
+cd rein-orchestrator
 pip install -e ".[dev]"
 ```
 

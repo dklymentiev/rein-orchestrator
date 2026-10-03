@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 # If not provided, only REIN_AGENTS_DIR env var is checked.
 AGENT_SEARCH_PATHS = []
 
-# Agent references must be safe filesystem components (HIGH-007).
+# Agent references must be safe filesystem components.
 # Alphanumerics, dash, underscore, dot; no leading dot; no slashes;
 # no path traversal segments. This is a strict subset of POSIX path
 # characters to match SAFE_FLOW_NAME / SAFE_TASK_NAME conventions
@@ -42,7 +42,6 @@ class AgentConfig:
     groups: List[str] = field(default_factory=list)
     tools: List[str] = field(default_factory=list)
     mcp_servers: List[str] = field(default_factory=list)
-    mesh_workspace: str = ""
     forbidden_fs: List[str] = field(default_factory=list)
     forbidden_behavior: List[str] = field(default_factory=list)
     directories: Dict[str, List[str]] = field(default_factory=lambda: {"read": [], "write": []})
@@ -88,7 +87,6 @@ def load_agent_config(agent_ref: str, agents_dir: str = None) -> Optional[AgentC
         groups=data.get("groups") or [],
         tools=data.get("tools") or [],
         mcp_servers=data.get("mcp_servers") or [],
-        mesh_workspace=data.get("mesh_workspace", "") or "",
         forbidden_fs=data.get("forbidden_fs") or [],
         forbidden_behavior=data.get("forbidden_behavior") or [],
         directories=data.get("directories") or {"read": [], "write": []},
@@ -129,7 +127,7 @@ def _resolve_agent_yaml(agent_ref: str, agents_dir: str = None) -> Optional[str]
 
     Only accepts SAFE_AGENT_REF names (alphanumerics, dash, underscore,
     dot; no leading dot; no slashes). Absolute paths and path traversal
-    segments are rejected (HIGH-007). This closes the vector where a
+    segments are rejected. This closes the vector where a
     workflow could specify agent: '../../../etc' to escape agents_dir.
     """
     if not agent_ref or not SAFE_AGENT_REF.match(agent_ref):

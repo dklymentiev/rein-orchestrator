@@ -1,6 +1,6 @@
 # Rein OpenClaw Integration
 
-Run [Rein](https://github.com/rein-orchestrator/rein) multi-agent workflows from [OpenClaw](https://github.com/nicepkg/openclaw) -- your personal AI assistant on Telegram, WhatsApp, Slack, Discord, and more.
+Run [Rein](https://github.com/dklymentiev/rein-orchestrator) multi-agent workflows from [OpenClaw](https://github.com/openclaw/openclaw) -- your personal AI assistant on Telegram, WhatsApp, Slack, Discord, and more.
 
 ## What this does
 
@@ -12,7 +12,7 @@ This package provides:
 ## Requirements
 
 - Node.js >= 18
-- Python >= 3.10 with `rein-ai` package installed (`pip install rein-ai[all]`)
+- Python >= 3.10 with Rein installed (`pip install ".[all]"` in a clone of the Rein repository)
 - At least one AI provider configured (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
 
 ## Installation

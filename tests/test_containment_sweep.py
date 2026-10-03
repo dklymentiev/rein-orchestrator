@@ -1,13 +1,13 @@
-"""Tests for the HIGH-severity containment sweep from pre-release audit #3.
+"""Tests for path containment and secret scrubbing.
 
 Covers:
-- HIGH-001: prompt_assembler.resolve_file_placeholder realpath containment
-- HIGH-003: scrub_secrets applied to run logs and result.json
-- HIGH-004: SAFE_FLOW_NAME validation in ConfigLoader.get_flow_path
-- HIGH-005: CLI flow_name / task_dir validation (integration-level via import)
-- HIGH-007: SAFE_AGENT_REF in agent_config._resolve_agent_yaml
-- SEC-05: logic script path containment against workflow_dir
-- SEC-06: error handler script path containment (no raw absolute fallback)
+- prompt_assembler.resolve_file_placeholder realpath containment
+- scrub_secrets applied to run logs and result.json
+- SAFE_FLOW_NAME validation in ConfigLoader.get_flow_path
+- CLI flow_name / task_dir validation (integration-level via import)
+- SAFE_AGENT_REF in agent_config._resolve_agent_yaml
+- logic script path containment against workflow_dir
+- error handler script path containment (no raw absolute fallback)
 """
 
 import os
@@ -20,7 +20,7 @@ from rein.log import scrub_secrets
 from rein.prompt_assembler import resolve_file_placeholder
 
 # ============================================================
-# HIGH-001: prompt_assembler containment
+# prompt_assembler containment
 # ============================================================
 
 
@@ -86,7 +86,7 @@ class TestFilePlaceholderContainment:
 
 
 # ============================================================
-# HIGH-003: credential scrubbing
+# Credential scrubbing
 # ============================================================
 
 
@@ -137,7 +137,7 @@ class TestScrubSecrets:
 
 
 # ============================================================
-# HIGH-004: SAFE_FLOW_NAME validation
+# SAFE_FLOW_NAME validation
 # ============================================================
 
 
@@ -171,7 +171,7 @@ class TestFlowNameValidation:
 
 
 # ============================================================
-# HIGH-007: agent_ref containment
+# agent_ref containment
 # ============================================================
 
 
@@ -208,12 +208,12 @@ class TestAgentRefContainment:
 
 
 # ============================================================
-# SEC-06: error handler -- absolute-path fallback removed
+# Error handler -- absolute-path fallback removed
 # ============================================================
 # Logic script execution is covered by the trust model documented in
 # SECURITY.md ("Workflow YAML is trusted input") and is deliberately
-# not containment-checked. The previous audit finding SEC-06 was
-# specifically about error_handlers.py falling back to treating a
+# not containment-checked. What was fixed here is narrower:
+# error_handlers.py used to fall back to treating a
 # non-existent relative path as an absolute path, which turned a
 # missing-file misconfiguration into an unexpected execution of
 # whatever absolute path happened to be in the YAML. That fallback
@@ -226,7 +226,7 @@ class TestErrorHandlerNoAbsoluteFallback:
 
         An absolute path like /bin/ls no longer falls through to being
         executed as-is; it's simply not found under workflow_dir and the
-        handler fails cleanly (SEC-06).
+        handler fails cleanly.
         """
         from rein.error_handlers import _run_handler_script
 

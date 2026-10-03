@@ -1,4 +1,4 @@
-"""Tests for routing branch skip (fix #1190).
+"""Tests for routing branch skip.
 
 When a gate block uses `routing:` to select one of several targets, the
 non-chosen branches must be marked skipped so the main loop does not also
