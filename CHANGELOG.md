@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The gateway provider module is included in the repository; a clean install no longer fails importing it.
 - The Flow Board derives its WebSocket address from the page (`wss`/`ws`, same host, port 8765) instead of a fixed host name. `window.REIN_WS` still overrides it.
 - `rein --version` reports the release it belongs to (3.3.2 reported 3.3.1).
+- The MCP server (`rein-mcp`) starts again on a fresh install. `mcp` 2.x renamed the API Rein uses, so the `mcp` dependency is now limited to 1.x.
 
 ### Changed
 
