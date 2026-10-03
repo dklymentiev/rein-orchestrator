@@ -174,7 +174,7 @@ def _compare_or_save(name: str, fingerprint: dict):
 
 @pytest.fixture
 def mock_provider_env(monkeypatch):
-    monkeypatch.setenv("AI_GATEWAY_URL", "http://mock-gateway.invalid:19850")
+    monkeypatch.setenv("AI_GATEWAY_URL", "http://mock-gateway.invalid:8080")
     yield
 
 

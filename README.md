@@ -244,7 +244,7 @@ Environment variables:
 | openai | `OPENAI_API_KEY` | Yes |
 | ollama | `OLLAMA_URL` | No (default: localhost:11434) |
 | openrouter | `OPENROUTER_API_KEY` | Yes |
-| gateway | `AI_GATEWAY_URL` or `BRAIN_API_URL` | Yes |
+| gateway | `AI_GATEWAY_URL` | Yes |
 
 Auto-detection: if no `provider:` is set in YAML, Rein checks environment variables in order: `ANTHROPIC_API_KEY` -> `OPENAI_API_KEY` -> `OPENROUTER_API_KEY` -> `OLLAMA_URL` -> `AI_GATEWAY_URL`.
 

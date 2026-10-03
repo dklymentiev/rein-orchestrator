@@ -96,7 +96,7 @@ def create_provider(
     if os.environ.get("OLLAMA_URL"):
         return OllamaProvider(model=model, max_tokens=max_tokens, temperature=temperature, logger=logger, **kwargs)
 
-    if os.environ.get("AI_GATEWAY_URL") or os.environ.get("BRAIN_API_URL"):
+    if os.environ.get("AI_GATEWAY_URL"):
         return GatewayProvider(model=model, max_tokens=max_tokens, temperature=temperature, logger=logger, **kwargs)
 
     raise ValueError(
