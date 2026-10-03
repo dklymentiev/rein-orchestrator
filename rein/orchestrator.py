@@ -458,7 +458,7 @@ class ProcessManager:
                     self.processes[db_proc.name].pid = db_proc.pid
 
                     # Mark completed processes in our tracking set
-                    if db_proc.status in ("done", "failed"):
+                    if db_proc.status in ("done", "failed", "skipped"):
                         self.completed.add(db_proc.name)
 
             completed_count = len(self.completed)
@@ -576,15 +576,15 @@ class ProcessManager:
 
             # Check if block already completed and not invalidated - skip reinitializing
             prev_status = existing_status.get(name)
-            if prev_status == "done" and name not in needs_rerun:
-                self._write_rein_log(f"RESUME SKIP | {name} | already done")
+            if prev_status in ("done", "skipped") and name not in needs_rerun:
+                self._write_rein_log(f"RESUME SKIP | {name} | already {prev_status}")
                 self.completed.add(name)
                 restored_count += 1
                 # Still need to track the process in memory
                 process = Process(
                     pid=None,
                     name=name,
-                    status="done",
+                    status=prev_status,
                     start_time=time.time(),
                     command=command,
                     uid=uid,
