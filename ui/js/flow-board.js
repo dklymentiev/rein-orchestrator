@@ -20,9 +20,9 @@ const FLOW_BOARD_VERSION = '5.0.0';
 const POLL_MS = 500;
 
 const API = window.REIN_API || '/api-flow.php';
-const WS_URL = window.REIN_WS || (location.protocol === 'https:'
-  ? `wss://rein-ws.sf.vpn`
-  : `ws://${location.hostname}:8765`);
+// Override with window.REIN_WS when the daemon sits behind a proxy.
+const WS_URL = window.REIN_WS
+  || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:8765`;
 const cv = document.getElementById('cv');
 const cx = cv.getContext('2d');
 const tip = document.getElementById('tip');
