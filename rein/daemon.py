@@ -335,6 +335,17 @@ async def run_daemon_async(agents_dir: str, interval: int, max_workflows: int, w
             if active:
                 logger.info("[DAEMON] Active: %d/%d - %s", len(active), max_workflows, list(active.keys()))
 
+            # Time budgets of tasks nobody is running right now (see rein.sweep).
+            # Tasks this daemon is running hold their lock and are left alone.
+            try:
+                from rein.sweep import sweep
+
+                swept = sweep(agents_dir, log=lambda line: logger.info("%s", line))
+                if swept["errors"]:
+                    logger.warning("[DAEMON] Sweep could not check: %s", swept["errors"])
+            except Exception as e:
+                logger.exception("[DAEMON] Sweep failed: %s", e)
+
             await asyncio.sleep(interval)
 
         except asyncio.CancelledError:

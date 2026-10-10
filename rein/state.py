@@ -2,11 +2,30 @@
 Rein State Manager - SQLite-based state persistence for workflow execution
 """
 
+import functools
 import sqlite3
+import threading
 import time
 from typing import List
 
 from .models import Process
+
+
+def _serialized(method):
+    """Run a ReinState method under the instance lock.
+
+    Every method opens its own connection. Blocks finish on their own threads
+    while the main loop reads, and two connections of one process working on
+    the same file at the same moment have been seen to fail with "disk I/O
+    error". One at a time is plenty for a state store this small.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class ReinState:
@@ -15,6 +34,7 @@ class ReinState:
     def __init__(self, db_path: str = "/tmp/rein.db", resume: bool = False):
         self.db_path = db_path
         self.resume = resume
+        self._lock = threading.RLock()
         self._init_db()
 
     def _init_db(self):
@@ -25,6 +45,7 @@ class ReinState:
         if not self.resume:
             # Drop old table if exists (fresh run)
             conn.execute("DROP TABLE IF EXISTS processes")
+            conn.execute("DROP TABLE IF EXISTS time_budget")
 
         # Create table if it doesn't exist
         conn.execute("""
@@ -46,6 +67,17 @@ class ReinState:
             )
         """)
 
+        # Time budgets: when the run and each block attempt started, and when a
+        # budget was found exceeded. Created on first touch, so a database made
+        # by an earlier version gains it without a migration step.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS time_budget (
+                name TEXT PRIMARY KEY,
+                started_at REAL NOT NULL,
+                expired_at REAL
+            )
+        """)
+
         # Schema migration: add columns to existing DBs
         if self.resume:
             try:
@@ -60,6 +92,7 @@ class ReinState:
         conn.commit()
         conn.close()
 
+    @_serialized
     def save_process(self, proc: Process):
         """Save process state"""
         conn = sqlite3.connect(self.db_path)
@@ -89,6 +122,7 @@ class ReinState:
         conn.commit()
         conn.close()
 
+    @_serialized
     def get_all_processes(self) -> List[Process]:
         """Get all tracked processes"""
         conn = sqlite3.connect(self.db_path)
@@ -117,6 +151,7 @@ class ReinState:
             processes.append(proc)
         return processes
 
+    @_serialized
     def get_process(self, name: str) -> Process:
         """Get single process by name"""
         conn = sqlite3.connect(self.db_path)
@@ -144,6 +179,7 @@ class ReinState:
             )
         return None
 
+    @_serialized
     def update_status(self, name: str, status: str, exit_code: int = None):
         """Update process status"""
         conn = sqlite3.connect(self.db_path)
@@ -157,6 +193,52 @@ class ReinState:
         conn.commit()
         conn.close()
 
+    @_serialized
+    def budget_start(self, name: str, now: float) -> None:
+        """Record when an attempt started, unless one is already recorded.
+
+        Keeping the first value is the point: a block that runs again within
+        the same attempt must not get a fresh start time.
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("INSERT OR IGNORE INTO time_budget (name, started_at) VALUES (?, ?)", (name, now))
+        conn.commit()
+        conn.close()
+
+    @_serialized
+    def budget_clear(self, name: str) -> None:
+        """Forget an attempt: the block finished, or a new attempt begins."""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("DELETE FROM time_budget WHERE name = ?", (name,))
+        conn.commit()
+        conn.close()
+
+    @_serialized
+    def budget_rows(self) -> dict:
+        """Return {name: (started_at, expired_at)} for every recorded attempt."""
+        conn = sqlite3.connect(self.db_path)
+        rows = conn.execute("SELECT name, started_at, expired_at FROM time_budget").fetchall()
+        conn.close()
+        return {name: (started_at, expired_at) for name, started_at, expired_at in rows}
+
+    @_serialized
+    def budget_claim_expiry(self, name: str, now: float) -> bool:
+        """Mark an attempt as over budget. True only for the caller that marked it.
+
+        The update is conditional, so however many processes notice the same
+        expiry, exactly one of them gets True and acts on it.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.execute(
+            "UPDATE time_budget SET expired_at = ? WHERE name = ? AND expired_at IS NULL",
+            (now, name),
+        )
+        conn.commit()
+        claimed = cur.rowcount == 1
+        conn.close()
+        return claimed
+
+    @_serialized
     def clear(self):
         """Clear all process data"""
         conn = sqlite3.connect(self.db_path)

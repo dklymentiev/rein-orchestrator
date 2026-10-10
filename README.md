@@ -573,6 +573,39 @@ rein --step 1 --task-dir task-2000 --agent-id editor
 
 Blocks without `agent:` run for any agent. Without `--agent-id`, all blocks run.
 
+### Time Budgets
+
+A `timeout` limits one script. A time budget limits what you actually care about: how long until a block has produced its result, and how long until the run is over, however many times Rein was started and stopped in between.
+
+```yaml
+time_budget: 1d            # the whole run
+
+blocks:
+  - name: draft
+    time_budget: 30m       # per attempt, waiting included
+    routing:
+      waiting: draft       # "not ready yet": same attempt, the clock keeps running
+      timeout: stopped     # no result in time
+      _default: review
+```
+
+A value is a number of seconds or a number with a unit: `90s`, `30m`, `2h`, `1d`. The fields are part of schema version 3.4.0 (`schemas/workflow-v3.4.0.json`).
+
+- **Block budget** is counted per attempt, from the moment the block first runs. A block that routes back to itself is still in the same attempt. When another block sends the work back, a new attempt starts with a full budget.
+- **Run budget** is counted from the start of the run and never restarts, so revision loops cannot extend it. A flow that declares `schema_version: "3.4.0"` or newer and sets no `time_budget` gets 24 hours. Older flows have no run budget unless they set one.
+- **When a block runs out of time**, `logic.error` and `on_error` run once, and the flow follows the block's `timeout` route, or its `fail` route if there is none. Without either the block is a failed block. A result that arrives later is ignored.
+- **When the run runs out of time**, `on_error` runs once, every unfinished block is failed, and the task ends as `failed`. Later steps on that task do nothing.
+
+Rein cannot stop whatever a block handed work to; it stops listening for the answer. If something must be cancelled, do it in the error handler.
+
+The start times are stored in the task's state, so a budget survives restarts. In step mode no process lives between two steps, so something has to look at the clock:
+
+```bash
+rein --sweep --agents-dir ./agents     # check every task, fail those over budget, run nothing
+```
+
+Run it every minute from cron or from the timer in `deploy/` (`rein-sweep.timer`). The daemon does the same check on every loop, and every `rein --step` checks its own task before it runs anything. A task then cannot sit unnoticed for longer than its budget plus the interval of the check. The sweep only fails what is over budget; the next step continues the flow.
+
 ## CLI and Directory Structure
 
 For the full CLI reference and directory layout, see [docs/getting-started.md](docs/getting-started.md).
@@ -589,6 +622,9 @@ rein --resume 20260113-143022              # Resume a failed run
 rein --flow my-flow --step 1               # First invocation
 rein --step 3 --task-dir /path/to/task     # Resume, run 3 blocks
 rein --step 1 --task-dir /path --agent-id smm  # Agent-specific
+
+# Time budgets (fail tasks that are over budget, run nothing)
+rein --sweep --agents-dir ./agents
 
 # Background
 rein --daemon --agents-dir ./agents        # Daemon mode

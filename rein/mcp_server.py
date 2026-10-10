@@ -434,6 +434,15 @@ def task_status(
         else:
             result["status"] = "unknown"
 
+    # Time budgets that ran out, if any (written by the engine)
+    budget_path = os.path.join(task_dir, "state", "time_budget.json")
+    if os.path.exists(budget_path):
+        try:
+            with open(budget_path) as f:
+                result["time_budget_exceeded"] = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            pass
+
     # List outputs
     output_dir = os.path.join(task_dir, "output")
     if os.path.isdir(output_dir):

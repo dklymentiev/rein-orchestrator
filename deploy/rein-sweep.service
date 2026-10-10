@@ -1,0 +1,15 @@
+[Unit]
+Description=Rein time budget sweep
+After=network.target
+
+[Service]
+Type=oneshot
+# Adjust User/Group and paths for your environment
+User=admin
+Group=admin
+WorkingDirectory=/opt/rein
+ExecStart=/usr/bin/python3 -m rein --sweep --agents-dir /opt/rein/agents
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rein-sweep

@@ -329,7 +329,7 @@ failed -- re-run with `--no-ui` to see error messages in the terminal.
 
 ## Advanced Features Reference
 
-Once you have a basic workflow running, here are the features available in schema v3.3.0.
+Once you have a basic workflow running, here are the features available in schema v3.4.0.
 
 ### Conditional Branching (`next`)
 
@@ -430,6 +430,31 @@ rein --step 1 --task-dir task-001 --agent-id writer
 rein --step 1 --task-dir task-001 --agent-id editor
 ```
 
+### Time Budgets (v3.4)
+
+`time_budget` limits wall time across restarts: per attempt on a block, in total on a workflow. A value is seconds or `90s`, `30m`, `2h`, `1d`.
+
+```yaml
+schema_version: "3.4.0"
+time_budget: 1d            # whole run; 24h is the default for schema 3.4.0 and newer
+
+blocks:
+  - name: draft
+    time_budget: 30m       # this attempt, waiting included
+    routing:
+      waiting: draft       # same attempt, the clock keeps running
+      timeout: stopped     # no result in time (falls back to `fail`)
+      _default: review
+```
+
+When a block runs out of time, `logic.error` / `on_error` run once and the `timeout` route is taken. When the run runs out of time, it ends as failed. In step mode something has to look at the clock between steps:
+
+```bash
+rein --sweep --agents-dir ./agents     # fail what is over budget, run nothing
+```
+
+Run it every minute from cron or the timer in `deploy/`. See Time Budgets in the README for the details.
+
 ### Other Block Fields
 
 | Field | Description |
@@ -438,13 +463,14 @@ rein --step 1 --task-dir task-001 --agent-id editor
 | `model: "haiku"` | Override LLM model for this block |
 | `save_as: "report.md"` | Custom output filename |
 | `timeout: 120` | Block timeout in seconds (30-7200) |
+| `time_budget: 30m` | Wall time per attempt, waiting included (see Time Budgets) |
 | `skip_if_previous_failed: true` | Skip if any dependency failed |
 | `continue_if_failed: true` | Don't fail workflow if this block fails |
 | `readable_outputs: true` | Save .md alongside .json (workflow-level) |
 
 ### Full Schema
 
-See `schemas/workflow-v3.3.0.json` for the complete JSON Schema specification.
+See `schemas/workflow-v3.4.0.json` for the complete JSON Schema specification. `schemas/registry.json` lists every schema version and what it added.
 
 ## Next steps
 

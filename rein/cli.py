@@ -65,6 +65,11 @@ def main():
         default=None,
         help="Agent identity for step mode: only execute blocks matching this agent",
     )
+    parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="Check every task for an exceeded time budget and fail those over it, then exit (for cron or a timer)",
+    )
     parser.add_argument("--state", metavar="TASK_DIR", help="Print full workflow state as JSON (blocks, edges, events)")
     parser.add_argument("--run-task", metavar="TASK_ID", help="Execute specific task (used internally by daemon)")
 
@@ -88,6 +93,17 @@ def main():
 
         run_daemon(args.agents_dir, args.daemon_interval, args.max_workflows, args.ws_port, args.no_ui)
         sys.exit(0)
+
+    # Handle --sweep (time budgets of tasks nobody is running)
+    if args.sweep:
+        from rein.sweep import sweep
+
+        result = sweep(args.agents_dir)
+        print(
+            f"[SWEEP] checked={sum(len(v) for v in result.values())} expired={len(result['expired'])} "
+            f"busy={len(result['busy'])} errors={len(result['errors'])}"
+        )
+        sys.exit(1 if result["errors"] else 0)
 
     # Handle --state command (full workflow state as JSON)
     if args.state:
