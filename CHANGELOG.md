@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.4] - 2026-10-10
+
+### Fixed
+
+- Two runs started in the same second no longer share a task directory. The directory was named after the clock, to the second, and a directory that already existed was silently reused, so the later run wrote over the input of the earlier one and both used one state database. A new task directory is now created exclusively: a name that already exists is never taken for a new task. This covers `rein --flow`, the `create_task` MCP tool and the local mode of the OpenClaw plugin.
+- `rein --step N --agent-id NAME` no longer hangs when the blocks of that agent are finished and the blocks that are ready belong to another agent. The step used to wait forever for its budget to run out; it now ends and leaves the remaining blocks to their agent.
+
+### Changed
+
+- The name of a new task directory ends in a random suffix: `task-20261010-153012-a3f9c1` instead of `task-20261010-153012`. Names still sort by creation time. Directories created by earlier versions keep working, and a directory named explicitly with `--task-dir` or `--task` is used as before.
+
 ## [3.3.3] - 2026-10-03
 
 ### Fixed
