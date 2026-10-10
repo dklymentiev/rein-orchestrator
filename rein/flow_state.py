@@ -40,6 +40,15 @@ def get_flow_state(task_dir: str, agents_dir: str = None) -> dict:
         result["flow"] = task_data.get("flow", "")
         result["created"] = task_data.get("created", "")
         result["input"] = task_data.get("input", {})
+
+    # Time budgets that ran out, if any (written by the engine)
+    budget_path = os.path.join(task_dir, "state", "time_budget.json")
+    if os.path.exists(budget_path):
+        try:
+            with open(budget_path) as f:
+                result["time_budget_exceeded"] = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            pass
     else:
         # Try task.yaml (older format)
         task_yaml_path = os.path.join(task_dir, "task.yaml")

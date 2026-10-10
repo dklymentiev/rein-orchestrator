@@ -46,6 +46,9 @@ class BlockConfig(BaseModel):
     skip_if_previous_failed: bool = False
     continue_if_failed: bool = False
     timeout: Optional[int] = Field(None, ge=30, le=7200)
+    time_budget: Optional[Union[int, str]] = Field(
+        None, description="Wall time this block may take per attempt: seconds, or 90s / 30m / 2h / 1d"
+    )
     model: Optional[str] = Field(
         default="", description="LLM model override for this block. Empty = use provider default."
     )
@@ -109,6 +112,9 @@ class WorkflowConfig(BaseModel):
     description: Optional[str] = Field(default="", max_length=1000)
     metadata: Optional[Dict] = None
     timeout: Optional[int] = Field(None, ge=30, le=86400)
+    time_budget: Optional[Union[int, str]] = Field(
+        None, description="Wall time the whole run may take: seconds, or 90s / 30m / 2h / 1d"
+    )
     max_parallel: int = Field(default=3, ge=1, le=10)
     readable_outputs: bool = Field(
         default=False, description="Generate human-readable .md files alongside .json outputs"

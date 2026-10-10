@@ -39,6 +39,7 @@ from rein import (
     save_readable_output,
     state_machine,
 )
+from rein import time_budget as tb
 from rein.agent_config import load_agent_config, validate_forbidden_behavior
 from rein.log import get_console, get_logger, scrub_secrets
 from rein.providers import create_provider
@@ -98,6 +99,20 @@ class ProcessManager:
         # Flow control - stop workflow on critical failure
         self.stop_workflow = False
         self.stop_reason = None
+
+        # Time budgets (see rein.time_budget); the values are set by load_config.
+        self.time_budget: Optional[int] = None  # whole run, seconds
+        self.block_time_budgets: Dict[str, int] = {}  # block name -> seconds
+        # Bumped when an attempt runs out of time, so that the thread still
+        # working on it can tell its result is no longer wanted.
+        self._attempt_no: Dict[str, int] = {}
+        # Blocks whose last result routed back to themselves (same attempt).
+        self._self_routed: Set[str] = set()
+        self._time_budget_events = 0
+        # Clocks of this task, read from the state database once and kept in
+        # step with it. Dropped whenever the task lock is taken, because until
+        # then another process may still be changing them.
+        self._budget_rows: Optional[Dict[str, tuple]] = None
 
         # Agents directory (specialists, teams, flows, tasks)
         from rein.config import DEFAULT_AGENTS_DIR
@@ -237,6 +252,8 @@ class ProcessManager:
         self.team_name = config.get("team", None)  # PHASE 2.5: team name
         self.on_error = config.get("on_error", None)  # Global error handler script
         self.default_max_runs = config.get("default_max_runs", 3)  # Default loop limit
+        self.time_budget = tb.run_budget(config)
+        self.block_time_budgets = tb.block_budgets(self.all_blocks)
 
         # Extract workflow directory from file path (for relative logic paths)
         if workflow_file:
@@ -262,6 +279,10 @@ class ProcessManager:
         self._validate_task_inputs(config)
 
         self._initialize_all_processes()
+
+        # The clock of the run starts the first time the flow is loaded for
+        # this task and is never restarted: budget_start keeps the first value.
+        self._budget_start(tb.RUN_KEY)
 
         # If resuming, load state from database
         if self.resume_run_id:
@@ -689,6 +710,12 @@ class ProcessManager:
             self._write_rein_log(f"BLOCK SKIPPED | {name} | skip_if_previous_failed=true and failures detected")
             return "skipped"  # Return special marker for skipped blocks
 
+        # A block can be reached twice at once: through depends_on and through
+        # the routing queue. If it is already running, do not start it again.
+        already = self._find_process_by_name(name)
+        if already and already[1].status == "running":
+            return "skipped" if from_next_queue else None
+
         self.semaphore.acquire()
 
         try:
@@ -704,6 +731,8 @@ class ProcessManager:
             process.pid = os.getpid()  # Use current process PID (no subprocess)
 
             self.state.save_process(process)
+            if name in self.block_time_budgets:
+                self._budget_start(name)
 
             # Log block start
             depends_str = f" | depends_on={process.depends_on}" if process.depends_on else ""
@@ -723,6 +752,7 @@ class ProcessManager:
         """Execute block (PHASE 2.5: Call Claude API with Logic Phases)"""
         name = process.name
         block_failed = False
+        attempt_no = self._attempt_no.get(name, 0)
 
         # Create per-run log
         run_log = RunLogger(self.task_dir, name, process.run_count)
@@ -912,6 +942,14 @@ class ProcessManager:
                 except Exception as e:
                     self._write_rein_log(f"SAVE_AS ERROR | {name} | {str(e)}")
 
+            if self._attempt_no.get(name, 0) != attempt_no:
+                # The time budget of this attempt ran out while it was still
+                # working. The flow has already moved on; do not let a late
+                # result mark the block done or route anywhere.
+                self._write_rein_log(f"LATE RESULT IGNORED | {name}[{uid}] | its time budget ran out first")
+                run_log.write("LATE RESULT", "ignored, time budget ran out first")
+                return
+
             process.progress = 100
             process.status = "done"
             process.exit_code = 0
@@ -952,6 +990,14 @@ class ProcessManager:
                     self._apply_next_state_machine(block, name, save_file, run_log) or routing_went_backward
                 )
 
+            # Time budget: the attempt ends when the block moves on. A block
+            # that routed back to itself is still in the same attempt, so its
+            # clock keeps running.
+            if name in self._self_routed:
+                self._self_routed.discard(name)
+            else:
+                self._budget_clear(name)
+
             # Deferred completion: only mark as completed if routing didn't send backward
             if routing_went_backward:
                 self._write_rein_log(f"GATE DEFERRED | {name} | not marking completed (routing went backward)")
@@ -959,6 +1005,9 @@ class ProcessManager:
                 self.completed.add(name)
 
         except Exception as e:
+            if self._attempt_no.get(name, 0) != attempt_no:
+                self._write_rein_log(f"LATE FAILURE IGNORED | {name}[{uid}] | its time budget ran out first")
+                return
             self._write_rein_log(f"BLOCK FAILED | {name}[{uid}] | {str(e)}")
             run_log.write("BLOCK FAILED", f"error={str(e)}")
             process.status = "failed"
@@ -966,6 +1015,7 @@ class ProcessManager:
             block_failed = True
             self.state.save_process(process)
             self.completed.add(name)
+            self._budget_clear(name)
 
             # Run error handlers: logic.error (per-block) > on_error (global)
             self._run_error_handlers(block, name, str(e), run_log)
@@ -1008,17 +1058,24 @@ class ProcessManager:
                         self.state.save_process(proc)
                     break
 
-    def _apply_routing(self, block: dict, name: str, save_file: str, run_log) -> bool:
+    def _apply_routing(self, block: dict, name: str, save_file: str, run_log, forced_target: str = None) -> bool:
         """Apply tag-based routing (v3.3) after block completion.
+
+        With forced_target the result file is not read: the block did not
+        produce a verdict (its time budget ran out) and the caller names the
+        block to go to.
 
         Returns True if routing went backward (gate should defer completion).
         """
         routing_went_backward = False
         try:
             routing = block["routing"]
-            result_text = routing_engine.read_result_text(save_file)
-            signals = routing_engine.extract_verdict_signals(result_text)
-            next_block_name, matched_signal = routing_engine.match_routing_rule(routing, signals)
+            if forced_target:
+                next_block_name, matched_signal = forced_target, "time_budget"
+            else:
+                result_text = routing_engine.read_result_text(save_file)
+                signals = routing_engine.extract_verdict_signals(result_text)
+                next_block_name, matched_signal = routing_engine.match_routing_rule(routing, signals)
 
             if next_block_name == "_stop":
                 self._write_rein_log(f"ROUTING STOP | {name} | signal={matched_signal}")
@@ -1078,6 +1135,14 @@ class ProcessManager:
                 if skip_set:
                     self._write_rein_log(f"ROUTING SKIP BRANCHES | {name} -> {next_block_name} | skipped={skip_set}")
 
+                # Time budget: going back to itself with a verdict continues
+                # the same attempt; entering any other block, or being sent
+                # back after running out of time, starts a new one.
+                if next_block_name == name and not forced_target:
+                    self._self_routed.add(name)
+                else:
+                    self._budget_clear(next_block_name)
+
                 self.next_queue.append((next_block_name, {}))
                 if is_backward:
                     routing_went_backward = True
@@ -1085,7 +1150,8 @@ class ProcessManager:
             self._write_rein_log(
                 f"ROUTING | {name} -> {next_block_name} | signal={matched_signal} | run={self.run_counts[next_block_name]}/{max_runs_val}"
             )
-            run_log.write("ROUTING", f"-> {next_block_name} signal={matched_signal}")
+            if run_log:
+                run_log.write("ROUTING", f"-> {next_block_name} signal={matched_signal}")
 
         except Exception as e:
             self._write_rein_log(f"ROUTING ERROR | {name} | {str(e)}")
@@ -1140,6 +1206,11 @@ class ProcessManager:
                 if gate_deps:
                     self._write_rein_log(f"GATE CASCADE | {name} | invalidated: {gate_deps}")
 
+                if next_block_name == name:
+                    self._self_routed.add(name)
+                else:
+                    self._budget_clear(next_block_name)
+
                 self.next_queue.append((next_block_name, result_data))
                 if current_runs > 0:
                     routing_went_backward = True
@@ -1152,6 +1223,182 @@ class ProcessManager:
             self._write_rein_log(f"NEXT EVAL ERROR | {name} | {str(e)}")
 
         return routing_went_backward
+
+    def _now(self) -> float:
+        """Current time. A method so that tests can stop the clock."""
+        return time.time()
+
+    def _budgets(self) -> Dict[str, tuple]:
+        """Clocks of this task: {name: (started_at, expired_at)}."""
+        if self._budget_rows is None:
+            self._budget_rows = self.state.budget_rows()
+        return self._budget_rows
+
+    def _budget_start(self, name: str) -> None:
+        """Start a clock unless it is already running (the first start wins)."""
+        if name not in self._budgets():
+            now = self._now()
+            self.state.budget_start(name, now)
+            self._budget_rows[name] = (now, None)
+
+    def _budget_clear(self, name: str) -> None:
+        if name in self._budgets():
+            self.state.budget_clear(name)
+            self._budget_rows.pop(name, None)
+
+    def _budget_claim(self, name: str, now: float) -> bool:
+        claimed = self.state.budget_claim_expiry(name, now)
+        row = self._budgets().get(name)
+        if row:
+            self._budget_rows[name] = (row[0], row[1] or now)
+        return claimed
+
+    def enforce_time_budgets(self) -> bool:
+        """Fail whatever has run out of time. Returns True if the run is over.
+
+        Safe to call as often as anyone likes and from any process that holds
+        the task: the start times live in the state database, and the claim on
+        an expiry is conditional, so each expiry is acted on exactly once.
+        """
+        now = self._now()
+        rows = self._budgets()
+
+        run_row = rows.get(tb.RUN_KEY)
+        if run_row and run_row[1]:
+            return True  # stopped for this earlier
+        if self.time_budget and run_row and now - run_row[0] > self.time_budget:
+            if self._budget_claim(tb.RUN_KEY, now):
+                self._expire_run(now - run_row[0])
+            return True
+
+        for name, budget in self.block_time_budgets.items():
+            row = rows.get(name)
+            if not row or row[1] or now - row[0] <= budget:
+                continue
+            if self._budget_claim(name, now):
+                self._expire_block(name, now - row[0], budget)
+        return False
+
+    def _expire_block(self, name: str, elapsed: float, budget: int) -> None:
+        """A block did not produce its result within its time budget."""
+        block = self.block_configs.get(name) or {}
+        reason = f"time budget exceeded: {tb.format_seconds(elapsed)} elapsed, budget {tb.format_seconds(budget)}"
+        self._write_rein_log(f"TIME BUDGET EXCEEDED | block={name} | elapsed={elapsed:.0f}s > budget={budget}s")
+        console.info("[TIME_BUDGET] task=%s block=%s", self.task_id, name)
+
+        # Whatever is still working on this attempt is no longer listened to.
+        self._attempt_no[name] = self._attempt_no.get(name, 0) + 1
+
+        # `timeout` is the route for "no answer in time"; without it the
+        # block's `fail` route is used; without either it is a plain failure.
+        routing = block.get("routing") or {}
+        target = routing.get("timeout") or routing.get("fail")
+
+        with self.lock:
+            for proc in self.processes.values():
+                if proc.name == name:
+                    # A routed expiry is settled by the route, like a verdict.
+                    # An unrouted one is a failed block, with everything that
+                    # means (continue_if_failed, retry on resume).
+                    proc.status = "done" if target else "failed"
+                    proc.exit_code = 0 if target else 1
+                    self.state.save_process(proc)
+                    break
+            self.completed.add(name)
+            self.next_queue = [(queued, data) for queued, data in self.next_queue if queued != name]
+
+        self._record_time_budget_event(name, elapsed, budget)
+        self._run_error_handlers(block, name, reason)
+        self._budget_clear(name)
+
+        if target:
+            self._apply_routing(block, name, None, None, forced_target=target)
+        elif not self._should_continue_after_failure(block, True):
+            with self.lock:
+                self.stop_workflow = True
+                self.stop_reason = f"Block '{name}' ran out of its time budget (continue_if_failed=false)"
+
+    def _expire_run(self, elapsed: float) -> None:
+        """The run as a whole did not finish within its time budget."""
+        reason = (
+            f"time budget exceeded: {tb.format_seconds(elapsed)} elapsed, budget {tb.format_seconds(self.time_budget)}"
+        )
+        self._write_rein_log(f"TIME BUDGET EXCEEDED | run | elapsed={elapsed:.0f}s > budget={self.time_budget}s")
+        console.info("[TIME_BUDGET] task=%s run", self.task_id)
+        self._fail_unfinished_blocks(reason)
+        self._record_time_budget_event(tb.RUN_KEY, elapsed, self.time_budget)
+        # The run, not one block, ran out of time: only the global handler applies.
+        self._run_error_handlers({}, "", reason)
+
+    def _fail_unfinished_blocks(self, reason: str) -> None:
+        """Close a run that is over its time budget: nothing else may start."""
+        with self.lock:
+            self.next_queue = []
+            for proc in self.processes.values():
+                if proc.status not in ("done", "skipped", "failed"):
+                    self._attempt_no[proc.name] = self._attempt_no.get(proc.name, 0) + 1
+                    proc.status = "failed"
+                    proc.exit_code = 1
+                    self.state.save_process(proc)
+                self.completed.add(proc.name)
+            self.stop_workflow = True
+            self.stop_reason = reason
+
+    def _record_time_budget_event(self, name: str, elapsed: float, budget: int) -> None:
+        """Append to state/time_budget.json, where status readers look."""
+        self._time_budget_events += 1
+        path = os.path.join(self.task_dir, "state", "time_budget.json")
+        try:
+            events = []
+            if os.path.exists(path):
+                with open(path) as f:
+                    events = json.load(f)
+            events.append(
+                {
+                    "scope": "block" if name else "run",
+                    "block": name,
+                    "elapsed_seconds": int(elapsed),
+                    "budget_seconds": budget,
+                    "at": datetime.now().isoformat(),
+                }
+            )
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                json.dump(events, f, indent=2)
+        except Exception as e:
+            self._write_rein_log(f"TIME BUDGET RECORD ERROR | {str(e)}")
+
+    def check_time_budgets(self) -> str:
+        """Enforce time budgets without running any block. For `rein --sweep`.
+
+        Returns "busy" when another process holds the task (it enforces the
+        budgets itself), "expired" when something was found over budget, and
+        "ok" otherwise.
+        """
+        lock_path = os.path.join(self.task_dir, "state", "rein.lock")
+        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+        lock_fd = open(lock_path, "w")
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, OSError):
+            lock_fd.close()
+            return "busy"
+        try:
+            self._budget_rows = None  # the lock is ours now: read the clocks afresh
+            run_was_over = bool((self._budgets().get(tb.RUN_KEY) or (0, None))[1])
+            run_over = self.enforce_time_budgets()
+            if run_over:
+                # Loading the flow put unfinished blocks back to waiting; a run
+                # that is over stays closed.
+                self._fail_unfinished_blocks(self.stop_reason or "time budget exceeded")
+            if run_over and not run_was_over or self._time_budget_events:
+                if state_machine.all_blocks_completed(self.all_blocks, self.completed) and not self.next_queue:
+                    self._finalize_run()
+                return "expired"
+            return "ok"
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
 
     def _run_error_handlers(self, block: dict, block_name: str, error_msg: str, run_log=None):
         """Delegate to error_handlers module."""
@@ -1299,6 +1546,7 @@ class ProcessManager:
             return False
 
         try:
+            self._budget_rows = None  # the lock is ours now: read the clocks afresh
             return self._run_step_inner(max_steps, agent_id)
         finally:
             fcntl.flock(self._step_lock_fd, fcntl.LOCK_UN)
@@ -1308,6 +1556,16 @@ class ProcessManager:
         """Inner step execution (called while holding file lock)."""
         unlimited = max_steps == 0
         steps_used = 0
+
+        # Time budgets first: a block that has waited too long is failed (and
+        # routed) before this step decides what to run, and a run that is over
+        # its budget does not run anything.
+        if self.enforce_time_budgets():
+            self._fail_unfinished_blocks(self.stop_reason or "time budget exceeded")
+            self._write_rein_log("STEP NOOP | run is over its time budget")
+            self._finalize_run()
+            print("[STEP] Run is over its time budget. Nothing was executed.")
+            return True
 
         # Build pending set, excluding already-completed blocks
         pending = {}
@@ -1346,6 +1604,9 @@ class ProcessManager:
                 if time.time() - start_time > self.timeout:
                     self._write_rein_log("STEP TIMEOUT")
                     break
+
+            if self.enforce_time_budgets():
+                break
 
             # Budget exhausted: wait for in-flight blocks, then exit
             if not unlimited and steps_used >= max_steps:
@@ -1483,7 +1744,32 @@ class ProcessManager:
         state_machine.sync_completed_from_processes(self.processes, self.completed, self.lock)
 
     def run_workflow(self):
-        """Execute workflow with dependency management"""
+        """Execute workflow with dependency management.
+
+        Holds the task lock for the whole run, the same lock a step holds, so
+        that anything that inspects tasks from outside (`rein --sweep`) can
+        tell a task that is being run from one that nobody is running.
+        """
+        lock_path = os.path.join(self.task_dir, "state", "rein.lock")
+        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+        lock_fd = open(lock_path, "w")
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, OSError):
+            lock_fd.close()
+            self._write_rein_log("RUN LOCKED | another instance is running this task, not starting")
+            print("[RUN] Another instance is running this task. Not starting.")
+            self.running = False
+            return
+        try:
+            self._budget_rows = None  # the lock is ours now: read the clocks afresh
+            self._run_workflow_inner()
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
+
+    def _run_workflow_inner(self):
+        """Run loop of run_workflow (called while holding the task lock)."""
         # Support both 'name' (old) and 'stage' (new Phase 2.5)
         pending = {(block.get("name") or block.get("stage", "unknown")): block for block in self.all_blocks}
         spawned = set()
@@ -1503,6 +1789,9 @@ class ProcessManager:
             if self.stop_workflow:
                 self._write_rein_log(f"WORKFLOW STOPPING | reason={self.stop_reason}")
                 self._kill_remaining_processes(self.stop_reason or "workflow stop requested")
+                break
+
+            if self.enforce_time_budgets():
                 break
 
             # Check if timeout exceeded

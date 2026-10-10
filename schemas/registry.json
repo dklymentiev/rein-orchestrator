@@ -1,5 +1,5 @@
 {
-  "current_version": "3.3.0",
+  "current_version": "3.4.0",
   "description": "Schema version registry and compatibility matrix",
   "versions": {
     "2.6.0": {
@@ -94,6 +94,22 @@
       ],
       "breaking_changes": []
     },
+    "3.4.0": {
+      "released": "2026-10-10",
+      "description": "Time budgets for blocks and runs",
+      "features": [
+        "time_budget: wall time a block may take per attempt, or a whole run in total",
+        "A run that declares this schema version and sets no time_budget gets a default of 24h",
+        "routing key `timeout`: where to go when a block runs out of its time budget",
+        "--sweep: enforce time budgets of tasks that no process is running"
+      ],
+      "backwards_compatible_with": [
+        "3.3.0",
+        "2.6.0"
+      ],
+      "migration_required": false,
+      "breaking_changes": []
+    },
     "3.3.0": {
       "released": "2026-04-02",
       "description": "Async step mode, agent routing, error handlers, per-block logging",
@@ -123,6 +139,21 @@
     }
   },
   "compatibility_matrix": {
+    "3.4.0": {
+      "can_upgrade_from": [
+        "3.3.0",
+        "2.6.0",
+        "2.5.5",
+        "2.5.4",
+        "2.5.3",
+        "2.5.2",
+        "2.5.1"
+      ],
+      "can_downgrade_to": [
+        "3.3.0"
+      ],
+      "migration_script": null
+    },
     "2.6.0": {
       "can_upgrade_from": [
         "2.5.5",
