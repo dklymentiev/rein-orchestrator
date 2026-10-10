@@ -751,9 +751,11 @@ class TestRunCountPersistence:
             db_path = manager.db_path
             task_dir = manager.task_dir
 
-            # Manually set run_count in DB
+            # Manually set the count in DB. On resume run_counts is restored from
+            # completed_runs (runs that finished), not from run_count (routing
+            # entries), so that a forward-routed block is not seen as already run.
             conn = sqlite3.connect(db_path)
-            conn.execute("UPDATE processes SET run_count = 3 WHERE name = 'a'")
+            conn.execute("UPDATE processes SET completed_runs = 3 WHERE name = 'a'")
             conn.commit()
             conn.close()
 
