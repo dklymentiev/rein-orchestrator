@@ -1411,6 +1411,19 @@ class ProcessManager:
                 if self._is_stuck(pending):
                     self._write_rein_log(f"STUCK DETECTED | {len(pending)} pending but no deps satisfiable")
                     break
+                if (
+                    agent_id
+                    and not state_machine.find_ready_blocks(pending, self.completed, agent_id)
+                    and state_machine.find_ready_blocks(pending, self.completed)
+                ):
+                    # Blocks are ready, but none of them for this agent
+                    # (--agent-id). No amount of waiting here changes that,
+                    # so yield instead of spinning until the step budget,
+                    # which may never run out. Without --agent-id this never
+                    # applies: a round with nothing ready then means blocks
+                    # are about to be put back in line, and the loop goes on.
+                    self._write_rein_log(f"STEP NOTHING READY | {len(pending)} pending, none for agent {agent_id}")
+                    break
 
         # Determine completion status
         all_done = (
