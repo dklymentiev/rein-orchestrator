@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2026-10-10
+
+### Added
+
+- Time budgets. `time_budget` on a block limits how long one attempt of that block may take, waiting for its result included; `time_budget` at the top of a flow limits the whole run. Values are seconds or `90s`, `30m`, `2h`, `1d`. The start times are kept in the task's state, so a budget holds across restarts and step-mode calls. Before, a block that handed work off and never got an answer left its task waiting forever with nothing in the log.
+- When a block runs out of time its error handlers run once and the flow follows the block's `timeout` route, or `fail` if there is none. A result that arrives after that is ignored. When a run runs out of time, `on_error` runs once, unfinished blocks are failed and the task ends as `failed`.
+- `rein --sweep` checks every task for an exceeded time budget and fails those over it, without running any block. It is meant for cron or a timer; `deploy/rein-sweep.service` and `deploy/rein-sweep.timer` are an example. The daemon does the same check on every loop, and every step checks its own task before it runs anything.
+- `task_status` and `--state` report exceeded time budgets as `time_budget_exceeded`.
+- Schema version 3.4.0 (`schemas/workflow-v3.4.0.json`, now the schema the validator checks against; `workflow-v3.3.0.json` is unchanged). A flow that declares it and sets no `time_budget` gets a run budget of 24 hours. Flows that declare an older version have no run budget unless they set one.
+
+### Changed
+
+- A continuous run holds the task lock for its duration, the same lock a step holds. Starting a second continuous run on a task that is already running is refused instead of both writing to the same state.
+- A block that is reached through `depends_on` and through the routing queue at the same moment is started once, not twice.
+
 ## [3.3.4] - 2026-10-10
 
 ### Fixed
