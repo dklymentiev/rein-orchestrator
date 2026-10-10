@@ -84,7 +84,7 @@ export function createTools(client: ReinClient): ToolDefinition[] {
         properties: {
           task_id: {
             type: "string",
-            description: "Task ID (e.g. task-20260220-143022)",
+            description: "Task ID (e.g. task-20260220-143022-a3f9c1)",
           },
         },
         required: ["task_id"],

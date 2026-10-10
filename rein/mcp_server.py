@@ -34,6 +34,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import TransportSecuritySettings
 
 from rein.config import DEFAULT_AGENTS_DIR, ConfigLoader
+from rein.tasks import new_task_dir
 
 
 def _get_agents_dir() -> str:
@@ -298,9 +299,10 @@ def create_task(
         return json.dumps({"error": f"Flow not found: {flow}"})
 
     now = datetime.now(timezone.utc)
-    task_id = f"task-{now.strftime('%Y%m%d-%H%M%S')}"
     tasks_root = os.path.join(agents, "tasks")
-    task_dir = os.path.join(tasks_root, task_id)
+    # Created exclusively: two tasks made in the same second must not share a
+    # directory (see rein.tasks.new_task_dir).
+    task_id, task_dir = new_task_dir(tasks_root, now)
 
     os.makedirs(os.path.join(task_dir, "input"), exist_ok=True)
     os.makedirs(os.path.join(task_dir, "output"), exist_ok=True)
@@ -352,7 +354,7 @@ def task_status(
     """Check the status of a task, including block progress and outputs.
 
     Args:
-        task_id: Task ID (e.g. task-20260220-143022).
+        task_id: Task ID (e.g. task-20260220-143022-a3f9c1).
         agents_dir: Path to agents directory. Uses REIN_AGENTS_DIR env or default if empty.
     """
     agents = _get_agents_dir()
@@ -456,7 +458,7 @@ def flow_state(
     dependency edges, per-block status/agent/specialist, and recent events.
 
     Args:
-        task_id: Task ID (e.g. task-20260402-170000).
+        task_id: Task ID (e.g. task-20260402-170000-a3f9c1).
     """
     from rein.flow_state import get_flow_state
 

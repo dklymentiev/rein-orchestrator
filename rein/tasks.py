@@ -6,10 +6,46 @@ Functions for executing tasks, saving results to memory, and status management.
 
 import json
 import os
+import secrets
+from datetime import datetime
+from typing import Optional, Tuple
 
 import yaml
 
 from rein.state import ReinState
+
+# How many names new_task_dir tries before giving up. One retry is already
+# rare; running out means something other than chance is wrong.
+NEW_TASK_DIR_ATTEMPTS = 10
+
+
+def _task_suffix() -> str:
+    """Random part of a task directory name."""
+    return secrets.token_hex(3)
+
+
+def new_task_dir(tasks_root: str, now: Optional[datetime] = None) -> Tuple[str, str]:
+    """Create a task directory that no other run holds. Returns (task_id, task_dir).
+
+    The name is ``task-<YYYYMMDD-HHMMSS>-<6 hex>``. The time comes first so
+    that names still sort by creation time.
+
+    The random suffix only makes a clash unlikely. What rules it out is
+    os.mkdir: it creates the directory or fails, so a directory that already
+    exists is never taken for a new one. Every caller that needs a new task
+    directory must go through here instead of naming one itself.
+    """
+    os.makedirs(tasks_root, exist_ok=True)
+    stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    for _ in range(NEW_TASK_DIR_ATTEMPTS):
+        task_id = f"task-{stamp}-{_task_suffix()}"
+        task_dir = os.path.join(tasks_root, task_id)
+        try:
+            os.mkdir(task_dir)
+        except FileExistsError:
+            continue
+        return task_id, task_dir
+    raise RuntimeError(f"Could not create a new task directory under {tasks_root}")
 
 
 def update_task_status(status_path, status, **kwargs):

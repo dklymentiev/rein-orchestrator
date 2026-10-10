@@ -3,12 +3,14 @@
 import json
 import os
 import sqlite3
+from datetime import datetime
 
 import pytest
 import yaml
 
 pytest.importorskip("mcp", reason="mcp package not installed (optional dependency)")
 
+import rein.mcp_server as mcp_server_module
 from rein.mcp_server import (
     create_task,
     list_flows,
@@ -223,6 +225,33 @@ class TestCreateTask:
         # Verify status marker
         with open(os.path.join(task_dir, "state", "status")) as f:
             assert f.read() == "pending"
+
+    def test_two_tasks_in_the_same_second_get_separate_directories(self, agents_dir, monkeypatch):
+        """With the clock stopped, each call still gets a directory of its own."""
+        frozen = datetime(2026, 1, 2, 3, 4, 5)
+
+        class FrozenDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return frozen.replace(tzinfo=tz)
+
+        monkeypatch.setattr(mcp_server_module, "datetime", FrozenDatetime)
+
+        first = json.loads(create_task(flow="test-flow", question="first question", agents_dir=agents_dir))
+        second = json.loads(create_task(flow="test-flow", question="second question", agents_dir=agents_dir))
+
+        assert first["task_id"].startswith("task-20260102-030405-")
+        assert second["task_id"].startswith("task-20260102-030405-")
+        assert first["task_id"] != second["task_id"]
+        assert first["task_dir"] != second["task_dir"]
+
+        # The second call did not write over the input of the first.
+        with open(os.path.join(first["task_dir"], "input", "question.txt")) as f:
+            assert f.read() == "first question"
+        with open(os.path.join(second["task_dir"], "input", "question.txt")) as f:
+            assert f.read() == "second question"
+        with open(os.path.join(first["task_dir"], "task.yaml")) as f:
+            assert yaml.safe_load(f)["id"] == first["task_id"]
 
     def test_invalid_flow(self, agents_dir):
         result = json.loads(

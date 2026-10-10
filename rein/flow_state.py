@@ -16,7 +16,7 @@ def get_flow_state(task_dir: str, agents_dir: str = None) -> dict:
     """Build complete flow state from task directory.
 
     Args:
-        task_dir: Path to task directory (e.g. /agents/tasks/task-20260402-170000)
+        task_dir: Path to task directory (e.g. /agents/tasks/task-20260402-170000-a3f9c1)
         agents_dir: Path to agents directory (for loading workflow YAML)
 
     Returns:

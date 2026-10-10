@@ -44,6 +44,7 @@ from rein.log import get_console, get_logger, scrub_secrets
 from rein.providers import create_provider
 from rein.providers.base import UsageStats
 from rein.run_log import RunLogger
+from rein.tasks import new_task_dir as _new_task_dir
 from rein.tasks import save_task_to_memory as _save_task_to_memory
 from rein.tasks import update_task_status as _update_task_status
 
@@ -187,11 +188,11 @@ class ProcessManager:
 
     def create_task(self, flow_name: str, input_params: dict = None) -> str:
         """Create a new task directory and return task_id (v3.0: new structure)"""
-        task_id = f"task-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        task_dir = os.path.join(self.tasks_root, task_id)
+        # Created exclusively: two runs started in the same second must not
+        # share a directory (see rein.tasks.new_task_dir).
+        task_id, task_dir = _new_task_dir(self.tasks_root, datetime.now())
 
         # Create task directory structure (v3.0)
-        os.makedirs(task_dir, exist_ok=True)
         os.makedirs(os.path.join(task_dir, "input"), exist_ok=True)  # Workflow input
         os.makedirs(os.path.join(task_dir, "output"), exist_ok=True)  # Workflow output
         os.makedirs(os.path.join(task_dir, "state"), exist_ok=True)  # State/logs
