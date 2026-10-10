@@ -312,7 +312,7 @@ Scripts receive JSON context via stdin:
   "output_file": "path/to/result.json",
   "block_dir": "path/to/block/",
   "task_input": {"topic": "..."},
-  "task_id": "task-20260102-183805",
+  "task_id": "task-20260102-183805-a3f9c1",
   "workflow_dir": "path/to/flow/",
   "run_count": 0,
   "depends_on": ["block_a", "block_b"],
@@ -537,13 +537,13 @@ rein --flow my-flow --step 1 --input '{"topic":"AI"}'
 # Exit code: 0 = done, 2 = more steps remain
 
 # Resume -- runs next block
-rein --step 1 --task-dir /agents/tasks/task-20260402-170000
+rein --step 1 --task-dir /agents/tasks/task-20260402-170000-a3f9c1
 
 # Run up to 5 blocks (parallel if dependencies allow)
-rein --step 5 --task-dir /agents/tasks/task-20260402-170000
+rein --step 5 --task-dir /agents/tasks/task-20260402-170000-a3f9c1
 
 # Run all remaining blocks
-rein --step 0 --task-dir /agents/tasks/task-20260402-170000
+rein --step 0 --task-dir /agents/tasks/task-20260402-170000-a3f9c1
 ```
 
 ### Multi-Agent Routing

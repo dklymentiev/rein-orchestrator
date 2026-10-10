@@ -1,4 +1,5 @@
 import { spawn, execSync } from "child_process";
+import * as crypto from "crypto";
 import * as path from "path";
 import * as fs from "fs";
 import * as http from "http";
@@ -294,8 +295,30 @@ export class ReinClient {
 
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
-    const taskId = `task-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    const taskDir = path.join(agents, "tasks", taskId);
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const tasksRoot = path.join(agents, "tasks");
+    fs.mkdirSync(tasksRoot, { recursive: true });
+
+    // Same rule as rein.tasks.new_task_dir: the task directory is created
+    // exclusively (no `recursive`, so an existing one throws EEXIST), which
+    // means two tasks made in the same second never share a directory.
+    let taskId = "";
+    let taskDir = "";
+    for (let attempt = 0; attempt < 10 && !taskDir; attempt++) {
+      const id = `task-${stamp}-${crypto.randomBytes(3).toString("hex")}`;
+      const dir = path.join(tasksRoot, id);
+      try {
+        fs.mkdirSync(dir);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "EEXIST") continue;
+        throw err;
+      }
+      taskId = id;
+      taskDir = dir;
+    }
+    if (!taskDir) {
+      return { task_id: "", flow, status: "pending", task_dir: "", error: `Could not create a new task directory under ${tasksRoot}` };
+    }
 
     fs.mkdirSync(path.join(taskDir, "input"), { recursive: true });
     fs.mkdirSync(path.join(taskDir, "output"), { recursive: true });

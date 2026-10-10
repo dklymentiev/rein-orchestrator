@@ -85,7 +85,7 @@ The agent should call `rein_list_flows` and show your available flows.
 
 > Start a code review workflow for the auth module
 
-> Check status of task-20260221-143022
+> Check status of task-20260221-143022-a3f9c1
 
 ## Architecture
 
