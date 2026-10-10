@@ -630,6 +630,11 @@ class TestGetPreviousBlocksStatus(TestProcessManagerFixture):
 class TestRunStep(TestProcessManagerFixture):
     """Tests for run_step() method -- async step-by-step execution"""
 
+    @pytest.fixture(autouse=True)
+    def _provider_configured(self, monkeypatch):
+        """load_config needs some provider configured; these tests never call it."""
+        monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:9")
+
     def _setup_blocks(self, manager, blocks):
         """Helper: load blocks into manager and initialize processes."""
         config = {"blocks": blocks}

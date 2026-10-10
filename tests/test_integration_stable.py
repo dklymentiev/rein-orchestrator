@@ -26,6 +26,14 @@ if os.path.exists(_env_file):
                 k, v = line.split("=", 1)
                 _ENV[k.strip()] = v.strip()
 
+# The fixture flows never call a model, but the engine refuses to load a flow
+# when no provider is configured at all. Point it at an address nobody listens
+# on so these tests do not depend on credentials in the environment.
+if not any(
+    _ENV.get(k) for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "OLLAMA_URL", "AI_GATEWAY_URL")
+):
+    _ENV["OLLAMA_URL"] = "http://127.0.0.1:9"
+
 
 def _run_fixture_flow(flow_name, timeout=60):
     """Run a fixture flow and return (code, stdout, run_dir)."""
