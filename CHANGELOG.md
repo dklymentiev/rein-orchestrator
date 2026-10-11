@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.1] - 2026-10-11
+
+### Fixed
+
+- In step mode a block whose script ran longer than five minutes was run twice. The step stopped waiting after a fixed 300 seconds and exited, the script kept running, and the next step found the block unfinished and started it again next to the first one. A step now never walks away from a working script: it waits, or it stops the script and fails the block.
+- How long a step waits is decided by the time budget. A block with a `time_budget`, or any block of a run that has one, is waited for until it finishes or the budget stops it. A block that no budget covers is still waited for 300 seconds; after that its script is stopped, the block is failed with a message that says so, and the next step retries it.
+- A time budget that runs out stops the script of the block, together with everything the script started. Before, the budget only stopped listening for the result and the script ran on.
+- A script the engine stops is stopped as a whole. Scripts run in a session of their own, and the script's `timeout` and a workflow stop now end the processes the script started as well.
+- If the engine process dies while a script is running, the next step or run on that task stops the leftover script before it starts the block again.
+
+### Changed
+
+- A block with a `time_budget` and no `timeout` of its own is limited by the budget alone. The default script limit of 8 minutes no longer cuts short a script the budget still allows. A `timeout` set on the block still applies.
+- A script that runs as another user (`linux_user`) cannot be stopped by the engine; the log says so when that happens.
+
 ## [3.4.0] - 2026-10-10
 
 ### Added
