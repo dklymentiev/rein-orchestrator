@@ -5,6 +5,7 @@ Rein Logic Runner - Execute logic scripts (Python/Shell) for workflow blocks
 import json
 import os
 import re
+import signal
 import subprocess
 from typing import Callable, Dict, List, Optional
 
@@ -23,7 +24,9 @@ class LogicRunner:
         task_input: Optional[Dict] = None,
         logger: Optional[Callable[[str], None]] = None,
         timeout: int = 480,  # 8 minutes default
+        children=None,  # rein.children.ChildRegistry: where started scripts are recorded
     ):
+        self.children = children
         self.task_dir = task_dir
         self.workflow_dir = workflow_dir
         self.task_id = task_id
@@ -43,6 +46,7 @@ class LogicRunner:
         linux_user: Optional[str] = None,
         run_count: int = 0,
         timeout_override: Optional[int] = None,
+        no_timeout: bool = False,
     ) -> bool:
         """
         Run logic script (Python or Shell)
@@ -55,6 +59,9 @@ class LogicRunner:
             input_dir: Input directory for dependencies
             depends_on: List of dependency block names
             block_config: Full block configuration dict
+            timeout_override: The block's own `timeout`, instead of the default
+            no_timeout: The script has no limit of its own; the block's time
+                budget is what stops it
 
         Returns:
             True if script succeeded, False otherwise
@@ -110,28 +117,58 @@ class LogicRunner:
                 self.logger(f"LOGIC SUDO | running as {linux_user}")
 
             # Run script (use block-level timeout_override if provided)
-            effective_timeout = timeout_override if timeout_override else self.timeout
-            result = subprocess.run(
-                cmd, input=context_json, capture_output=True, text=True, timeout=effective_timeout, cwd=self.task_dir
+            if no_timeout:
+                effective_timeout = None
+            else:
+                effective_timeout = timeout_override if timeout_override else self.timeout
+
+            # The script gets a session of its own, so that it can be stopped
+            # together with everything it started, and it is recorded, so that
+            # whoever stops the block (a time budget, a step that gives up
+            # waiting) can find it.
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=self.task_dir,
+                start_new_session=True,
             )
+            if self.children:
+                self.children.started(block_name, proc)
+            try:
+                try:
+                    stdout, stderr = proc.communicate(context_json, timeout=effective_timeout)
+                except subprocess.TimeoutExpired:
+                    self.logger(f"LOGIC ERROR | timeout after {effective_timeout}s: {script_path}")
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        proc.kill()
+                    proc.communicate()
+                    return False
+            finally:
+                if self.children:
+                    self.children.finished(proc)
+
             # Log output
-            if result.stdout:
-                for line in result.stdout.strip().split("\n"):
+            if stdout:
+                for line in stdout.strip().split("\n"):
                     if line:
                         self.logger(f"LOGIC OUTPUT | {line}")
 
-            if result.returncode != 0:
-                if result.stderr:
-                    for line in result.stderr.strip().split("\n"):
+            if proc.returncode != 0:
+                if stderr:
+                    for line in stderr.strip().split("\n"):
                         if line:
                             self.logger(f"LOGIC ERROR | {line}")
+                if proc.returncode < 0:
+                    self.logger(f"LOGIC ERROR | stopped by signal {-proc.returncode}: {script_path}")
                 return False
 
             return True
 
-        except subprocess.TimeoutExpired:
-            self.logger(f"LOGIC ERROR | timeout: {script_path}")
-            return False
         except Exception as e:
             self.logger(f"LOGIC ERROR | {str(e)}")
             return False
