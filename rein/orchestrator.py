@@ -41,6 +41,7 @@ from rein import (
 )
 from rein import time_budget as tb
 from rein.agent_config import load_agent_config, validate_forbidden_behavior
+from rein.children import ChildRegistry
 from rein.log import get_console, get_logger, scrub_secrets
 from rein.providers import create_provider
 from rein.providers.base import UsageStats
@@ -113,6 +114,8 @@ class ProcessManager:
         # step with it. Dropped whenever the task lock is taken, because until
         # then another process may still be changing them.
         self._budget_rows: Optional[Dict[str, tuple]] = None
+        # Scripts started for the blocks of this task (see rein.children).
+        self._child_registry: Optional[ChildRegistry] = None
 
         # Agents directory (specialists, teams, flows, tasks)
         from rein.config import DEFAULT_AGENTS_DIR
@@ -422,6 +425,11 @@ class ProcessManager:
 
         return input_dir
 
+    def _children(self) -> ChildRegistry:
+        if self._child_registry is None or self._child_registry.task_dir != self.task_dir:
+            self._child_registry = ChildRegistry(self.task_dir, self._write_rein_log)
+        return self._child_registry
+
     def _run_logic(
         self,
         script_path: str,
@@ -444,10 +452,15 @@ class ProcessManager:
             task_id=self.task_id,
             task_input=self.task_input,
             logger=self._write_rein_log,
+            children=self._children(),
         )
 
         # Block-level timeout override (v3.3 feature)
         block_timeout = block_config.get("timeout") if block_config else None
+        # A block with a time budget and no `timeout` of its own is limited
+        # by the budget alone: the default script limit would cut short a
+        # script the budget still allows.
+        budget_only = not block_timeout and block_name in self.block_time_budgets
 
         return runner.run(
             script_path=script_path,
@@ -460,6 +473,7 @@ class ProcessManager:
             linux_user=linux_user,
             run_count=run_count,
             timeout_override=block_timeout,
+            no_timeout=budget_only,
         )
 
     def _load_state_from_db(self):
@@ -877,10 +891,17 @@ class ProcessManager:
                     import shlex
 
                     proc = subprocess.Popen(
-                        shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
+                        shlex.split(command),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=env,
+                        start_new_session=True,
                     )
-
-                    stdout, stderr = proc.communicate()
+                    self._children().started(name, proc)
+                    try:
+                        stdout, stderr = proc.communicate()
+                    finally:
+                        self._children().finished(proc)
                     result = stdout.decode() if stdout else ""
 
                     if proc.returncode != 0:
@@ -1286,8 +1307,10 @@ class ProcessManager:
         self._write_rein_log(f"TIME BUDGET EXCEEDED | block={name} | elapsed={elapsed:.0f}s > budget={budget}s")
         console.info("[TIME_BUDGET] task=%s block=%s", self.task_id, name)
 
-        # Whatever is still working on this attempt is no longer listened to.
+        # Whatever is still working on this attempt is no longer listened to,
+        # and a script of it that is still running is stopped.
         self._attempt_no[name] = self._attempt_no.get(name, 0) + 1
+        self._children().stop_block(name, "time budget exceeded")
 
         # `timeout` is the route for "no answer in time"; without it the
         # block's `fail` route is used; without either it is a plain failure.
@@ -1333,10 +1356,14 @@ class ProcessManager:
     def _fail_unfinished_blocks(self, reason: str) -> None:
         """Close a run that is over its time budget: nothing else may start."""
         with self.lock:
-            self.next_queue = []
             for proc in self.processes.values():
                 if proc.status not in ("done", "skipped", "failed"):
                     self._attempt_no[proc.name] = self._attempt_no.get(proc.name, 0) + 1
+        self._children().stop_all(reason)
+        with self.lock:
+            self.next_queue = []
+            for proc in self.processes.values():
+                if proc.status not in ("done", "skipped", "failed"):
                     proc.status = "failed"
                     proc.exit_code = 1
                     self.state.save_process(proc)
@@ -1547,6 +1574,7 @@ class ProcessManager:
 
         try:
             self._budget_rows = None  # the lock is ours now: read the clocks afresh
+            self._stop_orphan_scripts()
             return self._run_step_inner(max_steps, agent_id)
         finally:
             fcntl.flock(self._step_lock_fd, fcntl.LOCK_UN)
@@ -1713,15 +1741,47 @@ class ProcessManager:
 
         return all_done
 
-    def _wait_for_inflight(self, timeout: float = 300.0):
+    # How long a step waits for a block that no time budget covers. A block
+    # with a budget (its own, or the run's) is waited for until it finishes
+    # or the budget stops it.
+    STEP_WAIT_WITHOUT_BUDGET = 300.0
+    # How long a finished block gets to register itself (routing, outputs).
+    REGISTRATION_GRACE = 30.0
+
+    def _stop_orphan_scripts(self) -> None:
+        """Stop scripts left by an engine process that died holding this task.
+
+        Call with the task lock held. Their blocks are still marked running
+        and are about to be started again; the old scripts must not go on
+        working next to the new ones.
+        """
+        stopped = self._children().stop_orphans("left by an engine process that is gone")
+        if stopped:
+            self._write_rein_log(f"ORPHAN SCRIPTS STOPPED | {stopped}")
+
+    def _inflight_wait_limit(self, running: List[Process]) -> Optional[float]:
+        """Seconds to wait for these blocks, or None when a budget decides."""
+        if self.time_budget or all(p.name in self.block_time_budgets for p in running):
+            return None
+        return self.STEP_WAIT_WITHOUT_BUDGET
+
+    def _wait_for_inflight(self, timeout: Optional[float] = None):
         """Wait for currently running blocks to finish before returning.
 
         Waits until no process is 'running' AND all done/failed blocks are
         registered in self.completed set. This ensures threads have finished
         their post-execution work (routing eval, completed.add, output flush).
+
+        The wait never ends by walking away from a working block. Time budgets
+        are enforced while waiting, and they stop the block. A block that no
+        budget covers is waited for `STEP_WAIT_WITHOUT_BUDGET` seconds (or
+        `timeout`, when given) and is then stopped and failed, so that the
+        next step retries it instead of starting it a second time next to
+        itself.
         """
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+        started = time.time()
+        idle_since = None
+        while True:
             with self.lock:
                 running = [p for p in self.processes.values() if p.status == "running"]
                 # Also wait for done blocks to register in completed set
@@ -1734,8 +1794,48 @@ class ProcessManager:
                 # Extra sleep to let stdout buffers flush from daemon threads
                 time.sleep(0.1)
                 return
+
+            if running:
+                idle_since = None
+                self.enforce_time_budgets()
+                limit = timeout if timeout is not None else self._inflight_wait_limit(running)
+                if limit is not None and time.time() - started > limit:
+                    self._abandon_inflight(running, limit)
+                    continue
+            else:
+                idle_since = idle_since or time.time()
+                if time.time() - idle_since > self.REGISTRATION_GRACE:
+                    self._write_rein_log(f"WAIT TIMEOUT | {len(pending_registration)} unregistered")
+                    return
             time.sleep(0.2)
-        self._write_rein_log(f"WAIT TIMEOUT | {len(running)} running, {len(pending_registration)} unregistered")
+
+    def _abandon_inflight(self, running: List[Process], limit: float) -> None:
+        """Stop and fail blocks a step has waited for long enough."""
+        for proc in running:
+            name = proc.name
+            block = self.block_configs.get(name) or {}
+            reason = (
+                f"no result after {limit:.0f}s and no time budget covers this block; "
+                "set time_budget on the block or the flow to allow it more"
+            )
+            with self.lock:
+                if proc.status != "running":
+                    continue
+                # The thread still working on it is no longer listened to.
+                self._attempt_no[name] = self._attempt_no.get(name, 0) + 1
+            stopped = self._children().stop_block(name, "step wait limit")
+            with self.lock:
+                proc.status = "failed"
+                proc.exit_code = 1
+                self.state.save_process(proc)
+                self.completed.add(name)
+            self._write_rein_log(f"WAIT TIMEOUT | {name} | scripts stopped={stopped} | block failed | {reason}")
+            self._budget_clear(name)
+            self._run_error_handlers(block, name, reason)
+            if not self._should_continue_after_failure(block, True):
+                with self.lock:
+                    self.stop_workflow = True
+                    self.stop_reason = f"Block '{name}' gave no result in time (continue_if_failed=false)"
 
     def _has_running_processes(self) -> bool:
         return state_machine.has_running_or_transitioning(self.processes, self.completed, self.lock)
@@ -1763,6 +1863,7 @@ class ProcessManager:
             return
         try:
             self._budget_rows = None  # the lock is ours now: read the clocks afresh
+            self._stop_orphan_scripts()
             self._run_workflow_inner()
         finally:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
@@ -1975,6 +2076,7 @@ class ProcessManager:
 
     def _kill_remaining_processes(self, reason: str = "timeout"):
         """Kill remaining running processes gracefully"""
+        self._children().stop_all(reason)
         with self.lock:
             for name, process in self.processes.items():
                 if process.status == "running" and process.pid:

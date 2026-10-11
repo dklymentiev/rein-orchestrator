@@ -596,7 +596,9 @@ A value is a number of seconds or a number with a unit: `90s`, `30m`, `2h`, `1d`
 - **When a block runs out of time**, `logic.error` and `on_error` run once, and the flow follows the block's `timeout` route, or its `fail` route if there is none. Without either the block is a failed block. A result that arrives later is ignored.
 - **When the run runs out of time**, `on_error` runs once, every unfinished block is failed, and the task ends as `failed`. Later steps on that task do nothing.
 
-Rein cannot stop whatever a block handed work to; it stops listening for the answer. If something must be cancelled, do it in the error handler.
+When time runs out, Rein stops the script the block is running, together with everything that script started. It cannot stop work a block handed to another system; there it only stops listening for the answer. If something must be cancelled, do it in the error handler.
+
+In step mode a step waits for the block it started. The budget says for how long: a block with a `time_budget`, or any block of a run that has one, is waited for until it finishes or the budget stops it. A block that no budget covers is waited for five minutes, then its script is stopped and the block is failed, and the next step retries it. A block with a `time_budget` and no `timeout` of its own is not subject to the default script limit of 8 minutes.
 
 The start times are stored in the task's state, so a budget survives restarts. In step mode no process lives between two steps, so something has to look at the clock:
 
